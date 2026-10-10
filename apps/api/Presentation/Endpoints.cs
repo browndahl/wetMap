@@ -19,6 +19,7 @@ public static class Endpoints
             .WithName("GetForecast")
             .Produces<ForecastResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .CacheOutput("forecast");
         endpoints.MapGet("/frames/{fileName}", GetFrame)
             .WithName("GetRadarFrame")
@@ -51,8 +52,19 @@ public static class Endpoints
                 title: "Invalid coordinates",
                 detail: "Latitude must be between -90 and 90 and longitude between -180 and 180.",
                 type: "https://wetmap.invalid/problems/invalid-coordinates");
-        var result = await service.GetAsync(lat, lon, cancellationToken);
-        return Results.Ok(result);
+        try
+        {
+            var result = await service.GetAsync(lat, lon, cancellationToken);
+            return Results.Ok(result);
+        }
+        catch (ForecastUnavailableException)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Forecast unavailable",
+                detail: "DMI forecast data is temporarily unavailable.",
+                type: "https://wetmap.invalid/problems/forecast-unavailable");
+        }
     }
 
     private static IResult GetFrame(string fileName, Microsoft.Extensions.Options.IOptions<StorageOptions> options)

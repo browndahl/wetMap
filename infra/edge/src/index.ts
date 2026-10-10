@@ -71,13 +71,15 @@ async function forecast(url: URL, env: Env, context: ExecutionContext): Promise<
   }
   if (!response?.ok) return problem(503, "Forecast unavailable", "DMI forecast data is temporarily unavailable.");
   const data = await response.json() as { features?: Array<{ properties: Record<string, number | string | null> }> };
-  const points = (data.features ?? []).slice(0, 48).map(({ properties }) => ({
+  const currentHour = new Date();
+  currentHour.setUTCMinutes(0, 0, 0);
+  const points = (data.features ?? []).map(({ properties }) => ({
     step: properties.step,
     temperatureC: typeof properties["temperature-2m"] === "number" ? Math.round((properties["temperature-2m"] - 273.15) * 10) / 10 : null,
     precipitationKgM2: properties["total-precipitation"] ?? null,
     windSpeedMs: properties["wind-speed-10m"] ?? null,
     cloudCoverPercent: typeof properties["fraction-of-cloud-cover"] === "number" ? Math.round(properties["fraction-of-cloud-cover"] * 100) : null
-  }));
+  })).filter((point) => typeof point.step === "string" && Date.parse(point.step) >= currentHour.getTime()).slice(0, 48);
   const result = Response.json({ latitude, longitude, fetchedAt: new Date().toISOString(), attribution, points }, {
     headers: { ...jsonHeaders, "Cache-Control": "public,max-age=600,stale-while-revalidate=3600", "X-DMI-Attribution": attribution }
   });

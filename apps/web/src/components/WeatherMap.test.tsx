@@ -3,6 +3,7 @@ import { act, render } from "@testing-library/react";
 import type { RadarFrame } from "@wetmap/shared";
 import { beforeEach, expect, it, vi } from "vitest";
 import WeatherMap from "./WeatherMap";
+import { useWeatherStore } from "../store";
 
 type MapHandler = () => void;
 
@@ -59,7 +60,9 @@ beforeEach(() => {
   map.loadHandlers.length = 0;
   map.pendingLoadHandler = undefined;
   map.isStyleLoaded.mockReturnValue(false);
+  map.getLayer.mockReturnValue(undefined);
   window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
+  useWeatherStore.setState({ opacity: 0.7 });
 });
 
 it("renders a cached radar frame after the map style finishes loading", () => {
@@ -78,5 +81,18 @@ it("renders a cached radar frame after the map style finishes loading", () => {
     "radar-1",
     expect.objectContaining({ type: "image", url: expect.stringMatching(/\/frames\/test-frame\.webp$/) })
   );
+  view.unmount();
+});
+
+it("updates opacity without rebuilding the radar source", () => {
+  map.isStyleLoaded.mockReturnValue(true);
+  map.getLayer.mockImplementation((id: string) => id === "radar-layer-1" ? {} : undefined);
+  const view = render(<WeatherMap frames={[frame]} activeIndex={0} />);
+  const sourceAdds = map.addSource.mock.calls.length;
+
+  act(() => useWeatherStore.getState().setOpacity(0.45));
+
+  expect(map.addSource).toHaveBeenCalledTimes(sourceAdds);
+  expect(map.setPaintProperty).toHaveBeenCalledWith("radar-layer-1", "raster-opacity", 0.45);
   view.unmount();
 });

@@ -20,7 +20,7 @@ interface WeatherState {
 export const useWeatherStore = create<WeatherState>((set) => ({
   locale: "da",
   opacity: 0.7,
-  selectedFrame: 0,
+  selectedFrame: -1,
   playing: false,
   precise2d: false,
   selectedLocation: { latitude: 56.1629, longitude: 10.2039 },

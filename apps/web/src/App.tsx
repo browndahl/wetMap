@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CloudRain, Languages, Layers3, Pause, Play, Radio, Wind } from "lucide-react";
 import { DMI_ATTRIBUTION, RADAR_SCALE } from "@wetmap/shared";
@@ -8,45 +8,85 @@ import { useWeatherStore } from "./store";
 
 const WeatherMap = lazy(() => import("./components/WeatherMap"));
 
-const formatTime = (value: string, locale: "da" | "en") =>
+const formatTime = (value: string | number, locale: "da" | "en") =>
   new Intl.DateTimeFormat(locale === "da" ? "da-DK" : "en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: "Europe/Copenhagen"
   }).format(new Date(value));
 
+const formatAge = (minutes: number, locale: "da" | "en") => {
+  if (minutes < 1) return locale === "da" ? "nu" : "now";
+  return locale === "da" ? `${minutes} min siden` : `${minutes} min ago`;
+};
+
 export default function App() {
   const state = useWeatherStore();
-  const manifest = useQuery({ queryKey: ["radar-frames"], queryFn: ({ signal }) => getRadarManifest(signal), refetchInterval: 60_000 });
+  const [now, setNow] = useState(() => Date.now());
+  const manifest = useQuery({
+    queryKey: ["radar-frames"],
+    queryFn: ({ signal }) => getRadarManifest(signal),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true
+  });
   const forecast = useQuery({
     queryKey: ["forecast", state.selectedLocation],
     queryFn: ({ signal }) => getForecast(state.selectedLocation.latitude, state.selectedLocation.longitude, signal),
-    staleTime: 10 * 60_000
+    staleTime: 10 * 60_000,
+    retry: false
   });
   const frames = manifest.data?.frames ?? [];
-  const safeIndex = Math.min(state.selectedFrame, Math.max(frames.length - 1, 0));
+  const lastFrameIndex = Math.max(frames.length - 1, 0);
+  const safeIndex = state.selectedFrame < 0
+    ? lastFrameIndex
+    : Math.min(state.selectedFrame, lastFrameIndex);
   const activeFrame = frames[safeIndex];
+  const latestFrame = frames[lastFrameIndex];
   const t = (key: Parameters<typeof translate>[1]) => translate(state.locale, key);
-  const ageMinutes = activeFrame
-    ? (manifest.dataUpdatedAt - new Date(activeFrame.observedAt).getTime()) / 60_000
+  const ageMinutes = latestFrame
+    ? Math.max(0, Math.floor((now - new Date(latestFrame.observedAt).getTime()) / 60_000))
     : Infinity;
+  const isStale = ageMinutes > 20;
+  const currentHour = new Date(now);
+  currentHour.setMinutes(0, 0, 0);
+  const forecastPoints = (forecast.data?.points ?? [])
+    .filter((point) => new Date(point.step).getTime() >= currentHour.getTime())
+    .slice(0, 4);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!state.playing || frames.length < 2) return;
-    const timer = window.setInterval(() => {
-      state.setSelectedFrame((safeIndex + 1) % frames.length);
-    }, 900);
-    return () => window.clearInterval(timer);
-  }, [frames.length, safeIndex, state]);
+    if (safeIndex >= lastFrameIndex) {
+      state.setPlaying(false);
+      return;
+    }
+    const timer = window.setTimeout(() => state.setSelectedFrame(safeIndex + 1), 700);
+    return () => window.clearTimeout(timer);
+  }, [frames.length, lastFrameIndex, safeIndex, state]);
 
   useEffect(() => {
-    if (frames.length && state.selectedFrame >= frames.length) state.setSelectedFrame(frames.length - 1);
+    if (frames.length && (state.selectedFrame < 0 || state.selectedFrame >= frames.length)) {
+      state.setSelectedFrame(frames.length - 1);
+    }
   }, [frames.length, state]);
+
+  const togglePlayback = () => {
+    if (state.playing) {
+      state.setPlaying(false);
+      return;
+    }
+    if (safeIndex >= lastFrameIndex) state.setSelectedFrame(0);
+    state.setPlaying(true);
+  };
 
   return (
     <main className="app-shell">
-      <a className="skip-link" href="#weather-panel">Spring til vejrinformation</a>
-      <Suspense fallback={<div className="map-loading" role="status">Indlæser kort…</div>}>
+      <a className="skip-link" href="#weather-panel">{t("skipToWeather")}</a>
+      <Suspense fallback={<div className="map-loading" role="status">{t("loadingMap")}</div>}>
         <WeatherMap frames={frames} activeIndex={safeIndex} />
       </Suspense>
 
@@ -56,9 +96,9 @@ export default function App() {
           <strong>wetmap</strong>
           <span>aarhus · 56.16°n</span>
         </div>
-        <span className={`freshness ${ageMinutes > 15 ? "is-stale" : ""}`}>
+        <span className={`freshness ${isStale ? "is-stale" : ""}`} role="status" title={t("freshnessHelp")}>
           <Radio size={13} aria-hidden="true" />
-          {ageMinutes > 15 ? t("stale") : t("fresh")}
+          {isStale ? t("stale") : t("fresh")} · {Number.isFinite(ageMinutes) ? formatAge(ageMinutes, state.locale) : "–"}
         </span>
         <button
           className="icon-button"
@@ -73,11 +113,16 @@ export default function App() {
       <section id="weather-panel" className="weather-card glass" aria-labelledby="forecast-title">
         <div className="eyebrow"><Wind size={15} aria-hidden="true" /> DMI HARMONIE</div>
         <h2 id="forecast-title">{t("forecast")}</h2>
-        {forecast.isLoading && <p className="muted" role="status">Henter prognose…</p>}
-        {forecast.isError && <p className="muted">Prognosen er midlertidigt utilgængelig.</p>}
-        {forecast.data?.points.slice(0, 4).map((point) => (
+        {forecast.isLoading && <p className="muted" role="status">{t("loadingForecast")}</p>}
+        {forecast.isError && <p className="muted">{t("forecastUnavailable")}</p>}
+        {!forecast.isLoading && !forecast.isError && forecastPoints.length === 0 && (
+          <p className="muted">{t("forecastUnavailable")}</p>
+        )}
+        {forecastPoints.map((point) => (
           <div className="forecast-row" key={point.step}>
-            <time dateTime={point.step}>{formatTime(point.step, state.locale)}</time>
+            <time dateTime={point.step}>
+              {new Date(point.step).getTime() < currentHour.getTime() + 3_600_000 ? t("now") : formatTime(point.step, state.locale)}
+            </time>
             <strong>{point.temperatureC == null ? "–" : `${Math.round(point.temperatureC)}°`}</strong>
             <span>{point.windSpeedMs == null ? "–" : `${point.windSpeedMs.toFixed(1)} m/s`}</span>
           </div>
@@ -95,17 +140,23 @@ export default function App() {
       <section className="timeline glass" aria-labelledby="timeline-title">
         <div className="timeline-heading">
           <div>
-            <span className="eyebrow">{t("observed")}</span>
+            <span className="eyebrow">{safeIndex === lastFrameIndex ? t("latestObservation") : t("observed")}</span>
             <h1 id="timeline-title">{activeFrame ? formatTime(activeFrame.observedAt, state.locale) : t("radar")}</h1>
           </div>
-          <button
-            className="play-button"
-            onClick={() => state.setPlaying(!state.playing)}
-            aria-label={state.playing ? t("pause") : t("play")}
-            disabled={frames.length < 2}
-          >
-            {state.playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
-          </button>
+          <div className="timeline-actions">
+            <div className="live-clock">
+              <span>{t("now")}</span>
+              <time dateTime={new Date(now).toISOString()}>{formatTime(now, state.locale)}</time>
+            </div>
+            <button
+              className="play-button"
+              onClick={togglePlayback}
+              aria-label={state.playing ? t("pause") : t("play")}
+              disabled={frames.length < 2}
+            >
+              {state.playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+            </button>
+          </div>
         </div>
 
         {frames.length ? (
@@ -117,12 +168,15 @@ export default function App() {
               max={Math.max(frames.length - 1, 0)}
               value={safeIndex}
               onChange={(event) => state.setSelectedFrame(Number(event.target.value))}
-              aria-label="Radar-tidspunkt"
+              aria-label={t("radarTime")}
+              aria-valuetext={activeFrame ? formatTime(activeFrame.observedAt, state.locale) : undefined}
             />
             <div className="timeline-ticks">
-              <span>−60 min</span>
-              <span>{t("now")}</span>
+              <time dateTime={frames[0].observedAt}>{formatTime(frames[0].observedAt, state.locale)}</time>
+              <span>{t("observedHistory")}</span>
+              <time dateTime={latestFrame.observedAt}>{formatTime(latestFrame.observedAt, state.locale)}</time>
             </div>
+            <p className="timeline-note">{t("futureRadarNote")}</p>
           </>
         ) : (
           <div className="empty-state" role="status"><strong>{t("noData")}</strong><span>{t("noDataDetail")}</span></div>
@@ -145,7 +199,7 @@ export default function App() {
 
       <footer className="attribution">
         <a href="https://www.dmi.dk/friedata" target="_blank" rel="noreferrer">{DMI_ATTRIBUTION}</a>
-        {activeFrame && <span> · hentet <time dateTime={activeFrame.fetchedAt}>{formatTime(activeFrame.fetchedAt, state.locale)}</time></span>}
+        {activeFrame && <span> · {t("fetched")} <time dateTime={activeFrame.fetchedAt}>{formatTime(activeFrame.fetchedAt, state.locale)}</time></span>}
         <span> · © OpenStreetMap · OpenFreeMap</span>
       </footer>
     </main>

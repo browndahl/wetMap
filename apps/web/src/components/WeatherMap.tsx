@@ -42,6 +42,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const visibleBuffer = useRef<0 | 1>(0);
+  const opacityRef = useRef(0.7);
   const opacity = useWeatherStore((state) => state.opacity);
   const precise2d = useWeatherStore((state) => state.precise2d);
   const setSelectedLocation = useWeatherStore((state) => state.setSelectedLocation);
@@ -77,6 +78,20 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
   }, [setSelectedLocation]);
 
   useEffect(() => {
+    const preloaded = frames.slice(activeIndex, activeIndex + 3).map((frame) => {
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.decoding = "async";
+      image.src = new URL(frame.url, framesBase).toString();
+      return image;
+    });
+    return () => preloaded.forEach((image) => {
+      image.onload = null;
+      image.onerror = null;
+    });
+  }, [activeIndex, frames]);
+
+  useEffect(() => {
     const map = mapRef.current;
     const frame = frames[activeIndex];
     if (!map || !frame) return;
@@ -95,7 +110,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
       map.addLayer({ id: layerId, type: "raster", source: sourceId, paint: { "raster-opacity": 0, "raster-fade-duration": 280 } }, map.getLayer("wetmap-3d-buildings") ? "wetmap-3d-buildings" : undefined);
       fadeTimer = window.setTimeout(() => {
         if (!map.getLayer(layerId)) return;
-        map.setPaintProperty(layerId, "raster-opacity", opacity);
+        map.setPaintProperty(layerId, "raster-opacity", opacityRef.current);
         if (map.getLayer(oldLayerId)) map.setPaintProperty(oldLayerId, "raster-opacity", 0);
         visibleBuffer.current = next;
       }, 40);
@@ -108,7 +123,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
       map.off("load", renderFrame);
       if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
     };
-  }, [activeIndex, frames, opacity]);
+  }, [activeIndex, frames]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -119,6 +134,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
 
   useEffect(() => {
     const map = mapRef.current;
+    opacityRef.current = opacity;
     if (!map) return;
     for (const id of ["radar-layer-0", "radar-layer-1"]) if (map.getLayer(id)) map.setPaintProperty(id, "raster-opacity", opacity);
   }, [opacity]);

@@ -11,7 +11,7 @@ from pathlib import Path
 from .dmi import DmiClient
 from .model import Frame, manifest
 from .processor import inspect_odim, process_hdf5
-from .storage import upload_r2, write_json_atomic
+from .storage import download_manifest_r2, upload_r2, write_json_atomic
 
 
 def configure_logs() -> None:
@@ -22,22 +22,26 @@ def run(output: Path, limit: int, upload: bool) -> None:
     output.mkdir(parents=True, exist_ok=True)
     client = DmiClient(os.getenv("DMI_BASE_URL", "https://opendataapi.dmi.dk"))
     existing_path = output / "frames.json"
+    if upload and not existing_path.exists():
+        download_manifest_r2(existing_path)
     existing = {}
     if existing_path.exists():
         existing = {frame["id"]: frame for frame in json.loads(existing_path.read_text())["frames"]}
 
     fetched_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     frames: list[Frame] = []
+    new_frame_paths: list[Path] = []
     with tempfile.TemporaryDirectory(prefix="wetmap-") as temporary_directory:
         temporary = Path(temporary_directory)
         for item in reversed(client.newest_composites(limit)):
             target = output / f"{item.id}.webp"
-            if target.exists() and item.id in existing:
+            if item.id in existing and (target.exists() or upload):
                 frames.append(Frame(**existing[item.id]))
                 continue
             hdf5 = temporary / f"{item.id}.h5"
             client.download(item, hdf5)
             processed = process_hdf5(hdf5, target)
+            new_frame_paths.append(target)
             frames.append(
                 Frame(
                     id=item.id,
@@ -57,8 +61,13 @@ def run(output: Path, limit: int, upload: bool) -> None:
             old_frame.unlink()
     write_json_atomic(existing_path, manifest(frames))
     if upload:
-        upload_r2(output)
-    logging.info(json.dumps({"event": "worker.complete", "frames": len(frames), "output": str(output)}))
+        upload_r2(output, new_frame_paths)
+    logging.info(json.dumps({
+        "event": "worker.complete",
+        "frames": len(frames),
+        "newFrames": len(new_frame_paths),
+        "output": str(output),
+    }))
 
 
 def main() -> None:

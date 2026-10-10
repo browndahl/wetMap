@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Polly.Timeout;
 using WetMap.Api.Domain;
 
 namespace WetMap.Api.Application;
@@ -16,12 +17,41 @@ public sealed class ForecastService(IDmiForecastClient client, IMemoryCache cach
         var roundedLatitude = Math.Round(latitude, 3);
         var roundedLongitude = Math.Round(longitude, 3);
         var cacheKey = $"forecast:{roundedLatitude:F3}:{roundedLongitude:F3}";
-        var points = await cache.GetOrCreateAsync(cacheKey, async entry =>
+        var staleCacheKey = $"{cacheKey}:stale";
+        IReadOnlyList<ForecastPoint> points;
+        if (!cache.TryGetValue(cacheKey, out points!))
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
-            entry.SetSize(1);
-            return await client.GetAsync(roundedLatitude, roundedLongitude, cancellationToken);
-        }) ?? [];
-        return new ForecastResponse(latitude, longitude, clock.UtcNow, DmiCredit.Attribution, points);
+            try
+            {
+                points = await client.GetAsync(roundedLatitude, roundedLongitude, cancellationToken);
+                cache.Set(cacheKey, points, new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(TimeSpan.FromMinutes(10))
+                    .SetSize(1));
+                cache.Set(staleCacheKey, points, new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(TimeSpan.FromHours(6))
+                    .SetSize(1));
+            }
+            catch (Exception error) when (
+                !cancellationToken.IsCancellationRequested &&
+                error is (HttpRequestException or TaskCanceledException or TimeoutRejectedException))
+            {
+                if (!cache.TryGetValue(staleCacheKey, out points!))
+                    throw new ForecastUnavailableException("DMI forecast data is temporarily unavailable.", error);
+            }
+        }
+        var now = clock.UtcNow;
+        var currentHour = new DateTimeOffset(
+            now.Year,
+            now.Month,
+            now.Day,
+            now.Hour,
+            0,
+            0,
+            TimeSpan.Zero);
+        var upcomingPoints = points.Where(point => point.Step >= currentHour).Take(48).ToArray();
+        return new ForecastResponse(latitude, longitude, now, DmiCredit.Attribution, upcomingPoints);
     }
 }
+
+public sealed class ForecastUnavailableException(string message, Exception innerException)
+    : Exception(message, innerException);

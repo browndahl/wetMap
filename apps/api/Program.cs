@@ -57,9 +57,10 @@ builder.Services.AddHttpClient<IDmiForecastClient, DmiForecastClient>((services,
     client.DefaultRequestHeaders.UserAgent.ParseAdd("wetmap-api/0.1");
 }).AddStandardResilienceHandler(options =>
 {
-    options.Retry.MaxRetryAttempts = 3;
+    options.Retry.MaxRetryAttempts = 1;
     options.Retry.UseJitter = true;
-    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(12);
+    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(8);
+    options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(15);
     options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
 });
 

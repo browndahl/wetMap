@@ -2,6 +2,10 @@
 
 WetMap is a dark-first, accessible 3D weather radar for Denmark. It renders **observed DMI DBZH reflectivity** below OpenStreetMap-derived 3D buildings in MapLibre and keeps the DMI API behind server-side components. It does not claim rainfall in mm/h and does not show predicted radar frames.
 
+Production: **https://wetmap.pages.dev** · API: **https://wetmap-api.wetmap-edge.workers.dev**
+
+The radar timeline opens on the latest published observation and shows the real observation times for the preceding hour. “Now” is the browser clock. DMI's open composite radar feed contains observations, not future radar frames; future hours therefore appear in the HARMONIE point forecast instead of being presented as radar nowcast data.
+
 ## Run locally
 
 Prerequisite: Docker with Compose v2.
@@ -57,7 +61,7 @@ docker build -t wetmap-api apps/api
 
 ## Deploy
 
-1. Create a public GitHub repository. Public standard GitHub-hosted Actions are free.
+1. Choose the ingestion runner. Public standard GitHub-hosted Actions are free; a private repository has a finite monthly Actions allowance and cannot sustainably run the five-minute schedule without another runner or a separate public ingestion repository.
 2. Create Cloudflare Pages, R2, and Workers Free resources. R2 activation uses a checkout/subscription flow even within free usage; configure a hard budget alert and lifecycle deletion.
 3. Apply `infra/tofu` with an API token scoped to R2 write and account ID in environment secrets.
 4. Configure GitHub environments `staging` and `production`. Store `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `R2_*`, and `R2_BUCKET` only as environment secrets.
@@ -65,7 +69,7 @@ docker build -t wetmap-api apps/api
 
 Apply the branch and environment protections in [docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md). Conventional commits on a protected `main` are released automatically after CI succeeds.
 
-No public URL is claimed in this repository: deployment requires the owner's Cloudflare/GitHub accounts and DNS choice.
+The current GitHub repository is private. Cloudflare deployment is live, while scheduled five-minute radar ingestion remains deliberately gated until its runner/budget choice is made. Manual ingestion can refresh the same R2 manifest without changing the application deployment.
 
 ## Free-tier limits & what happens when exceeded
 
@@ -77,4 +81,4 @@ Browser geolocation is used only to move the map. The coordinate leaves the devi
 
 ## Status
 
-The real 2026-10-10 DMI composite schema was inspected before implementation; see [docs/DMI-DATA-NOTES.md](docs/DMI-DATA-NOTES.md). Local and CI verification results belong in [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md); credential-dependent production resources are explicitly unverified until deployed.
+The real 2026-10-10 DMI composite schema was inspected before implementation; see [docs/DMI-DATA-NOTES.md](docs/DMI-DATA-NOTES.md). Current verification evidence, including live Cloudflare checks, is recorded in [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md).
