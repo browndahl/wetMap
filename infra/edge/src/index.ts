@@ -51,7 +51,7 @@ async function forecast(url: URL, env: Env, context: ExecutionContext): Promise<
   const roundedLat = latitude.toFixed(3);
   const roundedLon = longitude.toFixed(3);
   const cacheUrl = new URL(url);
-  cacheUrl.search = new URLSearchParams({ lat: roundedLat, lon: roundedLon }).toString();
+  cacheUrl.search = new URLSearchParams({ lat: roundedLat, lon: roundedLon, v: "2" }).toString();
   const cacheKey = new Request(cacheUrl, { method: "GET" });
   const edgeCache = (caches as unknown as { default: Cache }).default;
   const cached = await edgeCache.match(cacheKey);
