@@ -19,6 +19,9 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile && pnpm check
       - run: pnpm --filter @wetmap/web build
+        env:
+          VITE_API_BASE_URL: https://wetmap-api.wetmap-edge.workers.dev
+          VITE_FRAMES_BASE_URL: https://wetmap-api.wetmap-edge.workers.dev
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -36,6 +39,9 @@ jobs:
       - uses: actions/setup-node@v6
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile && pnpm --filter @wetmap/web build
+        env:
+          VITE_API_BASE_URL: https://wetmap-api.wetmap-edge.workers.dev
+          VITE_FRAMES_BASE_URL: https://wetmap-api.wetmap-edge.workers.dev
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

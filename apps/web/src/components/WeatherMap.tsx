@@ -13,6 +13,8 @@ maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 interface Props { frames: RadarFrame[]; activeIndex: number }
 
+const framesBase = import.meta.env.VITE_FRAMES_BASE_URL || window.location.origin;
+
 const imageCoordinates = (frame: RadarFrame): [[number, number], [number, number], [number, number], [number, number]] => {
   const [west, south, east, north] = frame.bounds;
   return [[west, north], [east, north], [east, south], [west, south]];
@@ -86,7 +88,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
       const sourceId = `radar-${next}`;
       const layerId = `radar-layer-${next}`;
       const oldLayerId = `radar-layer-${visibleBuffer.current}`;
-      const absoluteUrl = new URL(frame.url, window.location.origin).toString();
+      const absoluteUrl = new URL(frame.url, framesBase).toString();
       if (map.getLayer(layerId)) map.removeLayer(layerId);
       if (map.getSource(sourceId)) map.removeSource(sourceId);
       map.addSource(sourceId, { type: "image", url: absoluteUrl, coordinates: imageCoordinates(frame) });

@@ -8,7 +8,8 @@ const attribution = "Baseret på data fra DMI og efterfølgende bearbejdet";
 const jsonHeaders = { "Content-Type": "application/json; charset=utf-8" };
 
 function cors(origin: string, env: Env): HeadersInit {
-  return origin === env.ALLOWED_ORIGIN
+  const allowedOrigins = env.ALLOWED_ORIGIN.split(",").map((value) => value.trim());
+  return allowedOrigins.includes(origin)
     ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" }
     : {};
 }

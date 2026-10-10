@@ -10,4 +10,4 @@ preview_bucket_name = "wetmap-radar-preview"
 
 [vars]
 DMI_BASE_URL = "https://opendataapi.dmi.dk"
-ALLOWED_ORIGIN = "https://wetmap.pages.dev"
+ALLOWED_ORIGIN = "https://wetmap.pages.dev,https://wetmap-staging.pages.dev"
