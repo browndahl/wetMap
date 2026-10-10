@@ -40,6 +40,6 @@ jobs:
       - uses: anchore/sbom-action@v0
         with: { path: ".", format: cyclonedx-json, output-file: sbom.cdx.json }
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with: { scan-type: fs, scan-ref: ".", severity: HIGH,CRITICAL, exit-code: "1" }
+        with: { scan-type: fs, scan-ref: ".", severity: "HIGH,CRITICAL", exit-code: "1" }
       - uses: actions/upload-artifact@v6
         with: { name: sbom, path: sbom.cdx.json, retention-days: 7 }
