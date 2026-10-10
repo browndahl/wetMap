@@ -1,7 +1,8 @@
 name: Radar ingestion
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    # Offset from the busiest five-minute boundaries to reduce GitHub queue delays.
+    - cron: "2-59/5 * * * *"
   workflow_dispatch:
 concurrency:
   group: radar-ingestion
