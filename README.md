@@ -21,6 +21,7 @@ Open <http://localhost:8080>. The first start downloads and processes the latest
 ```mermaid
 flowchart LR
   DMI["DMI Open Data\nRadar + HARMONIE"]
+  OM["Open-Meteo\nDMI forecast cache"]
   GH["GitHub Actions\nevery 5 minutes"]
   PW["Python worker\nODIM HDF5 → EPSG:3857 WebP"]
   R2["Cloudflare R2\nimmutable frames + manifest"]
@@ -30,7 +31,8 @@ flowchart LR
   User["Browser\nMapLibre 3D"]
 
   DMI --> GH --> PW --> R2
-  DMI --> Edge
+  DMI --> OM --> Edge
+  DMI -. direct forecast fallback .-> Edge
   R2 --> Edge
   Pages --> User
   Edge --> User
@@ -64,16 +66,16 @@ docker build -t wetmap-api apps/api
 1. Choose the ingestion runner. Public standard GitHub-hosted Actions are free; a private repository has a finite monthly Actions allowance and cannot sustainably run the five-minute schedule without another runner or a separate public ingestion repository.
 2. Create Cloudflare Pages, R2, and Workers Free resources. R2 activation uses a checkout/subscription flow even within free usage; configure a hard budget alert and lifecycle deletion.
 3. Apply `infra/tofu` with an API token scoped to R2 write and account ID in environment secrets.
-4. Configure GitHub environments `staging` and `production`. Store `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `R2_*`, and `R2_BUCKET` only as environment secrets.
+4. Configure GitHub environments `staging` and `production`. Store credentials such as `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` as secrets. Keep non-sensitive settings such as `R2_ACCOUNT_ID`, `R2_BUCKET`, `PUBLIC_URL`, and `API_URL` as repository variables.
 5. Run `deploy.yml`; production requires an environment approval. Add the Pages domain to the Worker's `ALLOWED_ORIGIN`.
 
 Apply the branch and environment protections in [docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md). Conventional commits on a protected `main` are released automatically after CI succeeds.
 
-The current GitHub repository is private. Cloudflare deployment is live, while scheduled five-minute radar ingestion remains deliberately gated until its runner/budget choice is made. Manual ingestion can refresh the same R2 manifest without changing the application deployment.
+The current GitHub repository and Cloudflare deployment are live. Scheduled five-minute radar ingestion is enabled with an R2 token restricted to object read/write on the `wetmap-radar` bucket. Because the repository is private, monitor Actions minutes closely and move ingestion to a small always-on runner or separate public ingestion repository before the monthly allowance becomes a constraint.
 
 ## Free-tier limits & what happens when exceeded
 
-The dated, sourced table is in [docs/FREE-TIER-BUDGET.md](docs/FREE-TIER-BUDGET.md). Key risks are the Workers 100,000 requests/day cap, R2's billing-enabled subscription flow, GitHub Actions being free only for public repositories, and OpenFreeMap having no contractual SLA. The application degrades to the last good radar manifest when DMI is unavailable.
+The dated, sourced table is in [docs/FREE-TIER-BUDGET.md](docs/FREE-TIER-BUDGET.md). Key risks are the Workers 100,000 requests/day cap, R2's billing-enabled subscription flow, finite private-repository Actions minutes, Open-Meteo's free access being non-commercial, and OpenFreeMap having no contractual SLA. The application degrades to last-known-good radar and forecast data when an upstream is unavailable.
 
 ## Data and privacy
 
