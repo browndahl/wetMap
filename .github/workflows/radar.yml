@@ -10,6 +10,7 @@ permissions:
   contents: read
 jobs:
   process:
+    if: vars.CLOUDFLARE_CONFIGURED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     environment: production

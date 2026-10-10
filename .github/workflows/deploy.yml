@@ -8,6 +8,7 @@ permissions:
   deployments: write
 jobs:
   staging:
+    if: vars.CLOUDFLARE_CONFIGURED == 'true'
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -24,6 +25,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy apps/web/dist --project-name=wetmap-staging --branch=main
   production:
+    if: vars.CLOUDFLARE_CONFIGURED == 'true'
     needs: staging
     runs-on: ubuntu-latest
     environment: production
