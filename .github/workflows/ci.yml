@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - run: docker build -t wetmap-api apps/api
       - run: docker build -t wetmap-worker apps/worker
       - run: docker build -t wetmap-web -f apps/web/Dockerfile .
