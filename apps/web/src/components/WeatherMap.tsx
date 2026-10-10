@@ -1,9 +1,15 @@
 import { useEffect, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import type { RadarFrame } from "@wetmap/shared";
 import { useWeatherStore } from "../store";
 import "maplibre-gl/dist/maplibre-gl.css";
+
+// MapLibre's ESM build resolves its worker relative to the final JavaScript
+// chunk. Make Vite emit the worker explicitly so production servers do not
+// fall back to index.html for that request.
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 interface Props { frames: RadarFrame[]; activeIndex: number }
 

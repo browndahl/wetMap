@@ -27,6 +27,8 @@ public sealed class ApiTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var response = await _client.GetAsync("/api/v1/radar/frames", TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        Assert.Equal("Baseret på data fra DMI og efterfølgende bearbejdet", response.Headers.GetValues("X-DMI-Attribution").Single());
+        var header = response.Headers.GetValues("X-DMI-Attribution").Single();
+        Assert.Equal("Baseret på data fra DMI og efterfølgende bearbejdet", Uri.UnescapeDataString(header));
+        Assert.Contains("Baseret på data fra DMI og efterfølgende bearbejdet", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 }

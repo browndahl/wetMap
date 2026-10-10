@@ -31,7 +31,9 @@ public static class Endpoints
         var (manifest, etag) = await service.GetAsync(cancellationToken);
         context.Response.Headers.ETag = etag;
         context.Response.Headers.CacheControl = "public,max-age=60,stale-while-revalidate=300";
-        context.Response.Headers["X-DMI-Attribution"] = DmiCredit.Attribution;
+        // Kestrel correctly rejects raw non-ASCII response header values. The JSON body
+        // carries the human-readable text; the header is its reversible UTF-8 percent encoding.
+        context.Response.Headers["X-DMI-Attribution"] = Uri.EscapeDataString(DmiCredit.Attribution);
         context.Response.Headers["X-Data-Fetched-At"] = manifest.Frames.LastOrDefault()?.FetchedAt.ToString("O") ?? manifest.GeneratedAt.ToString("O");
         if (context.Request.Headers.IfNoneMatch.Contains(etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
         return Results.Ok(manifest);

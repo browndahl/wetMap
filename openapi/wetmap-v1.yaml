@@ -15,7 +15,9 @@ paths:
           description: Current frame manifest
           headers:
             ETag: { schema: { type: string } }
-            X-DMI-Attribution: { schema: { type: string } }
+            X-DMI-Attribution:
+              description: UTF-8 percent-encoded DMI processing attribution; the JSON body contains the display value.
+              schema: { type: string }
             X-Data-Fetched-At: { schema: { type: string, format: date-time } }
           content:
             application/json:
