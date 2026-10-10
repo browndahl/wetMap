@@ -77,22 +77,35 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     const frame = frames[activeIndex];
-    if (!map || !frame || !map.isStyleLoaded()) return;
-    const next = visibleBuffer.current === 0 ? 1 : 0;
-    const sourceId = `radar-${next}`;
-    const layerId = `radar-layer-${next}`;
-    const oldLayerId = `radar-layer-${visibleBuffer.current}`;
-    const absoluteUrl = new URL(frame.url, window.location.origin).toString();
-    if (map.getLayer(layerId)) map.removeLayer(layerId);
-    if (map.getSource(sourceId)) map.removeSource(sourceId);
-    map.addSource(sourceId, { type: "image", url: absoluteUrl, coordinates: imageCoordinates(frame) });
-    map.addLayer({ id: layerId, type: "raster", source: sourceId, paint: { "raster-opacity": 0, "raster-fade-duration": 280 } }, map.getLayer("wetmap-3d-buildings") ? "wetmap-3d-buildings" : undefined);
-    window.setTimeout(() => {
-      if (!map.getLayer(layerId)) return;
-      map.setPaintProperty(layerId, "raster-opacity", opacity);
-      if (map.getLayer(oldLayerId)) map.setPaintProperty(oldLayerId, "raster-opacity", 0);
-      visibleBuffer.current = next;
-    }, 40);
+    if (!map || !frame) return;
+
+    let fadeTimer: number | undefined;
+    const renderFrame = () => {
+      if (!map.isStyleLoaded()) return;
+      const next = visibleBuffer.current === 0 ? 1 : 0;
+      const sourceId = `radar-${next}`;
+      const layerId = `radar-layer-${next}`;
+      const oldLayerId = `radar-layer-${visibleBuffer.current}`;
+      const absoluteUrl = new URL(frame.url, window.location.origin).toString();
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+      map.addSource(sourceId, { type: "image", url: absoluteUrl, coordinates: imageCoordinates(frame) });
+      map.addLayer({ id: layerId, type: "raster", source: sourceId, paint: { "raster-opacity": 0, "raster-fade-duration": 280 } }, map.getLayer("wetmap-3d-buildings") ? "wetmap-3d-buildings" : undefined);
+      fadeTimer = window.setTimeout(() => {
+        if (!map.getLayer(layerId)) return;
+        map.setPaintProperty(layerId, "raster-opacity", opacity);
+        if (map.getLayer(oldLayerId)) map.setPaintProperty(oldLayerId, "raster-opacity", 0);
+        visibleBuffer.current = next;
+      }, 40);
+    };
+
+    if (map.isStyleLoaded()) renderFrame();
+    else map.once("load", renderFrame);
+
+    return () => {
+      map.off("load", renderFrame);
+      if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
+    };
   }, [activeIndex, frames, opacity]);
 
   useEffect(() => {
