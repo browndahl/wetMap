@@ -63,7 +63,7 @@ docker build -t wetmap-api apps/api
 
 ## Deploy
 
-1. Choose the ingestion runner. Public standard GitHub-hosted Actions are free; a private repository has a finite monthly Actions allowance and cannot sustainably run the five-minute schedule without another runner or a separate public ingestion repository.
+1. Keep the ingestion workflow in a public repository so standard GitHub-hosted Actions do not consume a private-repository minutes allowance. Monitor schedule reliability and acceptable-use limits.
 2. Create Cloudflare Pages, R2, and Workers Free resources. R2 activation uses a checkout/subscription flow even within free usage; configure a hard budget alert and lifecycle deletion.
 3. Apply `infra/tofu` with an API token scoped to R2 write and account ID in environment secrets.
 4. Configure GitHub environments `staging` and `production`. Store credentials such as `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` as secrets. Keep non-sensitive settings such as `R2_ACCOUNT_ID`, `R2_BUCKET`, `PUBLIC_URL`, and `API_URL` as repository variables.
@@ -71,11 +71,11 @@ docker build -t wetmap-api apps/api
 
 Apply the branch and environment protections in [docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md). Conventional commits on a protected `main` are released automatically after CI succeeds.
 
-The current GitHub repository and Cloudflare deployment are live. Scheduled five-minute radar ingestion is enabled with an R2 token restricted to object read/write on the `wetmap-radar` bucket. Because the repository is private, monitor Actions minutes closely and move ingestion to a small always-on runner or separate public ingestion repository before the monthly allowance becomes a constraint.
+The current GitHub repository and Cloudflare deployment are public and live. Scheduled five-minute radar ingestion is enabled with an R2 token restricted to object read/write on the `wetmap-radar` bucket. Secrets remain encrypted in GitHub Actions and are not passed to workflows triggered from untrusted forks.
 
 ## Free-tier limits & what happens when exceeded
 
-The dated, sourced table is in [docs/FREE-TIER-BUDGET.md](docs/FREE-TIER-BUDGET.md). Key risks are the Workers 100,000 requests/day cap, R2's billing-enabled subscription flow, finite private-repository Actions minutes, Open-Meteo's free access being non-commercial, and OpenFreeMap having no contractual SLA. The application degrades to last-known-good radar and forecast data when an upstream is unavailable.
+The dated, sourced table is in [docs/FREE-TIER-BUDGET.md](docs/FREE-TIER-BUDGET.md). Key risks are the Workers 100,000 requests/day cap, R2's billing-enabled subscription flow, scheduled-workflow delays, Open-Meteo's free access being non-commercial, and OpenFreeMap having no contractual SLA. The application degrades to last-known-good radar and forecast data when an upstream is unavailable.
 
 ## Data and privacy
 

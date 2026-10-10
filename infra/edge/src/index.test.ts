@@ -134,8 +134,8 @@ describe("forecast edge endpoint", () => {
   it("falls back to DMI EDR when the primary distributor is unavailable", async () => {
     const { env, context } = setup();
     const upstream = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.startsWith("https://open-meteo.test")) return new Response(null, { status: 503 });
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.origin === "https://open-meteo.test") return new Response(null, { status: 503 });
       return Response.json({
         features: futureTimes.map((step) => ({
           properties: {
