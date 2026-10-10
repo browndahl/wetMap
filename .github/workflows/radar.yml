@@ -22,9 +22,9 @@ jobs:
       - name: Process and upload idempotently
         run: wetmap-worker --output /tmp/wetmap-frames --limit 13 --upload-r2
         env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
       - name: Validate freshness
         run: python .github/scripts/check_freshness.py /tmp/wetmap-frames/frames.json 25
