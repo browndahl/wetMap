@@ -4,7 +4,7 @@
 
 Start Docker Desktop and wait until its engine reports ready before running `docker compose up --build`. If Compose reports that `~/.docker/run/docker.sock` is missing, Docker Desktop is installed but its daemon is not running; launch Docker Desktop and confirm with `docker info` before retrying. On a healthy first start, `worker` exits with status 0 after producing the radar manifest, while `api`, `web`, and `otel-collector` remain running. Open `http://localhost:8080` and use `docker compose down` when finished.
 
-## 1. Radar stale (>15 minutes)
+## 1. Radar stale (>25 minutes)
 
 Check the latest worker workflow, DMI status, 429/retry logs, R2 manifest `generatedAt`, then frame object HEAD. Keep serving the last good manifest with a stale banner. Rerun one workflow only; do not fan out retries against DMI. Roll back worker if schema validation began failing after a deploy.
 

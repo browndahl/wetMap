@@ -34,6 +34,8 @@ export interface ForecastResponse {
   longitude: number;
   fetchedAt: string;
   attribution: typeof DMI_ATTRIBUTION;
+  source?: "dmi-edr" | "open-meteo-dmi";
+  model?: "DMI HARMONIE AROME";
   points: ForecastPoint[];
 }
 

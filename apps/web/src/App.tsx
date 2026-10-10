@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { CloudRain, Languages, Layers3, Pause, Play, Radio, Wind } from "lucide-react";
 import { DMI_ATTRIBUTION, RADAR_SCALE } from "@wetmap/shared";
 import { getForecast, getRadarManifest } from "./api";
@@ -7,6 +7,7 @@ import { translate } from "./i18n";
 import { useWeatherStore } from "./store";
 
 const WeatherMap = lazy(() => import("./components/WeatherMap"));
+const radarDelayBudgetMinutes = 25;
 
 const formatTime = (value: string | number, locale: "da" | "en") =>
   new Intl.DateTimeFormat(locale === "da" ? "da-DK" : "en-GB", {
@@ -23,6 +24,8 @@ const formatAge = (minutes: number, locale: "da" | "en") => {
 export default function App() {
   const state = useWeatherStore();
   const [now, setNow] = useState(() => Date.now());
+  const forecastLatitude = Number(state.selectedLocation.latitude.toFixed(2));
+  const forecastLongitude = Number(state.selectedLocation.longitude.toFixed(2));
   const manifest = useQuery({
     queryKey: ["radar-frames"],
     queryFn: ({ signal }) => getRadarManifest(signal),
@@ -30,10 +33,16 @@ export default function App() {
     refetchIntervalInBackground: true
   });
   const forecast = useQuery({
-    queryKey: ["forecast", state.selectedLocation],
-    queryFn: ({ signal }) => getForecast(state.selectedLocation.latitude, state.selectedLocation.longitude, signal),
+    queryKey: ["forecast", forecastLatitude, forecastLongitude],
+    queryFn: ({ signal }) => getForecast(forecastLatitude, forecastLongitude, signal),
     staleTime: 10 * 60_000,
-    retry: false
+    gcTime: 6 * 60 * 60_000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(500 * 2 ** attempt, 4_000),
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: "always",
+    placeholderData: keepPreviousData
   });
   const frames = manifest.data?.frames ?? [];
   const lastFrameIndex = Math.max(frames.length - 1, 0);
@@ -46,7 +55,7 @@ export default function App() {
   const ageMinutes = latestFrame
     ? Math.max(0, Math.floor((now - new Date(latestFrame.observedAt).getTime()) / 60_000))
     : Infinity;
-  const isStale = ageMinutes > 20;
+  const isStale = ageMinutes > radarDelayBudgetMinutes;
   const currentHour = new Date(now);
   currentHour.setMinutes(0, 0, 0);
   const forecastPoints = (forecast.data?.points ?? [])
@@ -94,7 +103,7 @@ export default function App() {
         <div className="brand-mark" aria-hidden="true"><CloudRain size={19} /></div>
         <div>
           <strong>wetmap</strong>
-          <span>aarhus · 56.16°n</span>
+          <span>{forecastLatitude.toFixed(2)}°n · {forecastLongitude.toFixed(2)}°e</span>
         </div>
         <span className={`freshness ${isStale ? "is-stale" : ""}`} role="status" title={t("freshnessHelp")}>
           <Radio size={13} aria-hidden="true" />
@@ -111,7 +120,10 @@ export default function App() {
       </header>
 
       <section id="weather-panel" className="weather-card glass" aria-labelledby="forecast-title">
-        <div className="eyebrow"><Wind size={15} aria-hidden="true" /> DMI HARMONIE</div>
+        <div className="eyebrow">
+          <Wind size={15} aria-hidden="true" /> DMI HARMONIE
+          {forecast.isFetching && !forecast.isLoading && <span role="status"> · {t("updatingForecast")}</span>}
+        </div>
         <h2 id="forecast-title">{t("forecast")}</h2>
         {forecast.isLoading && <p className="muted" role="status">{t("loadingForecast")}</p>}
         {forecast.isError && <p className="muted">{t("forecastUnavailable")}</p>}
@@ -199,6 +211,7 @@ export default function App() {
 
       <footer className="attribution">
         <a href="https://www.dmi.dk/friedata" target="_blank" rel="noreferrer">{DMI_ATTRIBUTION}</a>
+        {forecast.data?.source === "open-meteo-dmi" && <span> · <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a></span>}
         {activeFrame && <span> · {t("fetched")} <time dateTime={activeFrame.fetchedAt}>{formatTime(activeFrame.fetchedAt, state.locale)}</time></span>}
         <span> · © OpenStreetMap · OpenFreeMap</span>
       </footer>

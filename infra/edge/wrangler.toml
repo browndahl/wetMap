@@ -10,4 +10,5 @@ preview_bucket_name = "wetmap-radar-preview"
 
 [vars]
 DMI_BASE_URL = "https://opendataapi.dmi.dk"
+OPEN_METEO_BASE_URL = "https://api.open-meteo.com"
 ALLOWED_ORIGIN = "https://wetmap.pages.dev,https://wetmap-staging.pages.dev"
