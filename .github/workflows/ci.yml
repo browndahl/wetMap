@@ -1,0 +1,43 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with: { version: 12.11.2 }
+      - uses: actions/setup-node@v6
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -e 'apps/worker[dev]'
+      - run: ruff check apps/worker
+      - run: pytest apps/worker/tests
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with: { dotnet-version: "10.0.x" }
+      - run: dotnet restore apps/api.tests/WetMap.Api.Tests.csproj
+      - run: dotnet test apps/api.tests/WetMap.Api.Tests.csproj --no-restore --configuration Release
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t wetmap-api apps/api
+      - run: docker build -t wetmap-worker apps/worker
+      - run: docker build -t wetmap-web -f apps/web/Dockerfile .

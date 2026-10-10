@@ -1,0 +1,13 @@
+name = "wetmap-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-20"
+workers_dev = true
+
+[[r2_buckets]]
+binding = "RADAR"
+bucket_name = "wetmap-radar"
+preview_bucket_name = "wetmap-radar-preview"
+
+[vars]
+DMI_BASE_URL = "https://opendataapi.dmi.dk"
+ALLOWED_ORIGIN = "https://wetmap.pages.dev"

@@ -1,0 +1,21 @@
+{
+  "name": "wetmap",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.11.2",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "worker:test": "python3 -m pytest apps/worker/tests"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2",
+    "turbo": "2.5.8",
+    "typescript": "5.9.3"
+  }
+}

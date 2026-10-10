@@ -1,0 +1,29 @@
+name: Radar ingestion
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: radar-ingestion
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -e apps/worker
+      - name: Process and upload idempotently
+        run: wetmap-worker --output /tmp/wetmap-frames --limit 13 --upload-r2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      - name: Validate freshness
+        run: python .github/scripts/check_freshness.py /tmp/wetmap-frames/frames.json 15

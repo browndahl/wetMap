@@ -1,0 +1,38 @@
+name: Security
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  codeql:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: { language: [javascript-typescript, csharp, python] }
+    steps:
+      - uses: actions/checkout@v6
+      - uses: github/codeql-action/init@v4
+        with: { languages: "${{ matrix.language }}" }
+      - uses: github/codeql-action/analyze@v4
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  trivy-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: anchore/sbom-action@v0
+        with: { path: ".", format: cyclonedx-json, output-file: sbom.cdx.json }
+      - uses: aquasecurity/trivy-action@0.33.1
+        with: { scan-type: fs, scan-ref: ".", severity: HIGH,CRITICAL, exit-code: "1" }
+      - uses: actions/upload-artifact@v6
+        with: { name: sbom, path: sbom.cdx.json, retention-days: 7 }

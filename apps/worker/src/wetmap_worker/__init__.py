@@ -1,0 +1,1 @@
+"""WetMap radar processing worker."""

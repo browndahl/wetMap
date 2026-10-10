@@ -1,0 +1,17 @@
+name: Bug
+description: Report a reproducible WetMap problem
+body:
+  - type: textarea
+    id: observed
+    attributes: { label: Observed behavior }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: Expected behavior }
+    validations: { required: true }
+  - type: input
+    id: frame
+    attributes: { label: Radar frame ID }
+  - type: textarea
+    id: environment
+    attributes: { label: Browser and environment }

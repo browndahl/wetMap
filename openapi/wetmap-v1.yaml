@@ -1,0 +1,105 @@
+openapi: 3.1.0
+info:
+  title: WetMap API
+  version: 1.0.0
+  description: API responses based on DMI data always include processing attribution and fetch time.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/radar/frames:
+    get:
+      operationId: getRadarFrames
+      summary: Lists processed radar reflectivity frames
+      responses:
+        "200":
+          description: Current frame manifest
+          headers:
+            ETag: { schema: { type: string } }
+            X-DMI-Attribution: { schema: { type: string } }
+            X-Data-Fetched-At: { schema: { type: string, format: date-time } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RadarManifest" }
+        "304": { description: Not modified }
+  /api/v1/weather/forecast:
+    get:
+      operationId: getForecast
+      summary: Returns a DMI HARMONIE point forecast
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: { type: number, minimum: -90, maximum: 90 }
+        - name: lon
+          in: query
+          required: true
+          schema: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        "200":
+          description: Forecast
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForecastResponse" }
+        "400":
+          description: Invalid coordinates
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+components:
+  schemas:
+    RadarFrame:
+      type: object
+      required: [id, observedAt, fetchedAt, url, bounds, product, unit, sha256]
+      properties:
+        id: { type: string }
+        observedAt: { type: string, format: date-time }
+        fetchedAt: { type: string, format: date-time }
+        url: { type: string }
+        bounds:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { type: number }
+        product: { type: string, const: DBZH }
+        unit: { type: string, const: dBZ }
+        sha256: { type: string }
+    RadarManifest:
+      type: object
+      required: [schemaVersion, generatedAt, attribution, frames]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        generatedAt: { type: string, format: date-time }
+        attribution: { type: string, const: "Baseret på data fra DMI og efterfølgende bearbejdet" }
+        frames:
+          type: array
+          items: { $ref: "#/components/schemas/RadarFrame" }
+    ForecastPoint:
+      type: object
+      required: [step]
+      properties:
+        step: { type: string, format: date-time }
+        temperatureC: { type: [number, "null"] }
+        precipitationKgM2: { type: [number, "null"] }
+        windSpeedMs: { type: [number, "null"] }
+        cloudCoverPercent: { type: [number, "null"] }
+    ForecastResponse:
+      type: object
+      required: [latitude, longitude, fetchedAt, attribution, points]
+      properties:
+        latitude: { type: number }
+        longitude: { type: number }
+        fetchedAt: { type: string, format: date-time }
+        attribution: { type: string, const: "Baseret på data fra DMI og efterfølgende bearbejdet" }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/ForecastPoint" }
+    ProblemDetails:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        traceId: { type: string }

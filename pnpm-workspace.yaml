@@ -1,0 +1,9 @@
+packages:
+  - apps/web
+  - infra/edge
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true

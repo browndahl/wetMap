@@ -1,0 +1,19 @@
+{
+  "name": "@wetmap/edge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261010.1",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4",
+    "wrangler": "4.149.0"
+  }
+}

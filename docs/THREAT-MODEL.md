@@ -1,0 +1,12 @@
+# STRIDE threat model
+
+| Threat | Example | Control | Residual risk |
+|---|---|---|---|
+| Spoofing | Fake DMI frame/manifest | TLS, backend-only fetch, SHA-256, scoped R2 credentials | Compromised CI/provider account |
+| Tampering | Replace an immutable frame | R2 write limited to worker identity; immutable names and long cache | Provider/admin mutation remains possible |
+| Repudiation | Cannot link failure to request | Correlation ID, structured logs, GitHub run ID in deployments | Free telemetry retention is short |
+| Information disclosure | GPS leaked in logs | Browser-only locate; forecast sends rounded coordinate; query logging minimized | Edge/provider may log URL query; consider POST/tokenization if policy changes |
+| Denial of service | Exhaust DMI/Workers quota | CDN, 10-minute forecast cache, server budget, retry/circuit breaker, stale manifest | Free limits intentionally fail closed |
+| Elevation of privilege | Broad CI token changes infrastructure | Least-privilege environment secrets, protected production environment, OIDC preferred | Repository admin can change workflows |
+
+Top trust boundaries are browser↔Cloudflare, GitHub Actions↔DMI/R2, and operator↔provider control planes. No end-user authentication boundary exists in v1.
