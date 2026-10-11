@@ -49,7 +49,7 @@ flowchart LR
 
 The production path uses a small Cloudflare Worker because static frames, cached point forecasts, and cached Danish location search fit its free tier and avoid a cold-started container. The location search is Denmark-filtered and degrades independently, so a Photon outage does not remove radar, forecasts, map clicks, or saved browser favorites. The .NET 10 modular monolith remains the canonical, portable API and is used in Compose; see [ADR 0002](docs/adr/0002-edge-production-api.md).
 
-Every ingestion run also verifies the preceding nowcast against the newly observed radar field at a 20 dBZ significant-echo threshold. The rolling precision, recall, critical-success index, false alarms, misses and dBZ mean absolute error are available at `/api/v1/radar/nowcast/quality`. These metrics quantify skill; they do not imply perfect street-level certainty.
+Every ingestion run also verifies the preceding nowcast against the newly observed radar field at a 20 dBZ significant-echo threshold. The rolling precision, recall, critical-success index, false alarms, misses and dBZ mean absolute error are available at `/api/v1/radar/nowcast/quality`. CSI is compared with a no-motion persistence forecast at the same lead time; positive skill means optical flow beat simply leaving the last echo in place. These metrics quantify skill; they do not imply perfect street-level certainty.
 
 ## Repository
 

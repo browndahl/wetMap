@@ -392,6 +392,7 @@ components:
         - thresholdDbz
         - sampleCount
         - meanCriticalSuccessIndex
+        - meanCriticalSuccessIndexSkill
         - results
       properties:
         schemaVersion: { type: integer, const: 1 }
@@ -400,6 +401,8 @@ components:
         sampleCount: { type: integer, minimum: 0, maximum: 288 }
         meanCriticalSuccessIndex:
           { type: [number, "null"], minimum: 0, maximum: 1 }
+        meanCriticalSuccessIndexSkill:
+          { type: [number, "null"], minimum: -1, maximum: 1 }
         results:
           type: array
           maxItems: 288
@@ -420,6 +423,8 @@ components:
               - precision
               - recall
               - criticalSuccessIndex
+              - persistenceCriticalSuccessIndex
+              - criticalSuccessIndexSkill
               - dbzMeanAbsoluteError
             properties:
               verifiedAt: { type: string, format: date-time }
@@ -437,6 +442,10 @@ components:
               recall: { type: [number, "null"], minimum: 0, maximum: 1 }
               criticalSuccessIndex:
                 { type: [number, "null"], minimum: 0, maximum: 1 }
+              persistenceCriticalSuccessIndex:
+                { type: [number, "null"], minimum: 0, maximum: 1 }
+              criticalSuccessIndexSkill:
+                { type: [number, "null"], minimum: -1, maximum: 1 }
               dbzMeanAbsoluteError: { type: number, minimum: 0 }
     LocationResult:
       type: object

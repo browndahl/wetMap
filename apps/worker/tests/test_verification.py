@@ -65,6 +65,9 @@ def test_scores_previous_nowcast_against_new_observation(tmp_path: Path) -> None
     assert result["leadMinutes"] == 5
     assert result["hits"] > 0
     assert result["criticalSuccessIndex"] > 0.9
+    assert result["persistenceCriticalSuccessIndex"] is not None
+    assert result["criticalSuccessIndexSkill"] is not None
     history = append_verification_history(tmp_path / "history.json", result)
     assert history["sampleCount"] == 1
     assert history["meanCriticalSuccessIndex"] > 0.9
+    assert history["meanCriticalSuccessIndexSkill"] is not None

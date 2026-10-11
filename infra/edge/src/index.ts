@@ -424,6 +424,7 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
         thresholdDbz: 20,
         sampleCount: 0,
         meanCriticalSuccessIndex: null,
+        meanCriticalSuccessIndexSkill: null,
         results: [],
       },
       { headers: jsonHeaders },

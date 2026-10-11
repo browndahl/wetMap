@@ -15,6 +15,38 @@ SIGNIFICANT_ECHO_DBZ = 20
 SIGNIFICANT_ECHO_ENCODED = SIGNIFICANT_ECHO_DBZ + 32
 
 
+def _categorical_scores(predicted: np.ndarray, actual: np.ndarray) -> dict[str, Any]:
+    valid = (predicted > 0) & (actual > 0)
+    predicted_echo = (predicted >= SIGNIFICANT_ECHO_ENCODED) & valid
+    actual_echo = (actual >= SIGNIFICANT_ECHO_ENCODED) & valid
+    hits = int(np.count_nonzero(predicted_echo & actual_echo))
+    misses = int(np.count_nonzero(~predicted_echo & actual_echo & valid))
+    false_alarms = int(np.count_nonzero(predicted_echo & ~actual_echo & valid))
+    correct_negatives = int(np.count_nonzero(~predicted_echo & ~actual_echo & valid))
+    union = hits + misses + false_alarms
+    echo_pixels = valid & (predicted_echo | actual_echo)
+    dbz_mae = (
+        float(np.mean(np.abs(predicted[echo_pixels].astype(float) - actual[echo_pixels])))
+        if np.any(echo_pixels)
+        else 0.0
+    )
+
+    def ratio(numerator: int, denominator: int) -> float | None:
+        return round(numerator / denominator, 4) if denominator else None
+
+    return {
+        "validPixels": int(np.count_nonzero(valid)),
+        "hits": hits,
+        "misses": misses,
+        "falseAlarms": false_alarms,
+        "correctNegatives": correct_negatives,
+        "precision": ratio(hits, hits + false_alarms),
+        "recall": ratio(hits, hits + misses),
+        "criticalSuccessIndex": ratio(hits, union),
+        "dbzMeanAbsoluteError": round(dbz_mae, 2),
+    }
+
+
 def verify_previous_nowcast(
     metadata_path: Path,
     cube_path: Path,
@@ -44,29 +76,17 @@ def verify_previous_nowcast(
     cube = np.frombuffer(cube_bytes, dtype=np.uint8)
     if cube.size != width * height * frame_count:
         raise ValueError("Previous point nowcast has an unexpected size")
-    predicted = cube.reshape(height, width, frame_count)[..., candidate_index]
+    cube = cube.reshape(height, width, frame_count)
+    predicted = cube[..., candidate_index]
     observed_rgba = np.asarray(Image.open(observed_frame_path).convert("RGBA"))
     actual = _reflectivity_grid(observed_rgba[..., 3])
     if actual.shape != predicted.shape:
         raise ValueError("Observed and predicted point grids have different dimensions")
 
-    valid = (predicted > 0) & (actual > 0)
-    predicted_echo = (predicted >= SIGNIFICANT_ECHO_ENCODED) & valid
-    actual_echo = (actual >= SIGNIFICANT_ECHO_ENCODED) & valid
-    hits = int(np.count_nonzero(predicted_echo & actual_echo))
-    misses = int(np.count_nonzero(~predicted_echo & actual_echo & valid))
-    false_alarms = int(np.count_nonzero(predicted_echo & ~actual_echo & valid))
-    correct_negatives = int(np.count_nonzero(~predicted_echo & ~actual_echo & valid))
-    union = hits + misses + false_alarms
-    echo_pixels = valid & (predicted_echo | actual_echo)
-    dbz_mae = (
-        float(np.mean(np.abs(predicted[echo_pixels].astype(float) - actual[echo_pixels])))
-        if np.any(echo_pixels)
-        else 0.0
-    )
-
-    def ratio(numerator: int, denominator: int) -> float | None:
-        return round(numerator / denominator, 4) if denominator else None
+    forecast_scores = _categorical_scores(predicted, actual)
+    persistence_scores = _categorical_scores(cube[..., 0], actual)
+    forecast_csi = forecast_scores["criticalSuccessIndex"]
+    persistence_csi = persistence_scores["criticalSuccessIndex"]
 
     return {
         "verifiedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -75,15 +95,13 @@ def verify_previous_nowcast(
         "observedAt": observed_at,
         "leadMinutes": candidate["leadMinutes"],
         "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
-        "validPixels": int(np.count_nonzero(valid)),
-        "hits": hits,
-        "misses": misses,
-        "falseAlarms": false_alarms,
-        "correctNegatives": correct_negatives,
-        "precision": ratio(hits, hits + false_alarms),
-        "recall": ratio(hits, hits + misses),
-        "criticalSuccessIndex": ratio(hits, union),
-        "dbzMeanAbsoluteError": round(dbz_mae, 2),
+        **forecast_scores,
+        "persistenceCriticalSuccessIndex": persistence_csi,
+        "criticalSuccessIndexSkill": (
+            round(forecast_csi - persistence_csi, 4)
+            if forecast_csi is not None and persistence_csi is not None
+            else None
+        ),
     }
 
 
@@ -102,6 +120,9 @@ def append_verification_history(
     history.append(result)
     history = history[-maximum_entries:]
     scored = [entry for entry in history if entry.get("criticalSuccessIndex") is not None]
+    skill_scored = [
+        entry for entry in history if entry.get("criticalSuccessIndexSkill") is not None
+    ]
     return {
         "schemaVersion": 1,
         "generatedAt": result["verifiedAt"],
@@ -113,6 +134,15 @@ def append_verification_history(
                 4,
             )
             if scored
+            else None
+        ),
+        "meanCriticalSuccessIndexSkill": (
+            round(
+                sum(entry["criticalSuccessIndexSkill"] for entry in skill_scored)
+                / len(skill_scored),
+                4,
+            )
+            if skill_scored
             else None
         ),
         "results": history,
