@@ -19,6 +19,15 @@ const apiMocks = vi.hoisted(() => ({
     attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
     frames: [] as Array<Record<string, unknown>>,
   },
+  nowcast: {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
+    method: "dense-optical-flow-extrapolation",
+    basedOnObservedAt: "2026-10-10T21:00:00Z",
+    sourceFrameCount: 3,
+    frames: [] as Array<Record<string, unknown>>,
+  },
   forecast: {
     latitude: 56.16,
     longitude: 10.2,
@@ -46,6 +55,12 @@ const apiMocks = vi.hoisted(() => ({
     longitude: number;
     type: "address" | "place";
   }>,
+  getPushConfig: vi.fn(async () => ({
+    available: true,
+    publicKey: "test-key",
+  })),
+  savePushSubscription: vi.fn(async () => ({ subscribed: true })),
+  deletePushSubscription: vi.fn(async () => undefined),
 }));
 
 vi.mock("./components/WeatherMap", () => ({
@@ -63,8 +78,12 @@ vi.mock("./components/WeatherMap", () => ({
 }));
 vi.mock("./api", () => ({
   getRadarManifest: async () => apiMocks.manifest,
+  getRadarNowcast: async () => apiMocks.nowcast,
   getForecast: async () => apiMocks.forecast,
   getRainNextHour: async () => apiMocks.rain,
+  getPushConfig: apiMocks.getPushConfig,
+  savePushSubscription: apiMocks.savePushSubscription,
+  deletePushSubscription: apiMocks.deletePushSubscription,
   searchLocations: async (query: string) => ({
     query,
     results: apiMocks.locations,
@@ -82,9 +101,13 @@ vi.mock("./api", () => ({
 beforeEach(() => {
   window.localStorage.clear();
   apiMocks.manifest.frames = [];
+  apiMocks.nowcast.frames = [];
   apiMocks.forecast.points = [];
   apiMocks.rain.points = [];
   apiMocks.locations = [];
+  apiMocks.getPushConfig.mockClear();
+  apiMocks.savePushSubscription.mockClear();
+  apiMocks.deletePushSubscription.mockClear();
   useWeatherStore.setState({
     selectedFrame: -1,
     playing: false,
@@ -100,7 +123,63 @@ beforeEach(() => {
   });
 });
 
-afterEach(cleanup);
+it("labels future optical-flow frames as nowcasts with confidence", async () => {
+  const observedAt = new Date(Date.now() - 5 * 60_000).toISOString();
+  const predictedAt = new Date(Date.now() + 5 * 60_000).toISOString();
+  apiMocks.manifest.frames = [
+    {
+      id: "latest",
+      observedAt,
+      fetchedAt: new Date().toISOString(),
+      url: "/frames/latest.webp",
+      bounds: [7, 54, 13, 58],
+      product: "DBZH",
+      unit: "dBZ",
+      sha256: "observed",
+    },
+  ];
+  apiMocks.nowcast.basedOnObservedAt = observedAt;
+  apiMocks.nowcast.frames = [
+    {
+      id: "latest-plus-05m",
+      predictedAt,
+      generatedAt: new Date().toISOString(),
+      basedOnObservedAt: observedAt,
+      leadMinutes: 5,
+      url: "/nowcast/latest-plus-05m.webp",
+      bounds: [7, 54, 13, 58],
+      product: "DBZH_NOWCAST",
+      unit: "dBZ",
+      confidence: 0.88,
+      sha256: "predicted",
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  await waitFor(
+    () =>
+      expect(screen.getByTestId("active-frame")).toHaveTextContent(
+        "latest-plus-05m",
+      ),
+    { timeout: 1_500 },
+  );
+  expect(screen.getByText("Radar-nowcast · +5 min")).toBeInTheDocument();
+  expect(screen.getByText("Sikkerhed 88%")).toBeInTheDocument();
+  expect(screen.getByText(/optisk flow/)).toBeInTheDocument();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  Reflect.deleteProperty(window.navigator, "serviceWorker");
+});
 
 it("shows an honest empty radar state", async () => {
   const client = new QueryClient({
@@ -300,6 +379,64 @@ it("explains the next-hour rain estimate and handles blocked alerts", async () =
 
   fireEvent.click(screen.getByRole("button", { name: "Varsl mig" }));
   expect(
-    screen.getByText("Notifikationer er blokeret i browseren."),
+    screen.getByText(/Baggrundsvarsler kunne ikke aktiveres/),
+  ).toBeInTheDocument();
+});
+
+it("creates a server-backed push subscription from a user gesture", async () => {
+  const subscription = {
+    endpoint: "https://push.example/subscription",
+    toJSON: () => ({
+      endpoint: "https://push.example/subscription",
+      keys: { auth: "auth", p256dh: "key" },
+    }),
+    unsubscribe: vi.fn(async () => true),
+  };
+  const pushManager = {
+    getSubscription: vi.fn(async () => null),
+    subscribe: vi.fn(async () => subscription),
+  };
+  Object.defineProperty(window.navigator, "serviceWorker", {
+    configurable: true,
+    value: { ready: Promise.resolve({ pushManager }) },
+  });
+  vi.stubGlobal("PushManager", class {});
+  vi.stubGlobal("Notification", { permission: "granted" });
+  apiMocks.rain.points = [
+    {
+      startsAt: "2026-10-11T08:15:00Z",
+      endsAt: "2026-10-11T08:30:00Z",
+      precipitationMm: 0.1,
+      intensity: "light",
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Varsl mig" }));
+
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Regnvarsel slået til" }),
+    ).toBeInTheDocument(),
+  );
+  expect(pushManager.subscribe).toHaveBeenCalledWith(
+    expect.objectContaining({ userVisibleOnly: true }),
+  );
+  expect(apiMocks.savePushSubscription).toHaveBeenCalledWith(
+    subscription,
+    56.1629,
+    10.2039,
+    "Aarhus",
+    "da",
+  );
+  expect(
+    screen.getByText("Virker også, når WetMap er lukket."),
   ).toBeInTheDocument();
 });

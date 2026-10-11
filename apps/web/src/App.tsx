@@ -13,8 +13,18 @@ import {
   SkipForward,
   Wind,
 } from "lucide-react";
-import { DMI_ATTRIBUTION, RADAR_SCALE } from "@wetmap/shared";
-import { getForecast, getRadarManifest, getRainNextHour } from "./api";
+import {
+  DMI_ATTRIBUTION,
+  RADAR_SCALE,
+  type NowcastFrame,
+  type RadarFrame,
+} from "@wetmap/shared";
+import {
+  getForecast,
+  getRadarManifest,
+  getRadarNowcast,
+  getRainNextHour,
+} from "./api";
 import { translate } from "./i18n";
 import { useWeatherStore } from "./store";
 import LocationSearch from "./components/LocationSearch";
@@ -22,6 +32,13 @@ import RainNextHour from "./components/RainNextHour";
 
 const WeatherMap = lazy(() => import("./components/WeatherMap"));
 const radarDelayBudgetMinutes = 25;
+
+const isNowcastFrame = (
+  frame: RadarFrame | NowcastFrame | undefined,
+): frame is NowcastFrame => Boolean(frame && "predictedAt" in frame);
+
+const radarFrameTime = (frame: RadarFrame | NowcastFrame) =>
+  isNowcastFrame(frame) ? frame.predictedAt : frame.observedAt;
 
 const formatTime = (value: string | number, locale: "da" | "en") =>
   new Intl.DateTimeFormat(locale === "da" ? "da-DK" : "en-GB", {
@@ -58,6 +75,12 @@ export default function App() {
     refetchInterval: 60_000,
     refetchIntervalInBackground: true,
   });
+  const nowcast = useQuery({
+    queryKey: ["radar-nowcast"],
+    queryFn: ({ signal }) => getRadarNowcast(signal),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
+  });
   const forecast = useQuery({
     queryKey: ["forecast", forecastLatitude, forecastLongitude],
     queryFn: ({ signal }) =>
@@ -84,13 +107,33 @@ export default function App() {
     refetchOnWindowFocus: "always",
   });
   const frames = manifest.data?.frames ?? [];
-  const lastFrameIndex = Math.max(frames.length - 1, 0);
+  const latestObservationIndex = Math.max(frames.length - 1, 0);
+  const latestFrame = frames[latestObservationIndex];
+  const nowcastMatchesLatestObservation =
+    latestFrame && nowcast.data
+      ? Math.abs(
+          Date.parse(nowcast.data.basedOnObservedAt) -
+            Date.parse(latestFrame.observedAt),
+        ) <=
+        10 * 60_000
+      : false;
+  const nowcastFrames = nowcastMatchesLatestObservation
+    ? (nowcast.data?.frames ?? []).filter(
+        (frame) => Date.parse(frame.predictedAt) > now,
+      )
+    : [];
+  const radarFrames: Array<RadarFrame | NowcastFrame> = [
+    ...frames,
+    ...nowcastFrames,
+  ];
+  const lastFrameIndex = Math.max(radarFrames.length - 1, 0);
   const safeIndex =
     state.selectedFrame < 0
-      ? lastFrameIndex
+      ? latestObservationIndex
       : Math.min(state.selectedFrame, lastFrameIndex);
-  const activeFrame = frames[safeIndex];
-  const latestFrame = frames[lastFrameIndex];
+  const activeFrame = radarFrames[safeIndex];
+  const activeIsNowcast = isNowcastFrame(activeFrame);
+  const activeFrameTime = activeFrame ? radarFrameTime(activeFrame) : undefined;
   const t = (key: Parameters<typeof translate>[1]) =>
     translate(state.locale, key);
   const ageMinutes = latestFrame
@@ -100,10 +143,10 @@ export default function App() {
       )
     : Infinity;
   const isStale = ageMinutes > radarDelayBudgetMinutes;
-  const activeAgeMinutes = activeFrame
+  const activeAgeMinutes = activeFrameTime
     ? Math.max(
         0,
-        Math.floor((now - new Date(activeFrame.observedAt).getTime()) / 60_000),
+        Math.floor((now - new Date(activeFrameTime).getTime()) / 60_000),
       )
     : 0;
   const currentHour = new Date(now);
@@ -139,7 +182,7 @@ export default function App() {
   }, [timelineCollapsed]);
 
   useEffect(() => {
-    if (!state.playing || frames.length < 2) return;
+    if (!state.playing || radarFrames.length < 2) return;
     if (safeIndex >= lastFrameIndex) {
       state.setPlaying(false);
       return;
@@ -149,37 +192,37 @@ export default function App() {
       700,
     );
     return () => window.clearTimeout(timer);
-  }, [frames.length, lastFrameIndex, safeIndex, state]);
+  }, [lastFrameIndex, radarFrames.length, safeIndex, state]);
 
   useEffect(() => {
     if (
-      frames.length &&
-      (state.selectedFrame < 0 || state.selectedFrame >= frames.length)
+      radarFrames.length &&
+      (state.selectedFrame < 0 || state.selectedFrame >= radarFrames.length)
     ) {
-      const lastIndex = frames.length - 1;
       const reducedMotion =
         window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
         false;
       if (
-        frames.length > 1 &&
+        radarFrames.length > 1 &&
         !reducedMotion &&
         !initialRadarPlaybackStarted.current
       ) {
         initialRadarPlaybackStarted.current = true;
-        state.setSelectedFrame(Math.max(0, lastIndex - 6));
+        state.setSelectedFrame(Math.max(0, latestObservationIndex - 6));
         state.setPlaying(true);
       } else {
-        state.setSelectedFrame(lastIndex);
+        state.setSelectedFrame(latestObservationIndex);
       }
     }
-  }, [frames.length, state]);
+  }, [latestObservationIndex, radarFrames.length, state]);
 
   const togglePlayback = () => {
     if (state.playing) {
       state.setPlaying(false);
       return;
     }
-    if (safeIndex >= lastFrameIndex) state.setSelectedFrame(0);
+    if (safeIndex >= lastFrameIndex)
+      state.setSelectedFrame(Math.max(0, latestObservationIndex - 6));
     state.setPlaying(true);
   };
 
@@ -195,7 +238,7 @@ export default function App() {
           </div>
         }
       >
-        <WeatherMap frames={frames} activeIndex={safeIndex} />
+        <WeatherMap frames={radarFrames} activeIndex={safeIndex} />
       </Suspense>
 
       <header className="topbar glass" aria-label="WetMap">
@@ -283,6 +326,8 @@ export default function App() {
           isError={rain.isError}
           locale={state.locale}
           locationName={state.selectedLocation.name}
+          latitude={state.selectedLocation.latitude}
+          longitude={state.selectedLocation.longitude}
         />
       </section>
 
@@ -307,13 +352,15 @@ export default function App() {
         <div className="timeline-heading">
           <div>
             <span className="eyebrow">
-              {safeIndex === lastFrameIndex
-                ? t("latestObservation")
-                : t("observed")}
+              {activeIsNowcast
+                ? `${t("nowcast")} · +${activeFrame.leadMinutes} min`
+                : safeIndex === latestObservationIndex
+                  ? t("latestObservation")
+                  : t("observed")}
             </span>
             <h1 id="timeline-title">
-              {activeFrame
-                ? formatTime(activeFrame.observedAt, state.locale)
+              {activeFrameTime
+                ? formatTime(activeFrameTime, state.locale)
                 : t("radar")}
             </h1>
           </div>
@@ -343,7 +390,7 @@ export default function App() {
               className="play-button"
               onClick={togglePlayback}
               aria-label={state.playing ? t("pause") : t("play")}
-              disabled={frames.length < 2}
+              disabled={radarFrames.length < 2}
             >
               {state.playing ? (
                 <Pause aria-hidden="true" />
@@ -356,21 +403,42 @@ export default function App() {
 
         {!timelineCollapsed && (
           <div id="timeline-details">
-            {frames.length ? (
+            {radarFrames.length ? (
               <>
                 <div className="timeline-context">
-                  <span>
-                    <Clock3 size={14} aria-hidden="true" />
-                    {t("measured")}{" "}
-                    {formatTime(activeFrame.observedAt, state.locale)}
-                  </span>
-                  <span className="timeline-gap">
-                    {activeAgeMinutes} {t("minutesBehindNow")}
-                  </span>
-                  {safeIndex < lastFrameIndex && (
+                  {activeIsNowcast ? (
+                    <>
+                      <span>
+                        <Clock3 size={14} aria-hidden="true" />
+                        {t("nowcastBasedOn")}{" "}
+                        {formatTime(
+                          activeFrame.basedOnObservedAt,
+                          state.locale,
+                        )}
+                      </span>
+                      <span className="timeline-gap">
+                        {t("nowcastConfidence")}{" "}
+                        {Math.round(activeFrame.confidence * 100)}%
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        <Clock3 size={14} aria-hidden="true" />
+                        {t("measured")}{" "}
+                        {formatTime(activeFrame.observedAt, state.locale)}
+                      </span>
+                      <span className="timeline-gap">
+                        {activeAgeMinutes} {t("minutesBehindNow")}
+                      </span>
+                    </>
+                  )}
+                  {safeIndex !== latestObservationIndex && (
                     <button
                       type="button"
-                      onClick={() => state.setSelectedFrame(lastFrameIndex)}
+                      onClick={() =>
+                        state.setSelectedFrame(latestObservationIndex)
+                      }
                     >
                       <SkipForward size={14} aria-hidden="true" />
                       {t("jumpToLatest")}
@@ -381,15 +449,15 @@ export default function App() {
                   className="scrubber"
                   type="range"
                   min="0"
-                  max={Math.max(frames.length - 1, 0)}
+                  max={Math.max(radarFrames.length - 1, 0)}
                   value={safeIndex}
                   onChange={(event) =>
                     state.setSelectedFrame(Number(event.target.value))
                   }
                   aria-label={t("radarTime")}
                   aria-valuetext={
-                    activeFrame
-                      ? formatTime(activeFrame.observedAt, state.locale)
+                    activeFrameTime
+                      ? formatTime(activeFrameTime, state.locale)
                       : undefined
                   }
                 />
@@ -397,12 +465,23 @@ export default function App() {
                   <time dateTime={frames[0].observedAt}>
                     {formatTime(frames[0].observedAt, state.locale)}
                   </time>
-                  <span>{t("observedHistory")}</span>
-                  <time dateTime={latestFrame.observedAt}>
-                    {formatTime(latestFrame.observedAt, state.locale)}
+                  <span>
+                    {nowcastFrames.length
+                      ? t("nowcastTimeline")
+                      : t("observedHistory")}
+                  </span>
+                  <time dateTime={radarFrameTime(radarFrames.at(-1)!)}>
+                    {formatTime(
+                      radarFrameTime(radarFrames.at(-1)!),
+                      state.locale,
+                    )}
                   </time>
                 </div>
-                <p className="timeline-note">{t("futureRadarNote")}</p>
+                <p className="timeline-note">
+                  {nowcastFrames.length
+                    ? t("nowcastNote")
+                    : t("futureRadarNote")}
+                </p>
               </>
             ) : (
               <div className="empty-state" role="status">
@@ -457,8 +536,19 @@ export default function App() {
           <span>
             {" "}
             · {t("fetched")}{" "}
-            <time dateTime={activeFrame.fetchedAt}>
-              {formatTime(activeFrame.fetchedAt, state.locale)}
+            <time
+              dateTime={
+                isNowcastFrame(activeFrame)
+                  ? activeFrame.generatedAt
+                  : activeFrame.fetchedAt
+              }
+            >
+              {formatTime(
+                isNowcastFrame(activeFrame)
+                  ? activeFrame.generatedAt
+                  : activeFrame.fetchedAt,
+                state.locale,
+              )}
             </time>
           </span>
         )}

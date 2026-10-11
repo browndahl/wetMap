@@ -10,9 +10,10 @@
 - [x] Secrets come from GitHub environments/provider secret stores; `.env` is ignored.
 - [x] Containers run read-only with `no-new-privileges`; API/worker run non-root.
 - [x] CodeQL, Dependabot, gitleaks, Trivy and CycloneDX SBOM workflows are configured.
-- [x] GPS is processed on-device for map location. It is sent only when a point forecast is explicitly selected/requested; no identity or database exists in v1.
-- [x] Rain notifications require an explicit click and browser permission. The preference and duplicate-suppression key remain in local storage; no push token or location is stored server-side.
+- [x] GPS is processed on-device for map location. It is sent when a point forecast is selected/requested; no WetMap account or identity exists.
+- [x] Background rain alerts require an explicit click and browser permission. The R2 record contains only the capability-style push endpoint/public encryption keys, locale, label, and coordinates rounded to 0.01°. Mutation endpoints enforce the production/preview Origin allow-list; disabling deletes the record and 404/410 push endpoints are removed automatically.
+- [x] VAPID private material remains a Worker secret. It is never included in the Pages bundle, API response, repository, or logs.
 - [ ] Configure Cloudflare managed rules/rate rule and validate headers on the deployed domain.
 - [ ] Triage scanner findings and pin image digests before production approval.
 
-GDPR: v1 stores no user profile, precise GPS history, or identifiers. Infrastructure access logs may contain IP addresses; set the shortest provider retention available, restrict access, document subprocessors, and publish a privacy notice before launch.
+GDPR: v1 stores no user profile or location history. Opted-in background alerts require one current location rounded to 0.01° and a pseudonymous push capability endpoint until the user disables it or the endpoint expires. Treat both as personal data, document the purpose/retention and browser push provider as a subprocessor, restrict R2 access, and publish a privacy notice before launch. Infrastructure access logs may contain IP addresses; set the shortest provider retention available.

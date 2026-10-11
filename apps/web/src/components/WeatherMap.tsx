@@ -6,7 +6,7 @@ import type {
   MapMouseEvent,
 } from "maplibre-gl";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
-import type { RadarFrame } from "@wetmap/shared";
+import type { NowcastFrame, RadarFrame } from "@wetmap/shared";
 import { useWeatherStore } from "../store";
 import { translate } from "../i18n";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -17,7 +17,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 interface Props {
-  frames: RadarFrame[];
+  frames: Array<RadarFrame | NowcastFrame>;
   activeIndex: number;
 }
 
@@ -25,7 +25,7 @@ const framesBase =
   import.meta.env.VITE_FRAMES_BASE_URL || window.location.origin;
 
 const imageCoordinates = (
-  frame: RadarFrame,
+  frame: RadarFrame | NowcastFrame,
 ): [[number, number], [number, number], [number, number], [number, number]] => {
   const [west, south, east, north] = frame.bounds;
   return [

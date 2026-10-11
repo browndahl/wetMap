@@ -26,6 +26,30 @@ export interface RadarManifest {
   frames: RadarFrame[];
 }
 
+export interface NowcastFrame {
+  id: string;
+  predictedAt: string;
+  generatedAt: string;
+  basedOnObservedAt: string;
+  leadMinutes: number;
+  url: string;
+  bounds: RadarBounds;
+  product: "DBZH_NOWCAST";
+  unit: "dBZ";
+  confidence: number;
+  sha256: string;
+}
+
+export interface NowcastManifest {
+  schemaVersion: 1;
+  generatedAt: string;
+  attribution: typeof DMI_ATTRIBUTION;
+  method: "dense-optical-flow-extrapolation";
+  basedOnObservedAt: string;
+  sourceFrameCount: number;
+  frames: NowcastFrame[];
+}
+
 export interface ForecastPoint {
   step: string;
   temperatureC: number | null;

@@ -2,6 +2,7 @@ import type {
   ForecastResponse,
   LocationResult,
   LocationSearchResponse,
+  NowcastManifest,
   RadarManifest,
   RainNextHourResponse,
 } from "@wetmap/shared";
@@ -21,10 +22,29 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function mutateJson<T>(
+  url: string,
+  method: "POST" | "DELETE",
+  body: unknown,
+): Promise<T | undefined> {
+  const response = await fetch(url, {
+    method,
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok)
+    throw new Error(`${response.status} ${response.statusText}`);
+  if (response.status === 204) return undefined;
+  return response.json() as Promise<T>;
+}
+
 export const getRadarManifest = (signal?: AbortSignal) =>
   getJson<RadarManifest>(`${framesBase}/api/v1/radar/frames`, signal).catch(
     () => getJson<RadarManifest>("/frames/frames.json", signal),
   );
+
+export const getRadarNowcast = (signal?: AbortSignal) =>
+  getJson<NowcastManifest>(`${framesBase}/api/v1/radar/nowcast`, signal);
 
 export const getForecast = (
   latitude: number,
@@ -45,6 +65,34 @@ export const getRainNextHour = (
     `${apiBase}/api/v1/weather/precipitation?lat=${latitude.toFixed(5)}&lon=${longitude.toFixed(5)}&v=${precipitationApiVersion}`,
     signal,
   );
+
+export const getPushConfig = (signal?: AbortSignal) =>
+  getJson<{ available: boolean; publicKey: string | null }>(
+    `${apiBase}/api/v1/push/config`,
+    signal,
+  );
+
+export const savePushSubscription = (
+  subscription: PushSubscription,
+  latitude: number,
+  longitude: number,
+  locationName: string,
+  locale: "da" | "en",
+) =>
+  mutateJson<{ subscribed: true }>(
+    `${apiBase}/api/v1/push/subscriptions`,
+    "POST",
+    {
+      subscription: subscription.toJSON(),
+      latitude,
+      longitude,
+      locationName,
+      locale,
+    },
+  );
+
+export const deletePushSubscription = (endpoint: string) =>
+  mutateJson(`${apiBase}/api/v1/push/subscriptions`, "DELETE", { endpoint });
 
 export const searchLocations = (
   query: string,

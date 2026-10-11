@@ -37,8 +37,19 @@ def test_upload_run_only_processes_new_frames(tmp_path: Path, monkeypatch) -> No
         return SimpleNamespace(bounds=[7, 54, 13, 58], product="DBZH", unit="dBZ", sha256="new-sha")
 
     uploaded: list[Path] = []
+
+    def fake_download_frames(output: Path, names: list[str]):
+        paths = []
+        for name in names:
+            path = output / name
+            path.write_bytes(b"webp")
+            paths.append(path)
+        return paths
+
     monkeypatch.setattr(cli, "DmiClient", FakeClient)
     monkeypatch.setattr(cli, "process_hdf5", fake_process)
+    monkeypatch.setattr(cli, "download_frames_r2", fake_download_frames)
+    monkeypatch.setattr(cli, "generate_nowcast", lambda *_args: ({}, {}, []))
     monkeypatch.setattr(cli, "upload_r2", lambda _output, paths: uploaded.extend(paths))
 
     cli.run(tmp_path, limit=2, upload=True)

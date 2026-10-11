@@ -25,11 +25,30 @@ class MemoryR2 {
   async get(key: string) {
     const value = this.values.get(key);
     if (!value) return null;
-    return { json: async () => JSON.parse(value) };
+    return {
+      json: async () => JSON.parse(value),
+      body: new Response(value).body,
+      httpEtag: `"${key}"`,
+      writeHttpMetadata: (headers: Headers) =>
+        headers.set("Content-Type", "application/json"),
+    };
   }
 
   async put(key: string, value: string | ReadableStream | ArrayBuffer) {
     this.values.set(key, typeof value === "string" ? value : String(value));
+  }
+
+  async delete(key: string) {
+    this.values.delete(key);
+  }
+
+  async list(options: { prefix?: string }) {
+    return {
+      objects: Array.from(this.values.keys())
+        .filter((key) => key.startsWith(options.prefix ?? ""))
+        .map((key) => ({ key })),
+      truncated: false,
+    };
   }
 }
 
@@ -81,6 +100,123 @@ function setup() {
   } as unknown as ExecutionContext;
   return { cache, r2, waits, env, context };
 }
+
+describe("radar nowcast edge endpoint", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("serves the generated optical-flow manifest with short caching", async () => {
+    const { env, context, r2 } = setup();
+    r2.values.set(
+      "nowcast/nowcast.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        generatedAt: "2026-10-11T12:11:00Z",
+        attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
+        method: "dense-optical-flow-extrapolation",
+        basedOnObservedAt: "2026-10-11T12:10:00Z",
+        sourceFrameCount: 3,
+        frames: [{ id: "frame-plus-05m", leadMinutes: 5 }],
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://api.test/api/v1/radar/nowcast"),
+      env,
+      context,
+    );
+    const body = (await response.json()) as {
+      method: string;
+      frames: unknown[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toContain("max-age=60");
+    expect(body.method).toBe("dense-optical-flow-extrapolation");
+    expect(body.frames).toHaveLength(1);
+  });
+});
+
+describe("background push subscription endpoints", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("stores only validated, rounded Danish locations and allows deletion", async () => {
+    const { env, context, r2 } = setup();
+    Object.assign(env, {
+      VAPID_PUBLIC_KEY: "public-key",
+      VAPID_PRIVATE_KEY: "private-key",
+    });
+    const subscription = {
+      endpoint: "https://push.example.test/subscription/123",
+      expirationTime: null,
+      keys: { auth: "a".repeat(22), p256dh: "b".repeat(88) },
+    };
+    const create = await worker.fetch(
+      new Request("https://api.test/api/v1/push/subscriptions", {
+        method: "POST",
+        headers: {
+          Origin: "https://wetmap.pages.dev",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          subscription,
+          latitude: 56.16291,
+          longitude: 10.20391,
+          locationName: "Aarhus",
+          locale: "da",
+        }),
+      }),
+      env,
+      context,
+    );
+
+    expect(create.status).toBe(201);
+    const storedKey = Array.from(r2.values.keys()).find((key) =>
+      key.startsWith("push/subscriptions/"),
+    );
+    expect(storedKey).toBeDefined();
+    expect(JSON.parse(r2.values.get(storedKey!)!)).toMatchObject({
+      latitude: 56.16,
+      longitude: 10.2,
+      locationName: "Aarhus",
+      activeRainEvent: false,
+    });
+
+    const remove = await worker.fetch(
+      new Request("https://api.test/api/v1/push/subscriptions", {
+        method: "DELETE",
+        headers: {
+          Origin: "https://wetmap.pages.dev",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
+      }),
+      env,
+      context,
+    );
+    expect(remove.status).toBe(204);
+    expect(r2.values.has(storedKey!)).toBe(false);
+  });
+
+  it("rejects cross-origin subscription writes", async () => {
+    const { env, context } = setup();
+    const response = await worker.fetch(
+      new Request("https://api.test/api/v1/push/subscriptions", {
+        method: "POST",
+        headers: { Origin: "https://evil.example" },
+        body: "{}",
+      }),
+      env,
+      context,
+    );
+    expect(response.status).toBe(403);
+  });
+});
 
 describe("forecast edge endpoint", () => {
   beforeEach(() => {

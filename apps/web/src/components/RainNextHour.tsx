@@ -6,6 +6,11 @@ import type {
   RainNextHourResponse,
 } from "@wetmap/shared";
 import { translate } from "../i18n";
+import {
+  deletePushSubscription,
+  getPushConfig,
+  savePushSubscription,
+} from "../api";
 
 interface Props {
   data?: RainNextHourResponse;
@@ -14,10 +19,9 @@ interface Props {
   isError: boolean;
   locale: "da" | "en";
   locationName: string;
+  latitude: number;
+  longitude: number;
 }
-
-const alertPreferenceKey = "wetmap:rain-alerts";
-const lastAlertKey = "wetmap:last-rain-alert";
 
 const formatTime = (value: string, locale: "da" | "en") =>
   new Intl.DateTimeFormat(locale === "da" ? "da-DK" : "en-GB", {
@@ -26,12 +30,12 @@ const formatTime = (value: string, locale: "da" | "en") =>
     timeZone: "Europe/Copenhagen",
   }).format(new Date(value));
 
-const startsEnabled = () => {
-  try {
-    return window.localStorage.getItem(alertPreferenceKey) === "true";
-  } catch {
-    return false;
-  }
+const base64UrlToBytes = (value: string) => {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const binary = window.atob(
+    (value + padding).replace(/-/g, "+").replace(/_/g, "/"),
+  );
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 
 function summary(points: RainForecastPoint[]): {
@@ -80,9 +84,12 @@ export default function RainNextHour({
   isError,
   locale,
   locationName,
+  latitude,
+  longitude,
 }: Props) {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
-  const [alertsEnabled, setAlertsEnabled] = useState(startsEnabled);
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [alertBusy, setAlertBusy] = useState(false);
   const [alertError, setAlertError] = useState(false);
   const points = useMemo(() => data?.points ?? [], [data?.points]);
   const rainSummary = useMemo(() => summary(points), [points]);
@@ -90,55 +97,93 @@ export default function RainNextHour({
   const max = Math.max(...points.map((point) => point.precipitationMm), 0.1);
 
   useEffect(() => {
-    if (
-      !alertsEnabled ||
-      typeof Notification === "undefined" ||
-      Notification.permission !== "granted"
-    )
-      return;
-    const firstWet = points.find((point) => point.intensity !== "none");
-    if (!firstWet) return;
-    const eventKey = `${locationName}:${firstWet.startsAt}`;
-    try {
-      if (window.localStorage.getItem(lastAlertKey) === eventKey) return;
-      new Notification(translate(locale, "rainAlertTitle"), {
-        body: `${translate(locale, "rainAlertBody")} ${locationName} ${formatTime(firstWet.startsAt, locale)}.`,
-        tag: "wetmap-rain",
-      });
-      window.localStorage.setItem(lastAlertKey, eventKey);
-    } catch {
-      // Notifications and storage can be unavailable in hardened contexts.
-    }
-  }, [alertsEnabled, locale, locationName, points]);
+    let active = true;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((subscription) => {
+        if (active) setAlertsEnabled(Boolean(subscription));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!alertsEnabled || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((subscription) => {
+        if (subscription)
+          return savePushSubscription(
+            subscription,
+            latitude,
+            longitude,
+            locationName,
+            locale,
+          );
+      })
+      .catch(() => setAlertError(true));
+  }, [alertsEnabled, latitude, locale, locationName, longitude]);
 
   const toggleAlerts = async () => {
     setAlertError(false);
+    setAlertBusy(true);
     if (alertsEnabled) {
-      setAlertsEnabled(false);
       try {
-        window.localStorage.setItem(alertPreferenceKey, "false");
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await deletePushSubscription(subscription.endpoint);
+          await subscription.unsubscribe();
+        }
+        setAlertsEnabled(false);
       } catch {
-        // Preference remains session-only when storage is unavailable.
+        setAlertError(true);
+      } finally {
+        setAlertBusy(false);
       }
       return;
     }
-    if (typeof Notification === "undefined") {
+    if (
+      typeof Notification === "undefined" ||
+      !("serviceWorker" in navigator) ||
+      !("PushManager" in window)
+    ) {
       setAlertError(true);
+      setAlertBusy(false);
       return;
     }
-    const permission =
-      Notification.permission === "default"
-        ? await Notification.requestPermission()
-        : Notification.permission;
-    if (permission !== "granted") {
-      setAlertError(true);
-      return;
-    }
-    setAlertsEnabled(true);
     try {
-      window.localStorage.setItem(alertPreferenceKey, "true");
+      const permission =
+        Notification.permission === "default"
+          ? await Notification.requestPermission()
+          : Notification.permission;
+      if (permission !== "granted") throw new Error("Permission denied");
+      const config = await getPushConfig();
+      if (!config.available || !config.publicKey)
+        throw new Error("Push is not configured");
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: base64UrlToBytes(config.publicKey),
+        }));
+      await savePushSubscription(
+        subscription,
+        latitude,
+        longitude,
+        locationName,
+        locale,
+      );
+      setAlertsEnabled(true);
     } catch {
-      // Preference remains session-only when storage is unavailable.
+      setAlertError(true);
+    } finally {
+      setAlertBusy(false);
     }
   };
 
@@ -219,16 +264,21 @@ export default function RainNextHour({
             className={`rain-alert ${alertsEnabled ? "is-active" : ""}`}
             onClick={toggleAlerts}
             aria-pressed={alertsEnabled}
+            disabled={alertBusy}
           >
             {alertsEnabled ? (
               <BellRing size={14} aria-hidden="true" />
             ) : (
               <Bell size={14} aria-hidden="true" />
             )}
-            {alertsEnabled ? t("rainAlertOn") : t("notifyRain")}
+            {alertBusy
+              ? t("rainAlertWorking")
+              : alertsEnabled
+                ? t("rainAlertOn")
+                : t("notifyRain")}
           </button>
           <p className={`rain-alert-note ${alertError ? "is-error" : ""}`}>
-            {alertError ? t("rainAlertDenied") : t("rainAlertOpenOnly")}
+            {alertError ? t("rainAlertDenied") : t("rainAlertBackground")}
           </p>
         </>
       )}

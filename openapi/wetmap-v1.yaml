@@ -23,6 +23,64 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/RadarManifest" }
         "304": { description: Not modified }
+  /api/v1/radar/nowcast:
+    get:
+      operationId: getRadarNowcast
+      summary: Lists optical-flow radar extrapolations up to 60 minutes
+      description: Derived from recent observations; frames are predictions, not future measurements.
+      responses:
+        "200":
+          description: Current nowcast manifest, or an empty manifest when unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NowcastManifest" }
+        "304": { description: Not modified }
+  /api/v1/push/config:
+    get:
+      operationId: getPushConfig
+      summary: Returns Web Push availability and the public VAPID key
+      responses:
+        "200":
+          description: Public push configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, publicKey]
+                properties:
+                  available: { type: boolean }
+                  publicKey: { type: [string, "null"] }
+  /api/v1/push/subscriptions:
+    post:
+      operationId: savePushSubscription
+      summary: Stores or updates an explicitly authorized background rain alert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PushSubscriptionRequest" }
+      responses:
+        "200": { description: Existing subscription updated }
+        "201": { description: Subscription created }
+        "400": { description: Invalid subscription or coordinates }
+        "403": { description: Origin is not allowed }
+        "503": { description: Web Push is not configured }
+    delete:
+      operationId: deletePushSubscription
+      summary: Deletes a background rain alert subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string, format: uri }
+      responses:
+        "204": { description: Subscription deleted or already absent }
+        "400": { description: Invalid endpoint }
+        "403": { description: Origin is not allowed }
   /api/v1/weather/forecast:
     get:
       operationId: getForecast
@@ -169,6 +227,81 @@ components:
         frames:
           type: array
           items: { $ref: "#/components/schemas/RadarFrame" }
+    NowcastFrame:
+      type: object
+      required:
+        - id
+        - predictedAt
+        - generatedAt
+        - basedOnObservedAt
+        - leadMinutes
+        - url
+        - bounds
+        - product
+        - unit
+        - confidence
+        - sha256
+      properties:
+        id: { type: string }
+        predictedAt: { type: string, format: date-time }
+        generatedAt: { type: string, format: date-time }
+        basedOnObservedAt: { type: string, format: date-time }
+        leadMinutes: { type: integer, minimum: 5, maximum: 60 }
+        url: { type: string }
+        bounds:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { type: number }
+        product: { type: string, const: DBZH_NOWCAST }
+        unit: { type: string, const: dBZ }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        sha256: { type: string }
+    NowcastManifest:
+      type: object
+      required:
+        - schemaVersion
+        - generatedAt
+        - attribution
+        - method
+        - basedOnObservedAt
+        - sourceFrameCount
+        - frames
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        generatedAt: { type: string, format: date-time }
+        attribution:
+          {
+            type: string,
+            const: "Baseret på data fra DMI og efterfølgende bearbejdet",
+          }
+        method: { type: string, const: dense-optical-flow-extrapolation }
+        basedOnObservedAt: { type: string, format: date-time }
+        sourceFrameCount: { type: integer, minimum: 0, maximum: 3 }
+        frames:
+          type: array
+          maxItems: 12
+          items: { $ref: "#/components/schemas/NowcastFrame" }
+    PushSubscriptionRequest:
+      type: object
+      required: [subscription, latitude, longitude, locationName, locale]
+      properties:
+        subscription:
+          type: object
+          required: [endpoint, keys]
+          properties:
+            endpoint: { type: string, format: uri, maxLength: 2048 }
+            expirationTime: { type: [number, "null"] }
+            keys:
+              type: object
+              required: [auth, p256dh]
+              properties:
+                auth: { type: string }
+                p256dh: { type: string }
+        latitude: { type: number, minimum: 54.4, maximum: 58 }
+        longitude: { type: number, minimum: 7.5, maximum: 15.5 }
+        locationName: { type: string, minLength: 1, maxLength: 80 }
+        locale: { type: string, enum: [da, en] }
     ForecastPoint:
       type: object
       required: [step]

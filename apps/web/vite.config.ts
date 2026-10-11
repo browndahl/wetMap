@@ -20,28 +20,45 @@ export default defineConfig({
         lang: "da",
         start_url: "/",
         icons: [
-          { src: "/pwa-192.svg", sizes: "192x192", type: "image/svg+xml", purpose: "any" },
-          { src: "/pwa-512.svg", sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
-        ]
+          {
+            src: "/pwa-192.svg",
+            sizes: "192x192",
+            type: "image/svg+xml",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-512.svg",
+            sizes: "512x512",
+            type: "image/svg+xml",
+            purpose: "any maskable",
+          },
+        ],
       },
       workbox: {
+        importScripts: ["push-sw.js"],
         navigateFallback: "/index.html",
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/tiles\.openfreemap\.org\//,
             handler: "CacheFirst",
-            options: { cacheName: "openfreemap", expiration: { maxEntries: 180, maxAgeSeconds: 86400 } }
+            options: {
+              cacheName: "openfreemap",
+              expiration: { maxEntries: 180, maxAgeSeconds: 86400 },
+            },
           },
           {
-            urlPattern: /\/frames\/.*\.(webp|png)$/,
+            urlPattern: /\/(frames|nowcast)\/.*\.(webp|png)$/,
             handler: "CacheFirst",
-            options: { cacheName: "radar-frames", expiration: { maxEntries: 24, maxAgeSeconds: 7200 } }
-          }
-        ]
-      }
-    })
+            options: {
+              cacheName: "radar-frames",
+              expiration: { maxEntries: 24, maxAgeSeconds: 7200 },
+            },
+          },
+        ],
+      },
+    }),
   ],
   server: {
-    proxy: { "/api": { target: "http://localhost:8080", changeOrigin: true } }
-  }
+    proxy: { "/api": { target: "http://localhost:8080", changeOrigin: true } },
+  },
 });

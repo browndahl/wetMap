@@ -10,8 +10,15 @@ from pathlib import Path
 
 from .dmi import DmiClient
 from .model import Frame, manifest
+from .nowcast import generate_nowcast
 from .processor import inspect_odim, process_hdf5
-from .storage import download_manifest_r2, upload_r2, write_json_atomic
+from .storage import (
+    download_frames_r2,
+    download_manifest_r2,
+    upload_nowcast_r2,
+    upload_r2,
+    write_json_atomic,
+)
 
 
 def configure_logs() -> None:
@@ -60,14 +67,50 @@ def run(output: Path, limit: int, upload: bool) -> None:
         if old_frame.name not in keep:
             old_frame.unlink()
     write_json_atomic(existing_path, manifest(frames))
+
+    nowcast_paths: list[Path] = []
+    downloaded_source_paths: list[Path] = []
+    source_frames = frames[-3:]
+    if len(source_frames) >= 2:
+        try:
+            source_names = [Path(frame.url).name for frame in source_frames]
+            if upload:
+                source_paths = download_frames_r2(output, source_names)
+                new_frame_set = {path.resolve() for path in new_frame_paths}
+                downloaded_source_paths = [
+                    path for path in source_paths if path.resolve() not in new_frame_set
+                ]
+            else:
+                source_paths = [output / name for name in source_names]
+            if all(path.exists() for path in source_paths):
+                nowcast_directory = output / "nowcast"
+                nowcast, risk, nowcast_paths = generate_nowcast(
+                    source_paths,
+                    source_frames,
+                    nowcast_directory,
+                )
+                write_json_atomic(nowcast_directory / "nowcast.json", nowcast)
+                write_json_atomic(nowcast_directory / "risk.json", risk)
+        except Exception:
+            # A derived forecast must never prevent publication of fresh observations.
+            logging.exception("nowcast.generation.failed")
+    for downloaded_source in downloaded_source_paths:
+        downloaded_source.unlink(missing_ok=True)
     if upload:
         upload_r2(output, new_frame_paths)
-    logging.info(json.dumps({
-        "event": "worker.complete",
-        "frames": len(frames),
-        "newFrames": len(new_frame_paths),
-        "output": str(output),
-    }))
+        if nowcast_paths:
+            upload_nowcast_r2(output / "nowcast", nowcast_paths)
+    logging.info(
+        json.dumps(
+            {
+                "event": "worker.complete",
+                "frames": len(frames),
+                "newFrames": len(new_frame_paths),
+                "nowcastFrames": len(nowcast_paths),
+                "output": str(output),
+            }
+        )
+    )
 
 
 def main() -> None:

@@ -1,3 +1,10 @@
+import {
+  deletePushSubscription,
+  pushConfig,
+  savePushSubscription,
+  sendRainAlerts,
+} from "./push";
+
 interface Env {
   RADAR: R2Bucket;
   DMI_BASE_URL: string;
@@ -8,6 +15,9 @@ interface Env {
   GITHUB_REPOSITORY?: string;
   GITHUB_RADAR_WORKFLOW?: string;
   GITHUB_REF?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 }
 
 const attribution = "Baseret på data fra DMI og efterfølgende bearbejdet";
@@ -344,6 +354,32 @@ async function frames(request: Request, env: Env): Promise<Response> {
   return new Response(object.body, { headers });
 }
 
+async function nowcast(request: Request, env: Env): Promise<Response> {
+  const object = await env.RADAR.get("nowcast/nowcast.json", {
+    onlyIf: request.headers,
+  });
+  if (!object)
+    return Response.json(
+      {
+        schemaVersion: 1,
+        generatedAt: new Date(0).toISOString(),
+        attribution,
+        method: "dense-optical-flow-extrapolation",
+        basedOnObservedAt: new Date(0).toISOString(),
+        sourceFrameCount: 0,
+        frames: [],
+      },
+      { headers: jsonHeaders },
+    );
+  if (!("body" in object)) return new Response(null, { status: 304 });
+  const headers = new Headers(jsonHeaders);
+  object.writeHttpMetadata(headers);
+  headers.set("ETag", object.httpEtag);
+  headers.set("Cache-Control", "public,max-age=60,stale-while-revalidate=300");
+  headers.set("X-DMI-Attribution", attribution);
+  return new Response(object.body, { headers });
+}
+
 async function frame(
   pathname: string,
   request: Request,
@@ -362,6 +398,27 @@ async function frame(
   object.writeHttpMetadata(headers);
   headers.set("ETag", object.httpEtag);
   headers.set("Cache-Control", "public,max-age=31536000,immutable");
+  return new Response(object.body, { headers });
+}
+
+async function nowcastFrame(
+  pathname: string,
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const key = pathname.slice(1);
+  if (!/^nowcast\/[a-zA-Z0-9._-]+\.webp$/.test(key))
+    return new Response(null, { status: 404 });
+  const object = await env.RADAR.get(key, {
+    onlyIf: request.headers,
+    range: request.headers,
+  });
+  if (!object) return new Response(null, { status: 404 });
+  if (!("body" in object)) return new Response(null, { status: 304 });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("ETag", object.httpEtag);
+  headers.set("Cache-Control", "public,max-age=300");
   return new Response(object.body, { headers });
 }
 
@@ -888,12 +945,37 @@ export default {
   ): Promise<Response> {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin") ?? "";
-    if (request.method === "OPTIONS")
-      return new Response(null, { status: 204, headers: cors(origin, env) });
-    if (request.method !== "GET") return new Response(null, { status: 405 });
+    if (request.method === "OPTIONS") {
+      const headers = new Headers(cors(origin, env));
+      headers.set("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+      headers.set("Access-Control-Allow-Headers", "Content-Type");
+      headers.set("Access-Control-Max-Age", "86400");
+      return new Response(null, { status: 204, headers });
+    }
+    const allowedOrigin = Object.keys(cors(origin, env)).length > 0;
+    if (
+      ["POST", "DELETE"].includes(request.method) &&
+      (!origin || !allowedOrigin)
+    )
+      return new Response(null, { status: 403 });
     let response: Response;
-    if (url.pathname === "/api/v1/radar/frames")
+    if (
+      url.pathname === "/api/v1/push/subscriptions" &&
+      request.method === "POST"
+    )
+      response = await savePushSubscription(request, env);
+    else if (
+      url.pathname === "/api/v1/push/subscriptions" &&
+      request.method === "DELETE"
+    )
+      response = await deletePushSubscription(request, env);
+    else if (request.method !== "GET")
+      response = new Response(null, { status: 405 });
+    else if (url.pathname === "/api/v1/push/config") response = pushConfig(env);
+    else if (url.pathname === "/api/v1/radar/frames")
       response = await frames(request, env);
+    else if (url.pathname === "/api/v1/radar/nowcast")
+      response = await nowcast(request, env);
     else if (url.pathname === "/api/v1/weather/forecast")
       response = await forecast(url, env, context);
     else if (url.pathname === "/api/v1/weather/precipitation")
@@ -904,6 +986,8 @@ export default {
       response = await reverseLocation(url, env, context);
     else if (url.pathname.startsWith("/frames/"))
       response = await frame(url.pathname, request, env);
+    else if (url.pathname.startsWith("/nowcast/"))
+      response = await nowcastFrame(url.pathname, request, env);
     else if (url.pathname === "/health/live")
       response = Response.json({ status: "ok" });
     else response = new Response(null, { status: 404 });
@@ -919,6 +1003,10 @@ export default {
     env: Env,
     context: ExecutionContext,
   ): Promise<void> {
-    context.waitUntil(ensureFreshRadar(env));
+    context.waitUntil(
+      Promise.all([ensureFreshRadar(env), sendRainAlerts(env)]).then(
+        () => undefined,
+      ),
+    );
   },
 };
