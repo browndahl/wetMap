@@ -104,6 +104,7 @@ beforeEach(() => {
   apiMocks.nowcast.frames = [];
   apiMocks.forecast.points = [];
   apiMocks.rain.points = [];
+  apiMocks.rain.source = "open-meteo-dmi";
   apiMocks.locations = [];
   apiMocks.getPushConfig.mockClear();
   apiMocks.savePushSubscription.mockClear();
@@ -380,6 +381,46 @@ it("explains the next-hour rain estimate and handles blocked alerts", async () =
   fireEvent.click(screen.getByRole("button", { name: "Varsl mig" }));
   expect(
     screen.getByText(/Baggrundsvarsler kunne ikke aktiveres/),
+  ).toBeInTheDocument();
+});
+
+it("labels radar-backed intervals and weak echoes without claiming ground rain", async () => {
+  apiMocks.rain.source = "dmi-radar-nowcast-harmonie";
+  apiMocks.rain.points = [
+    {
+      startsAt: "2026-10-11T08:15:00Z",
+      endsAt: "2026-10-11T08:30:00Z",
+      precipitationMm: 0.01,
+      intensity: "trace",
+      source: "radar-nowcast",
+      reflectivityDbz: 14,
+      confidence: 0.94,
+    },
+    {
+      startsAt: "2026-10-11T08:30:00Z",
+      endsAt: "2026-10-11T08:45:00Z",
+      precipitationMm: 0,
+      intensity: "none",
+      source: "harmonie",
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByText("Radar + model")).toBeInTheDocument();
+  expect(screen.getByText("Radar · 14")).toBeInTheDocument();
+  expect(screen.getByText("Model")).toBeInTheDocument();
+  expect(
+    screen.getByText("Svagt radarekko · regn ved jorden er usikkert"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/Nærmeste intervaller følger DMI-radar/),
   ).toBeInTheDocument();
 });
 

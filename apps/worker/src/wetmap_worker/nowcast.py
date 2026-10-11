@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,8 @@ METHOD = "dense-optical-flow-extrapolation"
 LEAD_MINUTES = tuple(range(5, 61, 5))
 RISK_WIDTH = 128
 RISK_HEIGHT = 96
+POINT_GRID_WIDTH = 768
+POINT_GRID_HEIGHT = 512
 
 
 def _parse_time(value: str) -> datetime:
@@ -86,10 +89,26 @@ def _risk_bucket(alpha: np.ndarray) -> str:
     reduced = cv2.resize(alpha, (RISK_WIDTH, RISK_HEIGHT), interpolation=cv2.INTER_AREA)
     categories = np.zeros(reduced.shape, dtype=np.uint8)
     # Processor alpha is monotonic in dBZ: these are approximately 0, 10 and 20 dBZ.
-    categories[reduced >= 94] = 1
-    categories[reduced >= 146] = 2
-    categories[reduced >= 198] = 3
+    categories[reduced >= 74] = 1
+    categories[reduced >= 103] = 2
+    categories[reduced >= 133] = 3
     return base64.b64encode(categories.tobytes()).decode("ascii")
+
+
+def _reflectivity_grid(alpha: np.ndarray) -> np.ndarray:
+    """Encode dBZ + 32; zero is no coverage and 14 is covered/no echo."""
+    reduced = cv2.resize(
+        alpha,
+        (POINT_GRID_WIDTH, POINT_GRID_HEIGHT),
+        interpolation=cv2.INTER_AREA,
+    )
+    dbz = np.rint((reduced.astype(np.float32) - 45) * (60 / 175) - 10)
+    detected = reduced >= 44
+    return np.where(
+        detected,
+        np.clip(dbz + 32, 1, 95),
+        np.where(reduced > 0, 14, 0),
+    ).astype(np.uint8)
 
 
 def generate_nowcast(
@@ -116,7 +135,22 @@ def generate_nowcast(
     output_directory.mkdir(parents=True, exist_ok=True)
 
     frame_entries: list[dict[str, Any]] = []
-    risk_entries: list[dict[str, Any]] = []
+    latest_prediction_time = latest_time.isoformat().replace("+00:00", "Z")
+    risk_entries: list[dict[str, Any]] = [
+        {
+            "leadMinutes": 0,
+            "predictedAt": latest_prediction_time,
+            "intensity": _risk_bucket(latest[..., 3]),
+        }
+    ]
+    point_frames = [_reflectivity_grid(latest[..., 3])]
+    point_frame_entries: list[dict[str, Any]] = [
+        {
+            "leadMinutes": 0,
+            "predictedAt": latest_prediction_time,
+            "confidence": 1.0,
+        }
+    ]
     output_paths: list[Path] = []
     for lead_minutes in LEAD_MINUTES:
         raw_prediction = _advect(latest, flow, lead_minutes)
@@ -129,6 +163,7 @@ def generate_nowcast(
                 "intensity": _risk_bucket(raw_prediction[..., 3]),
             }
         )
+        point_frames.append(_reflectivity_grid(raw_prediction[..., 3]))
         prediction = raw_prediction.copy()
         confidence = max(0.25, math.exp(-lead_minutes / 75))
         prediction[..., 3] = np.rint(prediction[..., 3] * confidence).astype(np.uint8)
@@ -149,6 +184,13 @@ def generate_nowcast(
                 "unit": "dBZ",
                 "confidence": round(confidence, 2),
                 "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            }
+        )
+        point_frame_entries.append(
+            {
+                "leadMinutes": lead_minutes,
+                "predictedAt": risk_entries[-1]["predictedAt"],
+                "confidence": round(confidence, 2),
             }
         )
 
@@ -173,4 +215,26 @@ def generate_nowcast(
         "thresholdsDbz": [0, 10, 20],
         "frames": risk_entries,
     }
+    point_cube = np.stack(point_frames, axis=-1)
+    point_grid_path = output_directory / "point-risk.bin"
+    point_grid_path.write_bytes(point_cube.tobytes(order="C"))
+    point_grid = {
+        "schemaVersion": 1,
+        "generatedAt": generated_at,
+        "basedOnObservedAt": latest_frame.observedAt,
+        "method": METHOD,
+        "bounds": latest_frame.bounds,
+        "width": POINT_GRID_WIDTH,
+        "height": POINT_GRID_HEIGHT,
+        "frameCount": len(point_frame_entries),
+        "encoding": "pixel-major-uint8-dbz-plus-32",
+        "dataKey": f"nowcast/point-risk-{int(latest_time.timestamp() // 300) % 2}.bin",
+        "neighborhoodRadiusPixels": 1,
+        "frames": point_frame_entries,
+        "sha256": hashlib.sha256(point_grid_path.read_bytes()).hexdigest(),
+    }
+    (output_directory / "point-risk.json").write_text(
+        json.dumps(point_grid, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
     return manifest, risk, output_paths

@@ -69,6 +69,8 @@ export default function App() {
   );
   const forecastLatitude = Number(state.selectedLocation.latitude.toFixed(2));
   const forecastLongitude = Number(state.selectedLocation.longitude.toFixed(2));
+  const rainLatitude = Number(state.selectedLocation.latitude.toFixed(5));
+  const rainLongitude = Number(state.selectedLocation.longitude.toFixed(5));
   const manifest = useQuery({
     queryKey: ["radar-frames"],
     queryFn: ({ signal }) => getRadarManifest(signal),
@@ -95,14 +97,14 @@ export default function App() {
     placeholderData: keepPreviousData,
   });
   const rain = useQuery({
-    queryKey: ["rain-next-hour", forecastLatitude, forecastLongitude],
+    queryKey: ["rain-next-hour", rainLatitude, rainLongitude],
     queryFn: ({ signal }) =>
-      getRainNextHour(forecastLatitude, forecastLongitude, signal),
-    staleTime: 5 * 60_000,
+      getRainNextHour(rainLatitude, rainLongitude, signal),
+    staleTime: 60_000,
     gcTime: 60 * 60_000,
     retry: 3,
     retryDelay: (attempt) => Math.min(500 * 2 ** attempt, 4_000),
-    refetchInterval: 5 * 60_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: "always",
   });

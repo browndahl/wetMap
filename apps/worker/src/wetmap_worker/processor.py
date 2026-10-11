@@ -66,13 +66,19 @@ def inspect_odim(path: Path) -> dict[str, object]:
         }
 
 
-def _colorize(values: np.ndarray, valid: np.ndarray) -> np.ndarray:
+def _colorize(values: np.ndarray, detected: np.ndarray, coverage: np.ndarray) -> np.ndarray:
     rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
     for channel in range(3):
         rgba[..., channel] = np.interp(values, STOPS, COLORS[:, channel]).astype(np.uint8)
-    # Very weak echoes remain visible but restrained; nodata/undetect is transparent.
-    rgba[..., 3] = np.where(valid, np.clip((values + 18) * 5.2, 45, 220), 0).astype(np.uint8)
-    rgba[~valid, :3] = 0
+    # Alpha 0 means no coverage and alpha 1 means valid coverage without an echo.
+    # Visible echoes encode -10..50 dBZ monotonically as alpha 45..220. We clip
+    # weaker detections to -10 dBZ because they are below the public map legend.
+    rgba[..., 3] = np.where(
+        detected,
+        np.clip(45 + (values + 10) * (175 / 60), 45, 220),
+        np.where(coverage, 1, 0),
+    ).astype(np.uint8)
+    rgba[~detected, :3] = 0
     return rgba
 
 
@@ -86,14 +92,17 @@ def process_hdf5(source_path: Path, output_path: Path) -> ProcessedRaster:
         quantity = str(_attribute(data_group, "quantity"))
         product = str(_attribute(what, "product"))
         if quantity != "DBZH" or product != "DBZH":
-            raise ValueError(f"Expected DBZH reflectivity, received quantity={quantity}, product={product}")
+            raise ValueError(
+                f"Expected DBZH reflectivity, received quantity={quantity}, product={product}"
+            )
 
         raw = data_group["data"][...]
         nodata = int(_attribute(what, "nodata"))
         undetect = int(_attribute(what, "undetect"))
         gain = float(_attribute(what, "gain"))
         offset = float(_attribute(what, "offset"))
-        valid = (raw != nodata) & (raw != undetect)
+        detected = (raw != nodata) & (raw != undetect)
+        coverage = raw != nodata
         dbzh = raw.astype(np.float32) * gain + offset
 
         source_crs = CRS.from_proj4(str(_attribute(where, "projdef")))
@@ -120,7 +129,8 @@ def process_hdf5(source_path: Path, output_path: Path) -> ProcessedRaster:
             source_crs, target_crs, width, height, left, bottom, right, top
         )
         target_values = np.full((target_height, target_width), -32.0, dtype=np.float32)
-        target_valid = np.zeros((target_height, target_width), dtype=np.uint8)
+        target_detected = np.zeros((target_height, target_width), dtype=np.uint8)
+        target_coverage = np.zeros((target_height, target_width), dtype=np.uint8)
         reproject(
             dbzh,
             target_values,
@@ -133,15 +143,28 @@ def process_hdf5(source_path: Path, output_path: Path) -> ProcessedRaster:
             resampling=Resampling.bilinear,
         )
         reproject(
-            valid.astype(np.uint8),
-            target_valid,
+            detected.astype(np.uint8),
+            target_detected,
             src_transform=source_transform,
             src_crs=source_crs,
             dst_transform=target_transform,
             dst_crs=target_crs,
             resampling=Resampling.nearest,
         )
-        rgba = _colorize(target_values, target_valid.astype(bool))
+        reproject(
+            coverage.astype(np.uint8),
+            target_coverage,
+            src_transform=source_transform,
+            src_crs=source_crs,
+            dst_transform=target_transform,
+            dst_crs=target_crs,
+            resampling=Resampling.nearest,
+        )
+        rgba = _colorize(
+            target_values,
+            target_detected.astype(bool),
+            target_coverage.astype(bool),
+        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         Image.fromarray(rgba).save(output_path, "WEBP", lossless=True, method=6)
         west, south, east, north = transform_bounds(

@@ -68,13 +68,17 @@ export interface ForecastResponse {
   points: ForecastPoint[];
 }
 
-export type RainIntensity = "none" | "light" | "moderate" | "heavy";
+export type RainIntensity = "none" | "trace" | "light" | "moderate" | "heavy";
+export type RainPointSource = "radar-nowcast" | "harmonie";
 
 export interface RainForecastPoint {
   startsAt: string;
   endsAt: string;
   precipitationMm: number;
   intensity: RainIntensity;
+  source?: RainPointSource;
+  reflectivityDbz?: number | null;
+  confidence?: number | null;
 }
 
 export interface RainNextHourResponse {
@@ -82,11 +86,13 @@ export interface RainNextHourResponse {
   longitude: number;
   fetchedAt: string;
   attribution: typeof DMI_ATTRIBUTION;
-  source: "open-meteo-dmi";
+  source: "open-meteo-dmi" | "dmi-radar-nowcast-harmonie";
   model: "DMI HARMONIE AROME";
   displayResolutionMinutes: 15;
   sourceResolutionMinutes: 60;
   isInterpolated: true;
+  basedOnObservedAt?: string;
+  radarBasedUntil?: string;
   points: RainForecastPoint[];
 }
 

@@ -1,17 +1,25 @@
 import base64
+import json
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
 from wetmap_worker.model import Frame
-from wetmap_worker.nowcast import LEAD_MINUTES, RISK_HEIGHT, RISK_WIDTH, generate_nowcast
+from wetmap_worker.nowcast import (
+    LEAD_MINUTES,
+    POINT_GRID_HEIGHT,
+    POINT_GRID_WIDTH,
+    RISK_HEIGHT,
+    RISK_WIDTH,
+    generate_nowcast,
+)
 
 
 def _frame(path: Path, x: int) -> None:
     rgba = np.zeros((72, 96, 4), dtype=np.uint8)
     rgba[25:45, x : x + 20, :3] = [52, 120, 229]
-    rgba[25:45, x : x + 20, 3] = 170
+    rgba[25:45, x : x + 20, 3] = 133
     Image.fromarray(rgba).save(path, "WEBP", lossless=True)
 
 
@@ -46,3 +54,10 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     decoded = base64.b64decode(risk["frames"][0]["intensity"])
     assert len(decoded) == RISK_WIDTH * RISK_HEIGHT
     assert max(decoded) >= 2
+    assert risk["frames"][0]["leadMinutes"] == 0
+    point_metadata = json.loads((tmp_path / "nowcast/point-risk.json").read_text())
+    point_grid = (tmp_path / "nowcast/point-risk.bin").read_bytes()
+    assert point_metadata["frameCount"] == len(LEAD_MINUTES) + 1
+    assert point_metadata["frames"][0]["leadMinutes"] == 0
+    assert point_metadata["dataKey"].startswith("nowcast/point-risk-")
+    assert len(point_grid) == POINT_GRID_WIDTH * POINT_GRID_HEIGHT * (len(LEAD_MINUTES) + 1)

@@ -35,6 +35,18 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/NowcastManifest" }
         "304": { description: Not modified }
+  /api/v1/radar/nowcast/quality:
+    get:
+      operationId: getRadarNowcastQuality
+      summary: Returns rolling verification of earlier nowcasts against observations
+      description: Scores significant precipitation echoes at 20 dBZ after the predicted timestamp becomes observable.
+      responses:
+        "200":
+          description: Rolling verification metrics, or an empty result before the first comparison
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NowcastQuality" }
+        "304": { description: Not modified }
   /api/v1/push/config:
     get:
       operationId: getPushConfig
@@ -108,8 +120,8 @@ paths:
   /api/v1/weather/precipitation:
     get:
       operationId: getNextHourPrecipitation
-      summary: Returns the next hour of DMI HARMONIE precipitation estimates
-      description: The 15-minute display values are interpolated from the model's hourly resolution and are not radar nowcasting.
+      summary: Returns radar-anchored next-hour precipitation estimates
+      description: Near-term intervals use the same DMI radar and optical-flow nowcast as the map. HARMONIE is used per interval when fresh radar coverage is unavailable.
       parameters:
         - name: lat
           in: query
@@ -333,7 +345,10 @@ components:
         startsAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
         precipitationMm: { type: number, minimum: 0 }
-        intensity: { type: string, enum: [none, light, moderate, heavy] }
+        intensity: { type: string, enum: [none, trace, light, moderate, heavy] }
+        source: { type: string, enum: [radar-nowcast, harmonie] }
+        reflectivityDbz: { type: [number, "null"] }
+        confidence: { type: [number, "null"], minimum: 0, maximum: 1 }
     RainNextHourResponse:
       type: object
       required:
@@ -356,16 +371,73 @@ components:
             type: string,
             const: "Baseret på data fra DMI og efterfølgende bearbejdet",
           }
-        source: { type: string, const: open-meteo-dmi }
+        source:
+          { type: string, enum: [open-meteo-dmi, dmi-radar-nowcast-harmonie] }
         model: { type: string, const: "DMI HARMONIE AROME" }
         displayResolutionMinutes: { type: integer, const: 15 }
         sourceResolutionMinutes: { type: integer, const: 60 }
         isInterpolated: { type: boolean, const: true }
+        basedOnObservedAt: { type: string, format: date-time }
+        radarBasedUntil: { type: string, format: date-time }
         points:
           type: array
           minItems: 1
           maxItems: 4
           items: { $ref: "#/components/schemas/RainForecastPoint" }
+    NowcastQuality:
+      type: object
+      required:
+        - schemaVersion
+        - generatedAt
+        - thresholdDbz
+        - sampleCount
+        - meanCriticalSuccessIndex
+        - results
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        generatedAt: { type: string, format: date-time }
+        thresholdDbz: { type: number, const: 20 }
+        sampleCount: { type: integer, minimum: 0, maximum: 288 }
+        meanCriticalSuccessIndex:
+          { type: [number, "null"], minimum: 0, maximum: 1 }
+        results:
+          type: array
+          maxItems: 288
+          items:
+            type: object
+            required:
+              - verifiedAt
+              - basedOnObservedAt
+              - predictedAt
+              - observedAt
+              - leadMinutes
+              - thresholdDbz
+              - validPixels
+              - hits
+              - misses
+              - falseAlarms
+              - correctNegatives
+              - precision
+              - recall
+              - criticalSuccessIndex
+              - dbzMeanAbsoluteError
+            properties:
+              verifiedAt: { type: string, format: date-time }
+              basedOnObservedAt: { type: string, format: date-time }
+              predictedAt: { type: string, format: date-time }
+              observedAt: { type: string, format: date-time }
+              leadMinutes: { type: integer, minimum: 5, maximum: 60 }
+              thresholdDbz: { type: number, const: 20 }
+              validPixels: { type: integer, minimum: 0 }
+              hits: { type: integer, minimum: 0 }
+              misses: { type: integer, minimum: 0 }
+              falseAlarms: { type: integer, minimum: 0 }
+              correctNegatives: { type: integer, minimum: 0 }
+              precision: { type: [number, "null"], minimum: 0, maximum: 1 }
+              recall: { type: [number, "null"], minimum: 0, maximum: 1 }
+              criticalSuccessIndex:
+                { type: [number, "null"], minimum: 0, maximum: 1 }
+              dbzMeanAbsoluteError: { type: number, minimum: 0 }
     LocationResult:
       type: object
       required: [id, name, context, latitude, longitude, type]

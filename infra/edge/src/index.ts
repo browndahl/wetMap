@@ -75,13 +75,17 @@ interface ForecastPayload {
   points: ForecastPoint[];
 }
 
-type RainIntensity = "none" | "light" | "moderate" | "heavy";
+type RainIntensity = "none" | "trace" | "light" | "moderate" | "heavy";
+type RainPointSource = "radar-nowcast" | "harmonie";
 
 interface RainForecastPoint {
   startsAt: string;
   endsAt: string;
   precipitationMm: number;
   intensity: RainIntensity;
+  source?: RainPointSource;
+  reflectivityDbz?: number | null;
+  confidence?: number | null;
 }
 
 interface RainNextHourPayload {
@@ -89,12 +93,40 @@ interface RainNextHourPayload {
   longitude: number;
   fetchedAt: string;
   attribution: typeof attribution;
-  source: "open-meteo-dmi";
+  source: "open-meteo-dmi" | "dmi-radar-nowcast-harmonie";
   model: "DMI HARMONIE AROME";
   displayResolutionMinutes: 15;
   sourceResolutionMinutes: 60;
   isInterpolated: true;
+  basedOnObservedAt?: string;
+  radarBasedUntil?: string;
   points: RainForecastPoint[];
+}
+
+interface PointRiskMetadata {
+  schemaVersion: 1;
+  generatedAt: string;
+  basedOnObservedAt: string;
+  method: "dense-optical-flow-extrapolation";
+  bounds: [number, number, number, number];
+  width: number;
+  height: number;
+  frameCount: number;
+  encoding: "pixel-major-uint8-dbz-plus-32";
+  dataKey?: string;
+  neighborhoodRadiusPixels: number;
+  frames: Array<{
+    leadMinutes: number;
+    predictedAt: string;
+    confidence: number;
+  }>;
+}
+
+interface RadarPointSample {
+  leadMinutes: number;
+  predictedAt: string;
+  confidence: number;
+  reflectivityDbz: number | null;
 }
 
 function cors(origin: string, env: Env): HeadersInit {
@@ -376,6 +408,31 @@ async function nowcast(request: Request, env: Env): Promise<Response> {
   object.writeHttpMetadata(headers);
   headers.set("ETag", object.httpEtag);
   headers.set("Cache-Control", "public,max-age=60,stale-while-revalidate=300");
+  headers.set("X-DMI-Attribution", attribution);
+  return new Response(object.body, { headers });
+}
+
+async function nowcastQuality(request: Request, env: Env): Promise<Response> {
+  const object = await env.RADAR.get("nowcast/verification.json", {
+    onlyIf: request.headers,
+  });
+  if (!object)
+    return Response.json(
+      {
+        schemaVersion: 1,
+        generatedAt: new Date(0).toISOString(),
+        thresholdDbz: 20,
+        sampleCount: 0,
+        meanCriticalSuccessIndex: null,
+        results: [],
+      },
+      { headers: jsonHeaders },
+    );
+  if (!("body" in object)) return new Response(null, { status: 304 });
+  const headers = new Headers(jsonHeaders);
+  object.writeHttpMetadata(headers);
+  headers.set("ETag", object.httpEtag);
+  headers.set("Cache-Control", "public,max-age=300,stale-while-revalidate=900");
   headers.set("X-DMI-Attribution", attribution);
   return new Response(object.body, { headers });
 }
@@ -759,6 +816,195 @@ function validPrecipitation(payload: RainNextHourPayload): boolean {
   return payload.points.some((point) => Date.parse(point.endsAt) > Date.now());
 }
 
+function pointMercatorY(latitude: number): number {
+  const limited = Math.max(-85.051129, Math.min(85.051129, latitude));
+  const radians = (limited * Math.PI) / 180;
+  return Math.log(Math.tan(Math.PI / 4 + radians / 2));
+}
+
+async function radarPointSamples(
+  latitude: number,
+  longitude: number,
+  env: Env,
+): Promise<{
+  metadata: PointRiskMetadata;
+  samples: RadarPointSample[];
+} | null> {
+  const metadataObject = await env.RADAR.get("nowcast/point-risk.json");
+  if (!metadataObject) return null;
+  let metadata: PointRiskMetadata;
+  try {
+    metadata = await metadataObject.json<PointRiskMetadata>();
+  } catch {
+    return null;
+  }
+  const observationAge = Date.now() - Date.parse(metadata.basedOnObservedAt);
+  const [west, south, east, north] = metadata.bounds;
+  const dataKey = metadata.dataKey ?? "nowcast/point-risk.bin";
+  if (
+    metadata.encoding !== "pixel-major-uint8-dbz-plus-32" ||
+    metadata.frames.length !== metadata.frameCount ||
+    metadata.frameCount < 2 ||
+    metadata.frameCount > 13 ||
+    metadata.width < 1 ||
+    metadata.width > 2_048 ||
+    metadata.height < 1 ||
+    metadata.height > 2_048 ||
+    !/^nowcast\/point-risk-(?:[01])\.bin$|^nowcast\/point-risk\.bin$/.test(
+      dataKey,
+    ) ||
+    !Number.isFinite(observationAge) ||
+    observationAge < -5 * 60_000 ||
+    observationAge > 30 * 60_000 ||
+    longitude < west ||
+    longitude > east ||
+    latitude < south ||
+    latitude > north
+  )
+    return null;
+
+  const x = Math.min(
+    metadata.width - 1,
+    Math.max(
+      0,
+      Math.floor(((longitude - west) / (east - west)) * metadata.width),
+    ),
+  );
+  const northY = pointMercatorY(north);
+  const southY = pointMercatorY(south);
+  const y = Math.min(
+    metadata.height - 1,
+    Math.max(
+      0,
+      Math.floor(
+        ((northY - pointMercatorY(latitude)) / (northY - southY)) *
+          metadata.height,
+      ),
+    ),
+  );
+  const radius = Math.max(
+    0,
+    Math.min(2, Math.round(metadata.neighborhoodRadiusPixels ?? 1)),
+  );
+  const xStart = Math.max(0, x - radius);
+  const xEnd = Math.min(metadata.width - 1, x + radius);
+  const encodedMax = new Uint8Array(metadata.frameCount);
+  const rows = Array.from(
+    {
+      length:
+        Math.min(metadata.height - 1, y + radius) - Math.max(0, y - radius) + 1,
+    },
+    (_, index) => Math.max(0, y - radius) + index,
+  );
+  const rowBytes = await Promise.all(
+    rows.map(async (row) => {
+      const pixelCount = xEnd - xStart + 1;
+      const offset = (row * metadata.width + xStart) * metadata.frameCount;
+      const object = await env.RADAR.get(dataKey, {
+        range: { offset, length: pixelCount * metadata.frameCount },
+      });
+      if (!object || !("body" in object)) return null;
+      const bytes = new Uint8Array(
+        await new Response(object.body).arrayBuffer(),
+      );
+      return bytes.length === pixelCount * metadata.frameCount ? bytes : null;
+    }),
+  );
+  if (rowBytes.some((bytes) => bytes === null)) return null;
+  const pixelCount = xEnd - xStart + 1;
+  for (const bytes of rowBytes) {
+    if (!bytes) return null;
+    for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+      for (let frame = 0; frame < metadata.frameCount; frame += 1) {
+        encodedMax[frame] = Math.max(
+          encodedMax[frame],
+          bytes[pixel * metadata.frameCount + frame],
+        );
+      }
+    }
+  }
+  return {
+    metadata,
+    samples: metadata.frames.map((frame, index) => ({
+      ...frame,
+      reflectivityDbz: encodedMax[index] === 0 ? null : encodedMax[index] - 32,
+    })),
+  };
+}
+
+function radarIntensity(reflectivityDbz: number): RainIntensity {
+  if (reflectivityDbz < -10) return "none";
+  if (reflectivityDbz < 20) return "trace";
+  if (reflectivityDbz < 35) return "light";
+  if (reflectivityDbz < 45) return "moderate";
+  return "heavy";
+}
+
+function rainRateFromReflectivity(reflectivityDbz: number): number {
+  if (reflectivityDbz < -10) return 0;
+  const reflectivity = 10 ** (reflectivityDbz / 10);
+  return (reflectivity / 200) ** (1 / 1.6);
+}
+
+function combineRadarAndModel(
+  model: RainNextHourPayload,
+  radar: NonNullable<Awaited<ReturnType<typeof radarPointSamples>>>,
+): RainNextHourPayload {
+  let radarPointCount = 0;
+  const points = model.points.map((point) => {
+    const startsAt = Date.parse(point.startsAt);
+    const endsAt = Date.parse(point.endsAt);
+    const samples = radar.samples.filter((sample) => {
+      const predictedAt = Date.parse(sample.predictedAt);
+      return predictedAt >= startsAt - 2.5 * 60_000 && predictedAt < endsAt;
+    });
+    const coveredSamples = samples.filter(
+      (sample): sample is RadarPointSample & { reflectivityDbz: number } =>
+        sample.reflectivityDbz !== null,
+    );
+    if (!coveredSamples.length)
+      return { ...point, source: "harmonie" as const };
+
+    radarPointCount += 1;
+    const peakDbz = Math.max(
+      ...coveredSamples.map((sample) => sample.reflectivityDbz),
+    );
+    const averageRate =
+      coveredSamples.reduce(
+        (sum, sample) => sum + rainRateFromReflectivity(sample.reflectivityDbz),
+        0,
+      ) / coveredSamples.length;
+    return {
+      ...point,
+      precipitationMm: Math.round(averageRate * 0.25 * 100) / 100,
+      intensity: radarIntensity(peakDbz),
+      source: "radar-nowcast" as const,
+      reflectivityDbz: Math.round(peakDbz),
+      confidence:
+        Math.round(
+          (coveredSamples.reduce((sum, sample) => sum + sample.confidence, 0) /
+            coveredSamples.length) *
+            100,
+        ) / 100,
+    };
+  });
+  if (!radarPointCount)
+    return {
+      ...model,
+      points: points.map((point) => ({ ...point, source: "harmonie" })),
+    };
+  const latestCoveredSample = radar.samples
+    .filter((sample) => sample.reflectivityDbz !== null)
+    .at(-1);
+  return {
+    ...model,
+    source: "dmi-radar-nowcast-harmonie",
+    basedOnObservedAt: radar.metadata.basedOnObservedAt,
+    radarBasedUntil: latestCoveredSample?.predictedAt,
+    points,
+  };
+}
+
 async function fetchOpenMeteoPrecipitation(
   latitude: number,
   longitude: number,
@@ -852,7 +1098,7 @@ async function refreshPrecipitation(
   return response;
 }
 
-async function precipitation(
+async function modelPrecipitation(
   url: URL,
   env: Env,
   context: ExecutionContext,
@@ -937,6 +1183,57 @@ async function precipitation(
   }
 }
 
+async function precipitation(
+  url: URL,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
+  const latitude = Number(url.searchParams.get("lat"));
+  const longitude = Number(url.searchParams.get("lon"));
+  const coordinatesAreValid =
+    Number.isFinite(latitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    Number.isFinite(longitude) &&
+    longitude >= -180 &&
+    longitude <= 180;
+  const radarPromise = coordinatesAreValid
+    ? radarPointSamples(latitude, longitude, env).catch((error) => {
+        console.error("precipitation.radar.failed", {
+          error,
+          latitude,
+          longitude,
+        });
+        return null;
+      })
+    : Promise.resolve(null);
+  const modelResponse = await modelPrecipitation(url, env, context);
+  const radar = await radarPromise;
+  if (!modelResponse.ok || !radar) return modelResponse;
+
+  try {
+    const model = (await modelResponse.json()) as RainNextHourPayload;
+    const combined = combineRadarAndModel(model, radar);
+    const headers = new Headers(modelResponse.headers);
+    headers.set(
+      "Cache-Control",
+      "public,max-age=60,stale-while-revalidate=300",
+    );
+    headers.set("X-WetMap-Precipitation-Source", combined.source);
+    return new Response(JSON.stringify(combined), {
+      status: modelResponse.status,
+      headers,
+    });
+  } catch (error) {
+    console.error("precipitation.combine.failed", {
+      error,
+      latitude,
+      longitude,
+    });
+    return modelResponse;
+  }
+}
+
 export default {
   async fetch(
     request: Request,
@@ -976,6 +1273,8 @@ export default {
       response = await frames(request, env);
     else if (url.pathname === "/api/v1/radar/nowcast")
       response = await nowcast(request, env);
+    else if (url.pathname === "/api/v1/radar/nowcast/quality")
+      response = await nowcastQuality(request, env);
     else if (url.pathname === "/api/v1/weather/forecast")
       response = await forecast(url, env, context);
     else if (url.pathname === "/api/v1/weather/precipitation")

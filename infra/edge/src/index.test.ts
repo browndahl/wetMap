@@ -20,14 +20,28 @@ class MemoryCache {
 }
 
 class MemoryR2 {
-  values = new Map<string, string>();
+  values = new Map<string, string | Uint8Array>();
 
-  async get(key: string) {
+  async get(
+    key: string,
+    options?: { range?: { offset: number; length: number } },
+  ) {
     const value = this.values.get(key);
     if (!value) return null;
+    const allBytes =
+      typeof value === "string" ? new TextEncoder().encode(value) : value;
+    const bytes = options?.range
+      ? allBytes.slice(
+          options.range.offset,
+          options.range.offset + options.range.length,
+        )
+      : allBytes;
     return {
-      json: async () => JSON.parse(value),
-      body: new Response(value).body,
+      json: async () =>
+        JSON.parse(
+          typeof value === "string" ? value : new TextDecoder().decode(value),
+        ),
+      body: new Response(bytes).body,
       httpEtag: `"${key}"`,
       writeHttpMetadata: (headers: Headers) =>
         headers.set("Content-Type", "application/json"),
@@ -35,7 +49,14 @@ class MemoryR2 {
   }
 
   async put(key: string, value: string | ReadableStream | ArrayBuffer) {
-    this.values.set(key, typeof value === "string" ? value : String(value));
+    this.values.set(
+      key,
+      typeof value === "string"
+        ? value
+        : value instanceof ArrayBuffer
+          ? new Uint8Array(value)
+          : new Uint8Array(await new Response(value).arrayBuffer()),
+    );
   }
 
   async delete(key: string) {
@@ -137,6 +158,32 @@ describe("radar nowcast edge endpoint", () => {
     expect(body.method).toBe("dense-optical-flow-extrapolation");
     expect(body.frames).toHaveLength(1);
   });
+
+  it("serves rolling nowcast verification metrics", async () => {
+    const { env, context, r2 } = setup();
+    r2.values.set(
+      "nowcast/verification.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        generatedAt: "2026-10-11T12:15:00Z",
+        thresholdDbz: 20,
+        sampleCount: 2,
+        meanCriticalSuccessIndex: 0.71,
+        results: [],
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://api.test/api/v1/radar/nowcast/quality"),
+      env,
+      context,
+    );
+    const body = (await response.json()) as { sampleCount: number };
+
+    expect(response.status).toBe(200);
+    expect(body.sampleCount).toBe(2);
+    expect(response.headers.get("Cache-Control")).toContain("max-age=300");
+  });
 });
 
 describe("background push subscription endpoints", () => {
@@ -180,7 +227,10 @@ describe("background push subscription endpoints", () => {
       key.startsWith("push/subscriptions/"),
     );
     expect(storedKey).toBeDefined();
-    expect(JSON.parse(r2.values.get(storedKey!)!)).toMatchObject({
+    const storedSubscription = r2.values.get(storedKey!);
+    if (typeof storedSubscription !== "string")
+      throw new Error("Expected a JSON subscription object");
+    expect(JSON.parse(storedSubscription)).toMatchObject({
       latitude: 56.16,
       longitude: 10.2,
       locationName: "Aarhus",
@@ -486,6 +536,77 @@ describe("next-hour precipitation edge endpoint", () => {
     expect(requestedUrl).toContain("minutely_15=precipitation");
     expect(requestedUrl).toContain("models=dmi_seamless");
     expect(r2.values.has("precipitation/v1/56.16/10.20.json")).toBe(true);
+  });
+
+  it("anchors near-term boxes to the same radar nowcast shown on the map", async () => {
+    const { env, context, r2 } = setup();
+    const frames = Array.from({ length: 13 }, (_, leadIndex) => ({
+      leadMinutes: leadIndex * 5,
+      predictedAt: new Date(
+        Date.parse("2026-10-10T22:10:00Z") + leadIndex * 5 * 60_000,
+      ).toISOString(),
+      confidence: Math.max(0.45, 1 - leadIndex * 0.045),
+    }));
+    r2.values.set(
+      "nowcast/point-risk.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        generatedAt: "2026-10-10T22:15:00Z",
+        basedOnObservedAt: "2026-10-10T22:10:00Z",
+        method: "dense-optical-flow-extrapolation",
+        bounds: [8, 54, 13, 58],
+        width: 2,
+        height: 2,
+        frameCount: frames.length,
+        encoding: "pixel-major-uint8-dbz-plus-32",
+        dataKey: "nowcast/point-risk-1.bin",
+        neighborhoodRadiusPixels: 1,
+        frames,
+      }),
+    );
+    const encodedFrames = Uint8Array.from([
+      14, 52, 57, 67, 72, 72, 67, 57, 52, 14, 14, 14, 14,
+    ]);
+    const pointCube = new Uint8Array(encodedFrames.length * 4);
+    for (let pixel = 0; pixel < 4; pixel += 1)
+      pointCube.set(encodedFrames, pixel * encodedFrames.length);
+    r2.values.set("nowcast/point-risk-1.bin", pointCube);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => openMeteoPrecipitationResponse()),
+    );
+
+    const response = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/precipitation?lat=56.16291&lon=10.20393",
+      ),
+      env,
+      context,
+    );
+    const body = (await response.json()) as {
+      source: string;
+      basedOnObservedAt?: string;
+      points: Array<{
+        source?: string;
+        intensity: string;
+        reflectivityDbz?: number;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-WetMap-Precipitation-Source")).toBe(
+      "dmi-radar-nowcast-harmonie",
+    );
+    expect(body.source).toBe("dmi-radar-nowcast-harmonie");
+    expect(body.basedOnObservedAt).toBe("2026-10-10T22:10:00Z");
+    expect(body.points[0]).toMatchObject({
+      source: "radar-nowcast",
+      intensity: "moderate",
+      reflectivityDbz: 35,
+    });
+    expect(body.points.every((point) => point.source === "radar-nowcast")).toBe(
+      true,
+    );
   });
 
   it("uses a still-relevant persistent estimate during an upstream outage", async () => {

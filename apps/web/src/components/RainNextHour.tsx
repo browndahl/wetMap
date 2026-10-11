@@ -41,15 +41,19 @@ const base64UrlToBytes = (value: string) => {
 function summary(points: RainForecastPoint[]): {
   key:
     | "rainDry"
+    | "rainWeakEcho"
     | "rainStarts"
     | "rainStops"
     | "rainContinues"
     | "rainIntermittent";
   at?: string;
 } {
-  const wet = points.map((point) => point.intensity !== "none");
+  const hasWeakEcho = points.some((point) => point.intensity === "trace");
+  const wet = points.map((point) =>
+    ["light", "moderate", "heavy"].includes(point.intensity),
+  );
   const firstWet = wet.indexOf(true);
-  if (firstWet === -1) return { key: "rainDry" };
+  if (firstWet === -1) return { key: hasWeakEcho ? "rainWeakEcho" : "rainDry" };
   if (wet.every(Boolean)) return { key: "rainContinues" };
 
   const firstDryAfterRain = wet.findIndex(
@@ -68,11 +72,13 @@ function summary(points: RainForecastPoint[]): {
 const intensityKey = (intensity: RainIntensity) =>
   ({
     none: "intensityNone",
+    trace: "intensityTrace",
     light: "intensityLight",
     moderate: "intensityModerate",
     heavy: "intensityHeavy",
   })[intensity] as
     | "intensityNone"
+    | "intensityTrace"
     | "intensityLight"
     | "intensityModerate"
     | "intensityHeavy";
@@ -95,6 +101,7 @@ export default function RainNextHour({
   const rainSummary = useMemo(() => summary(points), [points]);
   const total = points.reduce((sum, point) => sum + point.precipitationMm, 0);
   const max = Math.max(...points.map((point) => point.precipitationMm), 0.1);
+  const hasRadar = data?.source === "dmi-radar-nowcast-harmonie";
 
   useEffect(() => {
     let active = true;
@@ -193,7 +200,7 @@ export default function RainNextHour({
         <h3 id="rain-title">
           <Droplets size={15} aria-hidden="true" /> {t("rainNextHour")}
         </h3>
-        <span>{t("modelEstimate")}</span>
+        <span>{t(hasRadar ? "radarModelEstimate" : "modelEstimate")}</span>
       </div>
 
       {isLoading && (
@@ -240,6 +247,26 @@ export default function RainNextHour({
                     {t(intensityKey(point.intensity))}
                   </span>
                   <span
+                    className={`rain-source is-${point.source ?? "harmonie"}`}
+                    title={
+                      point.source === "radar-nowcast"
+                        ? `${t("radarSource")}${
+                            point.reflectivityDbz == null
+                              ? ""
+                              : ` · ${point.reflectivityDbz} dBZ`
+                          }`
+                        : t("modelSource")
+                    }
+                  >
+                    {point.source === "radar-nowcast"
+                      ? `${t("radarSource")}${
+                          point.reflectivityDbz == null
+                            ? ""
+                            : ` · ${point.reflectivityDbz}`
+                        }`
+                      : t("modelSource")}
+                  </span>
+                  <span
                     className={`rain-bar is-${point.intensity}`}
                     style={{
                       height: `${Math.max(
@@ -258,7 +285,9 @@ export default function RainNextHour({
               </div>
             ))}
           </div>
-          <p className="rain-method">{t("rainMethod")}</p>
+          <p className="rain-method">
+            {t(hasRadar ? "rainRadarMethod" : "rainMethod")}
+          </p>
           <button
             type="button"
             className={`rain-alert ${alertsEnabled ? "is-active" : ""}`}

@@ -433,6 +433,14 @@ a {
   border-color: oklch(0.78 0.12 210 / 28%);
   background: oklch(0.78 0.12 210 / 8%);
 }
+.rain-bar-track.is-trace {
+  border-color: oklch(0.82 0.08 195 / 24%);
+  background: repeating-linear-gradient(
+    135deg,
+    oklch(0.82 0.08 195 / 8%) 0 5px,
+    transparent 5px 10px
+  );
+}
 .rain-bar-track.is-moderate {
   border-color: oklch(0.7 0.15 230 / 34%);
   background: oklch(0.7 0.15 230 / 10%);
@@ -446,6 +454,27 @@ a {
   position: relative;
   z-index: 1;
   text-shadow: 0 1px 3px oklch(0.08 0.02 240 / 80%);
+}
+.rain-source {
+  position: relative;
+  z-index: 1;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.08rem 0.2rem;
+  border-radius: 999px;
+  color: var(--text-2);
+  background: oklch(0.2 0.03 230 / 58%);
+  font-size: 0.4rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.rain-source.is-radar-nowcast {
+  color: var(--accent);
+  background: oklch(0.76 0.13 205 / 12%);
 }
 .rain-amount {
   font-size: 0.62rem;
@@ -477,6 +506,9 @@ a {
 }
 .rain-bar.is-none {
   background: oklch(0.75 0.02 230 / 20%);
+}
+.rain-bar.is-trace {
+  background: oklch(0.82 0.08 195 / 55%);
 }
 .rain-bar.is-light {
   background: oklch(0.78 0.12 210);

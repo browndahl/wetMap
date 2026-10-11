@@ -4,14 +4,16 @@ import h5py
 import numpy as np
 from PIL import Image
 
-from wetmap_worker.processor import inspect_odim, process_hdf5
+from wetmap_worker.processor import _colorize, inspect_odim, process_hdf5
 
 
 def make_fixture(path: Path) -> None:
     with h5py.File(path, "w") as target:
         target.attrs["Conventions"] = "ODIM_H5/V2_0"
         what = target.create_group("what")
-        what.attrs.update({"product": "DBZH", "gain": 0.5, "offset": -32.0, "nodata": 255, "undetect": 0})
+        what.attrs.update(
+            {"product": "DBZH", "gain": 0.5, "offset": -32.0, "nodata": 255, "undetect": 0}
+        )
         where = target.create_group("where")
         where.attrs.update(
             {
@@ -24,7 +26,9 @@ def make_fixture(path: Path) -> None:
         )
         data_group = target.create_group("dataset1/data1")
         data_group.attrs["quantity"] = "DBZH"
-        data_group.create_dataset("data", data=np.asarray([[0, 64, 100], [255, 120, 150]], dtype=np.uint8))
+        data_group.create_dataset(
+            "data", data=np.asarray([[0, 64, 100], [255, 120, 150]], dtype=np.uint8)
+        )
 
 
 def test_inspects_verified_odim_fields(tmp_path: Path) -> None:
@@ -47,3 +51,15 @@ def test_outputs_transparent_georeferenced_webp(tmp_path: Path) -> None:
     assert result.unit == "dBZ"
     assert len(result.sha256) == 64
     assert result.bounds[0] < result.bounds[2]
+
+
+def test_color_encoding_distinguishes_dry_coverage_from_no_coverage() -> None:
+    values = np.asarray([[-32.0, -32.0, 20.0]], dtype=np.float32)
+    detected = np.asarray([[False, False, True]])
+    coverage = np.asarray([[False, True, True]])
+
+    rgba = _colorize(values, detected, coverage)
+
+    assert rgba[0, 0, 3] == 0
+    assert rgba[0, 1, 3] == 1
+    assert rgba[0, 2, 3] > 1

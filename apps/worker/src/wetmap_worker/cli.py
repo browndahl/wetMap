@@ -15,10 +15,12 @@ from .processor import inspect_odim, process_hdf5
 from .storage import (
     download_frames_r2,
     download_manifest_r2,
+    download_previous_nowcast_r2,
     upload_nowcast_r2,
     upload_r2,
     write_json_atomic,
 )
+from .verification import append_verification_history, verify_previous_nowcast
 
 
 def configure_logs() -> None:
@@ -84,6 +86,25 @@ def run(output: Path, limit: int, upload: bool) -> None:
                 source_paths = [output / name for name in source_names]
             if all(path.exists() for path in source_paths):
                 nowcast_directory = output / "nowcast"
+                with tempfile.TemporaryDirectory(prefix="wetmap-previous-nowcast-") as previous:
+                    previous_directory = Path(previous)
+                    try:
+                        if upload and download_previous_nowcast_r2(previous_directory):
+                            verification = verify_previous_nowcast(
+                                previous_directory / "point-risk.json",
+                                previous_directory / "point-risk.bin",
+                                source_paths[-1],
+                                source_frames[-1].observedAt,
+                            )
+                            if verification:
+                                previous_history = previous_directory / "verification.json"
+                                history = append_verification_history(
+                                    previous_history, verification
+                                )
+                                write_json_atomic(nowcast_directory / "verification.json", history)
+                    except Exception:
+                        # Verification is observability and must not block a fresh nowcast.
+                        logging.exception("nowcast.verification.failed")
                 nowcast, risk, nowcast_paths = generate_nowcast(
                     source_paths,
                     source_frames,

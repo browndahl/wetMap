@@ -59,6 +59,45 @@ def download_frames_r2(output_directory: Path, frame_names: Iterable[str]) -> li
     return downloaded
 
 
+def download_previous_nowcast_r2(destination: Path) -> bool:
+    """Download the prior point nowcast and optional verification history."""
+    from botocore.exceptions import ClientError
+
+    destination.mkdir(parents=True, exist_ok=True)
+    client = _r2_client()
+    bucket = os.environ["R2_BUCKET"]
+    metadata_path = destination / "point-risk.json"
+    try:
+        client.download_file(bucket, "nowcast/point-risk.json", str(metadata_path))
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") in {
+            "404",
+            "NoSuchKey",
+            "NotFound",
+        }:
+            return False
+        raise
+    point_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    data_key = point_metadata.get("dataKey", "nowcast/point-risk.bin")
+    for key, name, required in (
+        (data_key, "point-risk.bin", True),
+        ("nowcast/verification.json", "verification.json", False),
+    ):
+        try:
+            client.download_file(bucket, key, str(destination / name))
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in {
+                "404",
+                "NoSuchKey",
+                "NotFound",
+            }:
+                if required:
+                    return False
+                continue
+            raise
+    return (destination / "point-risk.bin").exists()
+
+
 def upload_r2(output_directory: Path, frame_paths: Iterable[Path] | None = None) -> None:
     """Upload the immutable frames first and the short-lived manifest last."""
     bucket = os.environ["R2_BUCKET"]
@@ -96,7 +135,20 @@ def upload_nowcast_r2(nowcast_directory: Path, frame_paths: Iterable[Path]) -> N
             f"nowcast/{frame.name}",
             ExtraArgs={"ContentType": "image/webp", "CacheControl": "public,max-age=300"},
         )
-    for name in ("nowcast.json", "risk.json"):
+    point_metadata = json.loads((nowcast_directory / "point-risk.json").read_text())
+    client.upload_file(
+        str(nowcast_directory / "point-risk.bin"),
+        bucket,
+        point_metadata["dataKey"],
+        ExtraArgs={
+            "ContentType": "application/octet-stream",
+            "CacheControl": "no-cache",
+        },
+    )
+    metadata_names = ["nowcast.json", "risk.json", "point-risk.json"]
+    if (nowcast_directory / "verification.json").exists():
+        metadata_names.append("verification.json")
+    for name in metadata_names:
         client.upload_file(
             str(nowcast_directory / name),
             bucket,
