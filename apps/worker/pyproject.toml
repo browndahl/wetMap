@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==8.4.2", "ruff==0.14.1"]
+dev = ["pytest==9.1.1", "ruff==0.14.1"]
 
 [project.scripts]
 wetmap-worker = "wetmap_worker.cli:main"
