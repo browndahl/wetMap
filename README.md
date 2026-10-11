@@ -22,6 +22,7 @@ Open <http://localhost:8080>. The first start downloads and processes the latest
 flowchart LR
   DMI["DMI Open Data\nRadar + HARMONIE"]
   OM["Open-Meteo\nDMI forecast cache"]
+  Photon["Photon\nDanish place search"]
   Scheduler["Cloudflare Cron\nfreshness check every 5 minutes"]
   GH["GitHub Actions\nradar processing"]
   PW["Python worker\nODIM HDF5 → EPSG:3857 WebP"]
@@ -35,13 +36,14 @@ flowchart LR
   DMI --> GH --> PW --> R2
   DMI --> OM --> Edge
   DMI -. direct forecast fallback .-> Edge
+  Photon -->|cached search + reverse lookup| Edge
   R2 --> Edge
   Pages --> User
   Edge --> User
   Map --> User
 ```
 
-The production path uses a small Cloudflare Worker because static frames and cached point forecasts fit its free tier and avoid a cold-started container. The .NET 10 modular monolith remains the canonical, portable API and is used in Compose; see [ADR 0002](docs/adr/0002-edge-production-api.md).
+The production path uses a small Cloudflare Worker because static frames, cached point forecasts, and cached Danish location search fit its free tier and avoid a cold-started container. The location search is Denmark-filtered and degrades independently, so a Photon outage does not remove radar, forecasts, map clicks, or saved browser favorites. The .NET 10 modular monolith remains the canonical, portable API and is used in Compose; see [ADR 0002](docs/adr/0002-edge-production-api.md).
 
 ## Repository
 
@@ -81,7 +83,7 @@ The dated, sourced table is in [docs/FREE-TIER-BUDGET.md](docs/FREE-TIER-BUDGET.
 
 ## Data and privacy
 
-Browser geolocation is used only to move the map. The coordinate leaves the device only after the user selects/requests a point forecast; there is no account or database in v1. DMI data is CC BY 4.0 and every response and visible frame state carries: **“Baseret på data fra DMI og efterfølgende bearbejdet”** plus a fetch timestamp.
+Browser geolocation is requested only when the user presses the location button. The coordinate is sent to the WetMap Worker for a point forecast and a cached place-name lookup; the application has no account or user-location database. Searches are proxied through the Worker, while favorites remain in browser storage. DMI data is CC BY 4.0 and every response and visible frame state carries: **“Baseret på data fra DMI og efterfølgende bearbejdet”** plus a fetch timestamp.
 
 ## Status
 

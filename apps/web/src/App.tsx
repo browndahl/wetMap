@@ -3,18 +3,21 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronUp,
+  Clock3,
   CloudRain,
   Languages,
   Layers3,
   Pause,
   Play,
   Radio,
+  SkipForward,
   Wind,
 } from "lucide-react";
 import { DMI_ATTRIBUTION, RADAR_SCALE } from "@wetmap/shared";
 import { getForecast, getRadarManifest } from "./api";
 import { translate } from "./i18n";
 import { useWeatherStore } from "./store";
+import LocationSearch from "./components/LocationSearch";
 
 const WeatherMap = lazy(() => import("./components/WeatherMap"));
 const radarDelayBudgetMinutes = 25;
@@ -83,6 +86,12 @@ export default function App() {
       )
     : Infinity;
   const isStale = ageMinutes > radarDelayBudgetMinutes;
+  const activeAgeMinutes = activeFrame
+    ? Math.max(
+        0,
+        Math.floor((now - new Date(activeFrame.observedAt).getTime()) / 60_000),
+      )
+    : 0;
   const currentHour = new Date(now);
   currentHour.setMinutes(0, 0, 0);
   const forecastPoints = (forecast.data?.points ?? [])
@@ -168,7 +177,7 @@ export default function App() {
         <div>
           <strong>wetmap</strong>
           <span>
-            {forecastLatitude.toFixed(2)}°n · {forecastLongitude.toFixed(2)}°e
+            {state.selectedLocation.name} · {forecastLatitude.toFixed(2)}°n
           </span>
         </div>
         <span
@@ -191,6 +200,8 @@ export default function App() {
           <span>{state.locale.toUpperCase()}</span>
         </button>
       </header>
+
+      <LocationSearch />
 
       <section
         id="weather-panel"
@@ -311,6 +322,25 @@ export default function App() {
           <div id="timeline-details">
             {frames.length ? (
               <>
+                <div className="timeline-context">
+                  <span>
+                    <Clock3 size={14} aria-hidden="true" />
+                    {t("measured")}{" "}
+                    {formatTime(activeFrame.observedAt, state.locale)}
+                  </span>
+                  <span className="timeline-gap">
+                    {activeAgeMinutes} {t("minutesBehindNow")}
+                  </span>
+                  {safeIndex < lastFrameIndex && (
+                    <button
+                      type="button"
+                      onClick={() => state.setSelectedFrame(lastFrameIndex)}
+                    >
+                      <SkipForward size={14} aria-hidden="true" />
+                      {t("jumpToLatest")}
+                    </button>
+                  )}
+                </div>
                 <input
                   className="scrubber"
                   type="range"

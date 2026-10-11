@@ -1,7 +1,12 @@
 export const DMI_ATTRIBUTION =
   "Baseret på data fra DMI og efterfølgende bearbejdet" as const;
 
-export type RadarBounds = [west: number, south: number, east: number, north: number];
+export type RadarBounds = [
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+];
 
 export interface RadarFrame {
   id: string;
@@ -39,6 +44,20 @@ export interface ForecastResponse {
   points: ForecastPoint[];
 }
 
+export interface LocationResult {
+  id: string;
+  name: string;
+  context: string;
+  latitude: number;
+  longitude: number;
+  type: "address" | "place";
+}
+
+export interface LocationSearchResponse {
+  query: string;
+  results: LocationResult[];
+}
+
 export interface ProblemDetails {
   type: string;
   title: string;
@@ -55,7 +74,7 @@ export const RADAR_SCALE = [
   { min: 20, color: "#56d46c", label: "20" },
   { min: 30, color: "#f2db4c", label: "30" },
   { min: 40, color: "#ff8b38", label: "40" },
-  { min: 50, color: "#ed3e57", label: "50+" }
+  { min: 50, color: "#ed3e57", label: "50+" },
 ] as const;
 
 export { WetMapApiClient, WetMapApiError } from "./client";

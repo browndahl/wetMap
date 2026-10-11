@@ -47,6 +47,66 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+  /api/v1/locations/search:
+    get:
+      operationId: searchLocations
+      summary: Searches Danish cities and addresses
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 80 }
+        - name: lat
+          in: query
+          schema: { type: number, minimum: -90, maximum: 90 }
+        - name: lon
+          in: query
+          schema: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        "200":
+          description: Denmark-filtered location matches
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocationSearchResponse" }
+        "400":
+          description: Invalid query
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Location provider unavailable
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+  /api/v1/locations/reverse:
+    get:
+      operationId: reverseLocation
+      summary: Resolves Danish coordinates to a place or address
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: { type: number, minimum: 54.4, maximum: 58 }
+        - name: lon
+          in: query
+          required: true
+          schema: { type: number, minimum: 7.5, maximum: 15.5 }
+      responses:
+        "200":
+          description: Resolved location
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocationResult" }
+        "400":
+          description: Coordinates outside Denmark
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Location provider unavailable
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
 components:
   schemas:
     RadarFrame:
@@ -71,7 +131,11 @@ components:
       properties:
         schemaVersion: { type: integer, const: 1 }
         generatedAt: { type: string, format: date-time }
-        attribution: { type: string, const: "Baseret på data fra DMI og efterfølgende bearbejdet" }
+        attribution:
+          {
+            type: string,
+            const: "Baseret på data fra DMI og efterfølgende bearbejdet",
+          }
         frames:
           type: array
           items: { $ref: "#/components/schemas/RadarFrame" }
@@ -91,10 +155,32 @@ components:
         latitude: { type: number }
         longitude: { type: number }
         fetchedAt: { type: string, format: date-time }
-        attribution: { type: string, const: "Baseret på data fra DMI og efterfølgende bearbejdet" }
+        attribution:
+          {
+            type: string,
+            const: "Baseret på data fra DMI og efterfølgende bearbejdet",
+          }
         points:
           type: array
           items: { $ref: "#/components/schemas/ForecastPoint" }
+    LocationResult:
+      type: object
+      required: [id, name, context, latitude, longitude, type]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        context: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        type: { type: string, enum: [address, place] }
+    LocationSearchResponse:
+      type: object
+      required: [query, results]
+      properties:
+        query: { type: string }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/LocationResult" }
     ProblemDetails:
       type: object
       required: [type, title, status]

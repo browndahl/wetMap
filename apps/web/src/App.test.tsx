@@ -26,6 +26,14 @@ const apiMocks = vi.hoisted(() => ({
     attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
     points: [] as Array<Record<string, unknown>>,
   },
+  locations: [] as Array<{
+    id: string;
+    name: string;
+    context: string;
+    latitude: number;
+    longitude: number;
+    type: "address" | "place";
+  }>,
 }));
 
 vi.mock("./components/WeatherMap", () => ({
@@ -44,13 +52,38 @@ vi.mock("./components/WeatherMap", () => ({
 vi.mock("./api", () => ({
   getRadarManifest: async () => apiMocks.manifest,
   getForecast: async () => apiMocks.forecast,
+  searchLocations: async (query: string) => ({
+    query,
+    results: apiMocks.locations,
+  }),
+  reverseLocation: async (latitude: number, longitude: number) => ({
+    id: "device-location",
+    name: "Min placering",
+    context: "Aarhus",
+    latitude,
+    longitude,
+    type: "place",
+  }),
 }));
 
 beforeEach(() => {
   window.localStorage.clear();
   apiMocks.manifest.frames = [];
   apiMocks.forecast.points = [];
-  useWeatherStore.setState({ selectedFrame: -1, playing: false, locale: "da" });
+  apiMocks.locations = [];
+  useWeatherStore.setState({
+    selectedFrame: -1,
+    playing: false,
+    locale: "da",
+    selectedLocation: {
+      id: "aarhus",
+      name: "Aarhus",
+      context: "Region Midtjylland",
+      latitude: 56.1629,
+      longitude: 10.2039,
+    },
+    favoriteLocations: [],
+  });
 });
 
 afterEach(cleanup);
@@ -132,4 +165,47 @@ it("minimizes the latest observation panel and remembers the preference", async 
   expect(
     await screen.findByRole("button", { name: "Vis seneste observation" }),
   ).toBeInTheDocument();
+});
+
+it("searches for a place, moves the forecast location, and saves a favorite", async () => {
+  apiMocks.locations = [
+    {
+      id: "photon:N:1",
+      name: "København",
+      context: "Region Hovedstaden",
+      latitude: 55.6761,
+      longitude: 12.5683,
+      type: "place",
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  const input = await screen.findByRole("searchbox", {
+    name: "Søg efter by eller adresse",
+  });
+  fireEvent.change(input, { target: { value: "København" } });
+  const resultLabel = await screen.findByText(
+    "København",
+    {},
+    { timeout: 2_000 },
+  );
+  fireEvent.click(resultLabel.closest("button")!);
+
+  await waitFor(() =>
+    expect(useWeatherStore.getState().selectedLocation.name).toBe("København"),
+  );
+  expect(input).toHaveValue("København");
+
+  fireEvent.click(screen.getByRole("button", { name: "Gem sted som favorit" }));
+  expect(useWeatherStore.getState().favoriteLocations).toHaveLength(1);
+  expect(window.localStorage.getItem("wetmap:favorite-locations")).toContain(
+    "København",
+  );
 });

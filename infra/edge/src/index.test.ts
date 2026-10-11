@@ -276,6 +276,128 @@ describe("forecast edge endpoint", () => {
   });
 });
 
+describe("location edge endpoints", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("normalizes Danish Photon results and caches repeated searches", async () => {
+    const { env, context, waits } = setup();
+    Object.assign(env, { GEOCODER_BASE_URL: "https://photon.test" });
+    const upstream = vi.fn(async (_input: RequestInfo | URL) =>
+      Response.json({
+        features: [
+          {
+            properties: {
+              osm_type: "N",
+              osm_id: 1,
+              type: "city",
+              name: "Aarhus",
+              state: "Region Midtjylland",
+              countrycode: "DK",
+            },
+            geometry: { coordinates: [10.21, 56.15] },
+          },
+          {
+            properties: {
+              osm_type: "N",
+              osm_id: 2,
+              type: "city",
+              name: "Aarhus",
+              countrycode: "US",
+            },
+            geometry: { coordinates: [-95, 40] },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", upstream);
+
+    const request = new Request(
+      "https://api.test/api/v1/locations/search?q=Aarhus&lat=56.16&lon=10.20",
+    );
+    const first = await worker.fetch(request, env, context);
+    const body = (await first.json()) as {
+      query: string;
+      results: Array<{ name: string; context: string }>;
+    };
+    await Promise.all(waits);
+    const second = await worker.fetch(request, env, context);
+
+    expect(body).toMatchObject({
+      query: "Aarhus",
+      results: [{ name: "Aarhus", context: "Region Midtjylland" }],
+    });
+    expect(first.headers.get("X-WetMap-Cache")).toBe("MISS");
+    expect(second.headers.get("X-WetMap-Cache")).toBe("HIT");
+    expect(upstream).toHaveBeenCalledOnce();
+    expect(String(upstream.mock.calls[0]?.[0])).toContain("countrycode=DK");
+  });
+
+  it("rejects invalid location queries before calling Photon", async () => {
+    const { env, context } = setup();
+    const upstream = vi.fn();
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await worker.fetch(
+      new Request("https://api.test/api/v1/locations/search?q=A"),
+      env,
+      context,
+    );
+
+    expect(response.status).toBe(400);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("turns reverse geocoding into an address label", async () => {
+    const { env, context } = setup();
+    Object.assign(env, { GEOCODER_BASE_URL: "https://photon.test" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          features: [
+            {
+              properties: {
+                osm_type: "N",
+                osm_id: 3,
+                type: "house",
+                street: "Livøsmøgen",
+                housenumber: "36A",
+                city: "Aarhus C",
+                postcode: "8000",
+                countrycode: "DK",
+              },
+              geometry: { coordinates: [10.204, 56.163] },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const response = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/locations/reverse?lat=56.1629&lon=10.2039",
+      ),
+      env,
+      context,
+    );
+    const body = (await response.json()) as {
+      name: string;
+      context: string;
+      type: string;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      name: "Livøsmøgen 36A",
+      context: "8000 · Aarhus C",
+      type: "address",
+    });
+  });
+});
+
 describe("radar freshness scheduler", () => {
   beforeEach(() => {
     vi.useFakeTimers();

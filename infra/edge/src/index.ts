@@ -2,6 +2,7 @@ interface Env {
   RADAR: R2Bucket;
   DMI_BASE_URL: string;
   OPEN_METEO_BASE_URL: string;
+  GEOCODER_BASE_URL?: string;
   ALLOWED_ORIGIN: string;
   GITHUB_DISPATCH_TOKEN?: string;
   GITHUB_REPOSITORY?: string;
@@ -14,6 +15,35 @@ const jsonHeaders = { "Content-Type": "application/json; charset=utf-8" };
 const forecastCacheSeconds = 10 * 60;
 const forecastStaleSeconds = 6 * 60 * 60;
 const radarDispatchAgeMs = 20 * 60 * 1000;
+const locationCacheSeconds = 24 * 60 * 60;
+const reverseLocationCacheSeconds = 7 * 24 * 60 * 60;
+
+interface PhotonFeature {
+  geometry?: { coordinates?: unknown[] };
+  properties?: {
+    osm_type?: string;
+    osm_id?: string | number;
+    type?: string;
+    name?: string;
+    street?: string;
+    housenumber?: string;
+    postcode?: string;
+    locality?: string;
+    district?: string;
+    city?: string;
+    state?: string;
+    countrycode?: string;
+  };
+}
+
+interface LocationResult {
+  id: string;
+  name: string;
+  context: string;
+  latitude: number;
+  longitude: number;
+  type: "address" | "place";
+}
 
 interface ForecastPoint {
   step: string;
@@ -57,6 +87,214 @@ function problem(status: number, title: string, detail: string): Response {
     { type: "about:blank", title, status, detail },
     { status, headers: { "Content-Type": "application/problem+json" } },
   );
+}
+
+function coordinate(value: string | null): number | null {
+  if (value === null || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeLocation(feature: PhotonFeature): LocationResult | null {
+  const properties = feature.properties;
+  const coordinates = feature.geometry?.coordinates;
+  const longitude = Number(coordinates?.[0]);
+  const latitude = Number(coordinates?.[1]);
+  if (
+    !properties ||
+    properties.countrycode?.toUpperCase() !== "DK" ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  )
+    return null;
+
+  const streetAddress = [properties.street, properties.housenumber]
+    .filter(Boolean)
+    .join(" ");
+  const name = properties.name?.trim() || streetAddress;
+  if (!name) return null;
+  const context = Array.from(
+    new Set(
+      [
+        properties.postcode,
+        properties.city,
+        properties.district,
+        properties.locality,
+        properties.state,
+      ].filter(
+        (value): value is string =>
+          Boolean(value) &&
+          value?.toLocaleLowerCase() !== name.toLocaleLowerCase(),
+      ),
+    ),
+  ).join(" · ");
+  const type = ["house", "street"].includes(properties.type ?? "")
+    ? "address"
+    : "place";
+  return {
+    id: `photon:${properties.osm_type ?? "?"}:${properties.osm_id ?? `${latitude},${longitude}`}`,
+    name,
+    context,
+    latitude,
+    longitude,
+    type,
+  };
+}
+
+async function fetchPhoton(
+  pathname: "/api/" | "/reverse",
+  parameters: URLSearchParams,
+  env: Env,
+): Promise<LocationResult[]> {
+  const base = new URL(env.GEOCODER_BASE_URL ?? "https://photon.komoot.io");
+  const upstream = new URL(pathname, base);
+  upstream.search = parameters.toString();
+  const response = await fetch(upstream, {
+    headers: {
+      Accept: "application/geo+json, application/json",
+      "User-Agent": "WetMap/1.0 (+https://wetmap.pages.dev)",
+    },
+    signal: AbortSignal.timeout(4_000),
+  });
+  if (!response.ok)
+    throw new Error(`Photon geocoder returned ${response.status}`);
+  const payload = (await response.json()) as { features?: PhotonFeature[] };
+  return (payload.features ?? [])
+    .map(normalizeLocation)
+    .filter((location): location is LocationResult => location !== null);
+}
+
+async function searchLocations(
+  url: URL,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
+  const query = (url.searchParams.get("q") ?? "").trim().replace(/\s+/g, " ");
+  if (query.length < 2 || query.length > 80)
+    return problem(
+      400,
+      "Invalid location query",
+      "Use between 2 and 80 characters.",
+    );
+  const latitude = coordinate(url.searchParams.get("lat"));
+  const longitude = coordinate(url.searchParams.get("lon"));
+  const cacheUrl = new URL("https://cache.wetmap/locations/search");
+  cacheUrl.searchParams.set("q", query.toLocaleLowerCase("da-DK"));
+  if (latitude !== null && longitude !== null) {
+    cacheUrl.searchParams.set("lat", latitude.toFixed(1));
+    cacheUrl.searchParams.set("lon", longitude.toFixed(1));
+  }
+  const cacheRequest = new Request(cacheUrl);
+  const cached = await caches.default.match(cacheRequest);
+  if (cached) {
+    const headers = new Headers(cached.headers);
+    headers.set("X-WetMap-Cache", "HIT");
+    return new Response(cached.body, { status: cached.status, headers });
+  }
+
+  const parameters = new URLSearchParams({
+    q: query,
+    limit: "6",
+    countrycode: "DK",
+  });
+  if (latitude !== null && longitude !== null) {
+    parameters.set("lat", String(latitude));
+    parameters.set("lon", String(longitude));
+    parameters.set("zoom", "8");
+    parameters.set("location_bias_scale", "0.25");
+  }
+  try {
+    const results = await fetchPhoton("/api/", parameters, env);
+    const response = Response.json(
+      { query, results },
+      {
+        headers: {
+          ...jsonHeaders,
+          "Cache-Control": `public,max-age=${locationCacheSeconds}`,
+          "X-WetMap-Cache": "MISS",
+        },
+      },
+    );
+    context.waitUntil(caches.default.put(cacheRequest, response.clone()));
+    return response;
+  } catch (error) {
+    console.error("location.search.failed", { error });
+    return problem(
+      503,
+      "Location search unavailable",
+      "Location search is temporarily unavailable.",
+    );
+  }
+}
+
+async function reverseLocation(
+  url: URL,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
+  const latitude = coordinate(url.searchParams.get("lat"));
+  const longitude = coordinate(url.searchParams.get("lon"));
+  if (
+    latitude === null ||
+    longitude === null ||
+    latitude < 54.4 ||
+    latitude > 58 ||
+    longitude < 7.5 ||
+    longitude > 15.5
+  )
+    return problem(
+      400,
+      "Invalid location",
+      "Coordinates must be located in Denmark.",
+    );
+  const cacheUrl = new URL("https://cache.wetmap/locations/reverse");
+  cacheUrl.searchParams.set("lat", latitude.toFixed(3));
+  cacheUrl.searchParams.set("lon", longitude.toFixed(3));
+  const cacheRequest = new Request(cacheUrl);
+  const cached = await caches.default.match(cacheRequest);
+  if (cached) {
+    const headers = new Headers(cached.headers);
+    headers.set("X-WetMap-Cache", "HIT");
+    return new Response(cached.body, { status: cached.status, headers });
+  }
+
+  try {
+    const [result] = await fetchPhoton(
+      "/reverse",
+      new URLSearchParams({
+        lat: String(latitude),
+        lon: String(longitude),
+        limit: "1",
+      }),
+      env,
+    );
+    const location: LocationResult =
+      result ??
+      ({
+        id: `coordinates:${latitude.toFixed(5)},${longitude.toFixed(5)}`,
+        name: `${latitude.toFixed(3)}°N, ${longitude.toFixed(3)}°E`,
+        context: "Danmark",
+        latitude,
+        longitude,
+        type: "place",
+      } satisfies LocationResult);
+    const response = Response.json(location, {
+      headers: {
+        ...jsonHeaders,
+        "Cache-Control": `public,max-age=${reverseLocationCacheSeconds}`,
+        "X-WetMap-Cache": "MISS",
+      },
+    });
+    context.waitUntil(caches.default.put(cacheRequest, response.clone()));
+    return response;
+  } catch (error) {
+    console.error("location.reverse.failed", { error });
+    return problem(
+      503,
+      "Location lookup unavailable",
+      "The selected coordinates are still available.",
+    );
+  }
 }
 
 async function frames(request: Request, env: Env): Promise<Response> {
@@ -434,6 +672,10 @@ export default {
       response = await frames(request, env);
     else if (url.pathname === "/api/v1/weather/forecast")
       response = await forecast(url, env, context);
+    else if (url.pathname === "/api/v1/locations/search")
+      response = await searchLocations(url, env, context);
+    else if (url.pathname === "/api/v1/locations/reverse")
+      response = await reverseLocation(url, env, context);
     else if (url.pathname.startsWith("/frames/"))
       response = await frame(url.pathname, request, env);
     else if (url.pathname === "/health/live")
