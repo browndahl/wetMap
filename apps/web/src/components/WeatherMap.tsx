@@ -84,6 +84,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
   const opacityRef = useRef(0.7);
   const opacity = useWeatherStore((state) => state.opacity);
   const precise2d = useWeatherStore((state) => state.precise2d);
+  const locale = useWeatherStore((state) => state.locale);
   const selectedLocation = useWeatherStore((state) => state.selectedLocation);
   const setSelectedLocation = useWeatherStore(
     (state) => state.setSelectedLocation,
@@ -277,7 +278,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
     <div
       ref={container}
       className="map"
-      aria-label="Interaktivt radarkort over Aarhus"
+      aria-label={`${translate(locale, "interactiveRadarMap")} ${selectedLocation.name}`}
     />
   );
 }

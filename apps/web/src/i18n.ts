@@ -47,6 +47,7 @@ const messages = {
     minutesBehindNow: "min bag nu",
     jumpToLatest: "Gå til seneste observation",
     selectedOnMap: "Valgt på kortet",
+    interactiveRadarMap: "Interaktivt radarkort over",
   },
   en: {
     radar: "Radar",
@@ -96,6 +97,7 @@ const messages = {
     minutesBehindNow: "min behind now",
     jumpToLatest: "Go to latest observation",
     selectedOnMap: "Selected on map",
+    interactiveRadarMap: "Interactive radar map over",
   },
 } as const;
 
