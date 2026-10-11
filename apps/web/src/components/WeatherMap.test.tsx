@@ -10,11 +10,13 @@ type MapHandler = () => void;
 const map = vi.hoisted(() => {
   const state = {
     loadHandlers: [] as MapHandler[],
+    styleDataHandlers: [] as MapHandler[],
     pendingLoadHandler: undefined as MapHandler | undefined,
     isStyleLoaded: vi.fn(),
     addControl: vi.fn(),
     on: vi.fn((event: string, handler: MapHandler) => {
       if (event === "load") state.loadHandlers.push(handler);
+      if (event === "styledata") state.styleDataHandlers.push(handler);
       return state;
     }),
     once: vi.fn((event: string, handler: MapHandler) => {
@@ -32,16 +34,18 @@ const map = vi.hoisted(() => {
     setPaintProperty: vi.fn(),
     setLayoutProperty: vi.fn(),
     easeTo: vi.fn(),
-    remove: vi.fn()
+    remove: vi.fn(),
   };
   return state;
 });
 
 vi.mock("maplibre-gl", () => ({
   setWorkerUrl: vi.fn(),
-  Map: function Map() { return map; },
+  Map: function Map() {
+    return map;
+  },
   NavigationControl: function NavigationControl() {},
-  GeolocateControl: function GeolocateControl() {}
+  GeolocateControl: function GeolocateControl() {},
 }));
 
 const frame: RadarFrame = {
@@ -52,16 +56,19 @@ const frame: RadarFrame = {
   bounds: [7, 54, 13, 58],
   product: "DBZH",
   unit: "dBZ",
-  sha256: "test"
+  sha256: "test",
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   map.loadHandlers.length = 0;
+  map.styleDataHandlers.length = 0;
   map.pendingLoadHandler = undefined;
   map.isStyleLoaded.mockReturnValue(false);
   map.getLayer.mockReturnValue(undefined);
-  window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
+  window.matchMedia = vi
+    .fn()
+    .mockReturnValue({ matches: false }) as typeof window.matchMedia;
   useWeatherStore.setState({ opacity: 0.7 });
 });
 
@@ -79,20 +86,45 @@ it("renders a cached radar frame after the map style finishes loading", () => {
 
   expect(map.addSource).toHaveBeenCalledWith(
     "radar-1",
-    expect.objectContaining({ type: "image", url: expect.stringMatching(/\/frames\/test-frame\.webp$/) })
+    expect.objectContaining({
+      type: "image",
+      url: expect.stringMatching(/\/frames\/test-frame\.webp$/),
+    }),
+  );
+  view.unmount();
+});
+
+it("renders the first frame when style readiness arrives after the load event", () => {
+  const view = render(<WeatherMap frames={[frame]} activeIndex={0} />);
+
+  expect(map.on).toHaveBeenCalledWith("styledata", expect.any(Function));
+  map.isStyleLoaded.mockReturnValue(true);
+  act(() => {
+    map.styleDataHandlers.forEach((handler) => handler());
+  });
+
+  expect(map.addSource).toHaveBeenCalledWith(
+    "radar-1",
+    expect.objectContaining({ type: "image" }),
   );
   view.unmount();
 });
 
 it("updates opacity without rebuilding the radar source", () => {
   map.isStyleLoaded.mockReturnValue(true);
-  map.getLayer.mockImplementation((id: string) => id === "radar-layer-1" ? {} : undefined);
+  map.getLayer.mockImplementation((id: string) =>
+    id === "radar-layer-1" ? {} : undefined,
+  );
   const view = render(<WeatherMap frames={[frame]} activeIndex={0} />);
   const sourceAdds = map.addSource.mock.calls.length;
 
   act(() => useWeatherStore.getState().setOpacity(0.45));
 
   expect(map.addSource).toHaveBeenCalledTimes(sourceAdds);
-  expect(map.setPaintProperty).toHaveBeenCalledWith("radar-layer-1", "raster-opacity", 0.45);
+  expect(map.setPaintProperty).toHaveBeenCalledWith(
+    "radar-layer-1",
+    "raster-opacity",
+    0.45,
+  );
   view.unmount();
 });

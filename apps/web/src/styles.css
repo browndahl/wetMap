@@ -420,8 +420,50 @@ a {
 .rain-bar-track {
   position: relative;
   overflow: hidden;
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 0.08rem;
+  padding: 0.34rem 0.18rem;
+  border: 1px solid oklch(1 0 0 / 7%);
   border-radius: 0.3rem;
   background: oklch(1 0 0 / 5%);
+}
+.rain-bar-track.is-light {
+  border-color: oklch(0.78 0.12 210 / 28%);
+  background: oklch(0.78 0.12 210 / 8%);
+}
+.rain-bar-track.is-moderate {
+  border-color: oklch(0.7 0.15 230 / 34%);
+  background: oklch(0.7 0.15 230 / 10%);
+}
+.rain-bar-track.is-heavy {
+  border-color: oklch(0.72 0.18 270 / 40%);
+  background: oklch(0.72 0.18 270 / 12%);
+}
+.rain-amount,
+.rain-intensity {
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 3px oklch(0.08 0.02 240 / 80%);
+}
+.rain-amount {
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.rain-amount small {
+  color: var(--text-2);
+  font-size: 0.45rem;
+  font-weight: 600;
+}
+.rain-intensity {
+  color: var(--text-2);
+  font-size: 0.47rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 .rain-bar {
   position: absolute;
@@ -431,6 +473,7 @@ a {
   min-height: 2px;
   border-radius: 0.25rem;
   background: oklch(0.66 0.14 230 / 75%);
+  opacity: 0.7;
 }
 .rain-bar.is-none {
   background: oklch(0.75 0.02 230 / 20%);
@@ -769,7 +812,10 @@ a {
     padding-top: 0.5rem;
   }
   .rain-chart {
-    height: 3.3rem;
+    height: 3.7rem;
+  }
+  .rain-amount {
+    font-size: 0.56rem;
   }
   .rain-method,
   .rain-alert-note {

@@ -115,7 +115,7 @@ it("shows an honest empty radar state", async () => {
   expect(screen.getByText(/Baseret på data fra DMI/)).toBeInTheDocument();
 });
 
-it("opens on the latest available radar observation", async () => {
+it("automatically plays recent radar history and finishes on the latest observation", async () => {
   const base = {
     fetchedAt: "2026-10-10T21:01:00Z",
     url: "/frames/frame.webp",
@@ -137,8 +137,16 @@ it("opens on the latest available radar observation", async () => {
     </QueryClientProvider>,
   );
 
-  await waitFor(() =>
-    expect(screen.getByTestId("active-frame")).toHaveTextContent("latest"),
+  await waitFor(() => {
+    expect(screen.getByTestId("active-frame")).toHaveTextContent("older");
+    expect(
+      screen.getByRole("button", { name: "Sæt radar på pause" }),
+    ).toBeInTheDocument();
+  });
+  await waitFor(
+    () =>
+      expect(screen.getByTestId("active-frame")).toHaveTextContent("latest"),
+    { timeout: 1_500 },
   );
   expect(screen.getByRole("slider", { name: "Radar-tidspunkt" })).toHaveValue(
     "1",
@@ -285,6 +293,10 @@ it("explains the next-hour rain estimate and handles blocked alerts", async () =
   expect(await screen.findByText("Regn starter ca. 10.30")).toBeInTheDocument();
   expect(screen.getByText("Forventet 0.90 mm")).toBeInTheDocument();
   expect(screen.getByText(/interpoleret fra DMI/)).toBeInTheDocument();
+  expect(screen.getAllByText("Let")).toHaveLength(3);
+  expect(
+    screen.getByText((_, element) => element?.textContent === "0,20 mm"),
+  ).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Varsl mig" }));
   expect(

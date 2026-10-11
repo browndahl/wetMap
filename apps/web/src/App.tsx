@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -45,6 +45,7 @@ const timelineStartsCollapsed = () => {
 
 export default function App() {
   const state = useWeatherStore();
+  const initialRadarPlaybackStarted = useRef(false);
   const [now, setNow] = useState(() => Date.now());
   const [timelineCollapsed, setTimelineCollapsed] = useState(
     timelineStartsCollapsed,
@@ -155,7 +156,21 @@ export default function App() {
       frames.length &&
       (state.selectedFrame < 0 || state.selectedFrame >= frames.length)
     ) {
-      state.setSelectedFrame(frames.length - 1);
+      const lastIndex = frames.length - 1;
+      const reducedMotion =
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+        false;
+      if (
+        frames.length > 1 &&
+        !reducedMotion &&
+        !initialRadarPlaybackStarted.current
+      ) {
+        initialRadarPlaybackStarted.current = true;
+        state.setSelectedFrame(Math.max(0, lastIndex - 6));
+        state.setPlaying(true);
+      } else {
+        state.setSelectedFrame(lastIndex);
+      }
     }
   }, [frames.length, state]);
 

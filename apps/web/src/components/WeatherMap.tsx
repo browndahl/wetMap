@@ -208,8 +208,12 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
     if (!map || !frame) return;
 
     let fadeTimer: number | undefined;
+    let rendered = false;
     const renderFrame = () => {
-      if (!map.isStyleLoaded()) return;
+      if (rendered || !map.isStyleLoaded()) return;
+      rendered = true;
+      map.off("load", renderFrame);
+      map.off("styledata", renderFrame);
       const next = visibleBuffer.current === 0 ? 1 : 0;
       const sourceId = `radar-${next}`;
       const layerId = `radar-layer-${next}`;
@@ -241,10 +245,17 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
     };
 
     if (map.isStyleLoaded()) renderFrame();
-    else map.once("load", renderFrame);
+    else {
+      // `isStyleLoaded()` can briefly be false after MapLibre's one-time load
+      // event. Listening to styledata as well prevents the first radar frame
+      // from waiting for a later playback change before it becomes visible.
+      map.on("load", renderFrame);
+      map.on("styledata", renderFrame);
+    }
 
     return () => {
       map.off("load", renderFrame);
+      map.off("styledata", renderFrame);
       if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
     };
   }, [activeIndex, frames]);

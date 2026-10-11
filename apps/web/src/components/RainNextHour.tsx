@@ -177,13 +177,29 @@ export default function RainNextHour({
           <div className="rain-chart" aria-label={t("rainNextHour")}>
             {points.map((point) => (
               <div className="rain-column" key={point.startsAt}>
-                <div className="rain-bar-track" aria-hidden="true">
+                <div
+                  className={`rain-bar-track is-${point.intensity}`}
+                  aria-hidden="true"
+                >
+                  <strong className="rain-amount">
+                    {point.precipitationMm.toLocaleString(
+                      locale === "da" ? "da-DK" : "en-GB",
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      },
+                    )}
+                    <small> mm</small>
+                  </strong>
+                  <span className="rain-intensity">
+                    {t(intensityKey(point.intensity))}
+                  </span>
                   <span
                     className={`rain-bar is-${point.intensity}`}
                     style={{
                       height: `${Math.max(
-                        point.intensity === "none" ? 5 : 18,
-                        (point.precipitationMm / max) * 100,
+                        point.intensity === "none" ? 4 : 16,
+                        (point.precipitationMm / max) * 62,
                       )}%`,
                     }}
                   />
