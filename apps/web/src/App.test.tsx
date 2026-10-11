@@ -130,6 +130,19 @@ it("opens on the latest available radar observation", async () => {
     "1",
   );
   expect(screen.getByText("Seneste observation")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("slider", { name: "Radar-tidspunkt" }), {
+    target: { value: "0" },
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("active-frame")).toHaveTextContent("older"),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Gå til seneste observation" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("active-frame")).toHaveTextContent("latest"),
+  );
 });
 
 it("minimizes the latest observation panel and remembers the preference", async () => {
