@@ -12,3 +12,9 @@ preview_bucket_name = "wetmap-radar-preview"
 DMI_BASE_URL = "https://opendataapi.dmi.dk"
 OPEN_METEO_BASE_URL = "https://api.open-meteo.com"
 ALLOWED_ORIGIN = "https://wetmap.pages.dev,https://wetmap-staging.pages.dev"
+GITHUB_REPOSITORY = "browndahl/wetMap"
+GITHUB_RADAR_WORKFLOW = "radar.yml"
+GITHUB_REF = "main"
+
+[triggers]
+crons = ["1-59/5 * * * *"]

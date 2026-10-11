@@ -1,13 +1,18 @@
 name: Synthetic uptime
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    # Avoid GitHub's busiest quarter-hour boundaries.
+    - cron: "6,21,36,51 * * * *"
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  refresh-radar:
+    uses: ./.github/workflows/radar.yml
+    secrets: inherit
   probe:
-    if: vars.PUBLIC_URL != ''
+    needs: refresh-radar
+    if: always() && vars.PUBLIC_URL != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

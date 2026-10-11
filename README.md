@@ -22,7 +22,8 @@ Open <http://localhost:8080>. The first start downloads and processes the latest
 flowchart LR
   DMI["DMI Open Data\nRadar + HARMONIE"]
   OM["Open-Meteo\nDMI forecast cache"]
-  GH["GitHub Actions\nevery 5 minutes"]
+  Scheduler["Cloudflare Cron\nfreshness check every 5 minutes"]
+  GH["GitHub Actions\nradar processing"]
   PW["Python worker\nODIM HDF5 → EPSG:3857 WebP"]
   R2["Cloudflare R2\nimmutable frames + manifest"]
   Edge["Cloudflare Worker\nforecast proxy + cache"]
@@ -30,6 +31,7 @@ flowchart LR
   Map["OpenFreeMap\nvector tiles"]
   User["Browser\nMapLibre 3D"]
 
+  Scheduler -->|dispatch when >20 min old| GH
   DMI --> GH --> PW --> R2
   DMI --> OM --> Edge
   DMI -. direct forecast fallback .-> Edge
@@ -66,12 +68,12 @@ docker build -t wetmap-api apps/api
 1. Keep the ingestion workflow in a public repository so standard GitHub-hosted Actions do not consume a private-repository minutes allowance. Monitor schedule reliability and acceptable-use limits.
 2. Create Cloudflare Pages, R2, and Workers Free resources. R2 activation uses a checkout/subscription flow even within free usage; configure a hard budget alert and lifecycle deletion.
 3. Apply `infra/tofu` with an API token scoped to R2 write and account ID in environment secrets.
-4. Configure GitHub environments `staging` and `production`. Store credentials such as `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` as secrets. Keep non-sensitive settings such as `R2_ACCOUNT_ID`, `R2_BUCKET`, `PUBLIC_URL`, and `API_URL` as repository variables.
+4. Configure GitHub environments `staging` and `production`. Store credentials such as `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` as secrets. Keep non-sensitive settings such as `R2_ACCOUNT_ID`, `R2_BUCKET`, `PUBLIC_URL`, and `API_URL` as repository variables. Store a fine-grained, repository-scoped Actions-write token as the Cloudflare Worker secret `GITHUB_DISPATCH_TOKEN`; the Worker's five-minute cron dispatches ingestion only when the newest observation is over 20 minutes old.
 5. Run `deploy.yml`; production requires an environment approval. Add the Pages domain to the Worker's `ALLOWED_ORIGIN`.
 
 Apply the branch and environment protections in [docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md). Conventional commits on a protected `main` are released automatically after CI succeeds.
 
-The current GitHub repository and Cloudflare deployment are public and live. Scheduled five-minute radar ingestion is enabled with an R2 token restricted to object read/write on the `wetmap-radar` bucket. Secrets remain encrypted in GitHub Actions and are not passed to workflows triggered from untrusted forks.
+The current GitHub repository and Cloudflare deployment are public and live. Cloudflare provides the primary freshness scheduler, while both the radar and synthetic GitHub schedules remain recovery triggers. Radar ingestion uses an R2 token restricted to object read/write on the `wetmap-radar` bucket. Secrets remain encrypted in their provider secret stores and are not passed to workflows triggered from untrusted forks.
 
 ## Free-tier limits & what happens when exceeded
 

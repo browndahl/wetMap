@@ -8,14 +8,18 @@ const messages = {
     noDataDetail: "Kør workeren for at hente de seneste DMI-observationer.",
     play: "Afspil radar",
     pause: "Sæt radar på pause",
+    collapseTimeline: "Minimer seneste observation",
+    expandTimeline: "Vis seneste observation",
     opacity: "Radar-gennemsigtighed",
     precise: "2D præcision",
     forecast: "Punktprognose",
     now: "Nu",
     fresh: "Opdateret",
     stale: "Forsinket",
-    freshnessHelp: "DMI-radar udgives normalt 10–20 minutter efter selve måletidspunktet.",
-    futureRadarNote: "Radar viser målinger bagud i tid. De næste timer vises som HARMONIE-prognose.",
+    freshnessHelp:
+      "DMI-radar udgives normalt 10–20 minutter efter selve måletidspunktet.",
+    futureRadarNote:
+      "Radar viser målinger bagud i tid. De næste timer vises som HARMONIE-prognose.",
     fetched: "hentet",
     skipToWeather: "Spring til vejrinformation",
     loadingMap: "Indlæser kort…",
@@ -26,7 +30,7 @@ const messages = {
     locate: "Find min placering",
     language: "Skift sprog",
     buildings: "3D-bygninger",
-    reflectivity: "Reflektivitet · dBZ"
+    reflectivity: "Reflektivitet · dBZ",
   },
   en: {
     radar: "Radar",
@@ -37,14 +41,18 @@ const messages = {
     noDataDetail: "Run the worker to fetch the latest DMI observations.",
     play: "Play radar",
     pause: "Pause radar",
+    collapseTimeline: "Minimize latest observation",
+    expandTimeline: "Show latest observation",
     opacity: "Radar opacity",
     precise: "2D precision",
     forecast: "Point forecast",
     now: "Now",
     fresh: "Updated",
     stale: "Delayed",
-    freshnessHelp: "DMI radar observations are normally published 10–20 minutes after measurement.",
-    futureRadarNote: "Radar shows past measurements. The next hours are shown in the HARMONIE forecast.",
+    freshnessHelp:
+      "DMI radar observations are normally published 10–20 minutes after measurement.",
+    futureRadarNote:
+      "Radar shows past measurements. The next hours are shown in the HARMONIE forecast.",
     fetched: "fetched",
     skipToWeather: "Skip to weather information",
     loadingMap: "Loading map…",
@@ -55,9 +63,10 @@ const messages = {
     locate: "Find my location",
     language: "Change language",
     buildings: "3D buildings",
-    reflectivity: "Reflectivity · dBZ"
-  }
+    reflectivity: "Reflectivity · dBZ",
+  },
 } as const;
 
 export type MessageKey = keyof (typeof messages)["da"];
-export const translate = (locale: keyof typeof messages, key: MessageKey) => messages[locale][key];
+export const translate = (locale: keyof typeof messages, key: MessageKey) =>
+  messages[locale][key];
