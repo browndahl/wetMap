@@ -14,10 +14,11 @@ import {
   Wind,
 } from "lucide-react";
 import { DMI_ATTRIBUTION, RADAR_SCALE } from "@wetmap/shared";
-import { getForecast, getRadarManifest } from "./api";
+import { getForecast, getRadarManifest, getRainNextHour } from "./api";
 import { translate } from "./i18n";
 import { useWeatherStore } from "./store";
 import LocationSearch from "./components/LocationSearch";
+import RainNextHour from "./components/RainNextHour";
 
 const WeatherMap = lazy(() => import("./components/WeatherMap"));
 const radarDelayBudgetMinutes = 25;
@@ -68,6 +69,18 @@ export default function App() {
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: "always",
     placeholderData: keepPreviousData,
+  });
+  const rain = useQuery({
+    queryKey: ["rain-next-hour", forecastLatitude, forecastLongitude],
+    queryFn: ({ signal }) =>
+      getRainNextHour(forecastLatitude, forecastLongitude, signal),
+    staleTime: 5 * 60_000,
+    gcTime: 60 * 60_000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(500 * 2 ** attempt, 4_000),
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: "always",
   });
   const frames = manifest.data?.frames ?? [];
   const lastFrameIndex = Math.max(frames.length - 1, 0);
@@ -248,6 +261,14 @@ export default function App() {
             </span>
           </div>
         ))}
+        <RainNextHour
+          data={rain.data}
+          isLoading={rain.isLoading}
+          isFetching={rain.isFetching}
+          isError={rain.isError}
+          locale={state.locale}
+          locationName={state.selectedLocation.name}
+        />
       </section>
 
       <aside className="legend glass" aria-label={t("reflectivity")}>
@@ -407,7 +428,8 @@ export default function App() {
         <a href="https://www.dmi.dk/friedata" target="_blank" rel="noreferrer">
           {DMI_ATTRIBUTION}
         </a>
-        {forecast.data?.source === "open-meteo-dmi" && (
+        {(forecast.data?.source === "open-meteo-dmi" ||
+          rain.data?.source === "open-meteo-dmi") && (
           <span>
             {" "}
             ·{" "}

@@ -47,6 +47,36 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
+  /api/v1/weather/precipitation:
+    get:
+      operationId: getNextHourPrecipitation
+      summary: Returns the next hour of DMI HARMONIE precipitation estimates
+      description: The 15-minute display values are interpolated from the model's hourly resolution and are not radar nowcasting.
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: { type: number, minimum: -90, maximum: 90 }
+        - name: lon
+          in: query
+          required: true
+          schema: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        "200":
+          description: Four quarter-hour precipitation estimates
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RainNextHourResponse" }
+        "400":
+          description: Invalid coordinates
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "503":
+          description: Forecast provider unavailable and no valid persisted estimate exists
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/v1/locations/search:
     get:
       operationId: searchLocations
@@ -163,6 +193,46 @@ components:
         points:
           type: array
           items: { $ref: "#/components/schemas/ForecastPoint" }
+    RainForecastPoint:
+      type: object
+      required: [startsAt, endsAt, precipitationMm, intensity]
+      properties:
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        precipitationMm: { type: number, minimum: 0 }
+        intensity: { type: string, enum: [none, light, moderate, heavy] }
+    RainNextHourResponse:
+      type: object
+      required:
+        - latitude
+        - longitude
+        - fetchedAt
+        - attribution
+        - source
+        - model
+        - displayResolutionMinutes
+        - sourceResolutionMinutes
+        - isInterpolated
+        - points
+      properties:
+        latitude: { type: number }
+        longitude: { type: number }
+        fetchedAt: { type: string, format: date-time }
+        attribution:
+          {
+            type: string,
+            const: "Baseret på data fra DMI og efterfølgende bearbejdet",
+          }
+        source: { type: string, const: open-meteo-dmi }
+        model: { type: string, const: "DMI HARMONIE AROME" }
+        displayResolutionMinutes: { type: integer, const: 15 }
+        sourceResolutionMinutes: { type: integer, const: 60 }
+        isInterpolated: { type: boolean, const: true }
+        points:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items: { $ref: "#/components/schemas/RainForecastPoint" }
     LocationResult:
       type: object
       required: [id, name, context, latitude, longitude, type]

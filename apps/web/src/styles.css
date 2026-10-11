@@ -351,6 +351,139 @@ a {
 .forecast-row strong {
   font-size: 1rem;
 }
+.rain-card {
+  margin-top: 0.55rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid oklch(1 0 0 / 10%);
+}
+.rain-heading,
+.rain-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.rain-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--text-1);
+  font-size: 0.76rem;
+}
+.rain-heading h3 svg {
+  color: var(--accent);
+}
+.rain-heading > span {
+  padding: 0.24rem 0.4rem;
+  border-radius: 999px;
+  color: var(--accent);
+  background: oklch(0.76 0.13 205 / 11%);
+  font-size: 0.54rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.rain-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.65rem 0 0;
+  font-size: 0.7rem;
+}
+.rain-summary {
+  align-items: baseline;
+  margin-top: 0.55rem;
+}
+.rain-summary strong {
+  font-size: 0.78rem;
+}
+.rain-summary span {
+  color: var(--text-2);
+  font-size: 0.62rem;
+  white-space: nowrap;
+}
+.rain-chart {
+  height: 4.4rem;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+.rain-column {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 0.25rem;
+}
+.rain-bar-track {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.3rem;
+  background: oklch(1 0 0 / 5%);
+}
+.rain-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  min-height: 2px;
+  border-radius: 0.25rem;
+  background: oklch(0.66 0.14 230 / 75%);
+}
+.rain-bar.is-none {
+  background: oklch(0.75 0.02 230 / 20%);
+}
+.rain-bar.is-light {
+  background: oklch(0.78 0.12 210);
+}
+.rain-bar.is-moderate {
+  background: oklch(0.7 0.15 230);
+}
+.rain-bar.is-heavy {
+  background: oklch(0.72 0.18 270);
+}
+.rain-column time {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 0.55rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.rain-method,
+.rain-alert-note {
+  margin: 0.4rem 0 0;
+  color: var(--text-2);
+  font-size: 0.55rem;
+  line-height: 1.35;
+}
+.rain-alert {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid oklch(1 0 0 / 10%);
+  border-radius: 0.65rem;
+  color: var(--text-1);
+  background: var(--surface-2);
+  font-size: 0.65rem;
+  cursor: pointer;
+}
+.rain-alert:hover,
+.rain-alert.is-active {
+  color: var(--accent);
+  border-color: oklch(0.76 0.13 205 / 35%);
+}
+.rain-alert-note {
+  text-align: center;
+}
+.rain-alert-note.is-error {
+  color: var(--warning);
+}
 .legend {
   position: fixed;
   z-index: 4;
@@ -631,6 +764,21 @@ a {
   .forecast-row strong {
     font-size: 0.86rem;
   }
+  .rain-card {
+    margin-top: 0.35rem;
+    padding-top: 0.5rem;
+  }
+  .rain-chart {
+    height: 3.3rem;
+  }
+  .rain-method,
+  .rain-alert-note {
+    display: none;
+  }
+  .rain-alert {
+    margin-top: 0.4rem;
+    padding: 0.36rem;
+  }
   .forecast-row:nth-of-type(n + 5) {
     display: none;
   }
@@ -695,6 +843,9 @@ a {
     width: auto;
   }
   .weather-card .forecast-row:nth-of-type(n + 4) {
+    display: none;
+  }
+  .rain-heading > span {
     display: none;
   }
   .control-grid {

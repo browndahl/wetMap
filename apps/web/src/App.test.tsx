@@ -26,6 +26,18 @@ const apiMocks = vi.hoisted(() => ({
     attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
     points: [] as Array<Record<string, unknown>>,
   },
+  rain: {
+    latitude: 56.16,
+    longitude: 10.2,
+    fetchedAt: "2026-10-11T08:00:00Z",
+    attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
+    source: "open-meteo-dmi",
+    model: "DMI HARMONIE AROME",
+    displayResolutionMinutes: 15,
+    sourceResolutionMinutes: 60,
+    isInterpolated: true,
+    points: [] as Array<Record<string, unknown>>,
+  },
   locations: [] as Array<{
     id: string;
     name: string;
@@ -52,6 +64,7 @@ vi.mock("./components/WeatherMap", () => ({
 vi.mock("./api", () => ({
   getRadarManifest: async () => apiMocks.manifest,
   getForecast: async () => apiMocks.forecast,
+  getRainNextHour: async () => apiMocks.rain,
   searchLocations: async (query: string) => ({
     query,
     results: apiMocks.locations,
@@ -70,6 +83,7 @@ beforeEach(() => {
   window.localStorage.clear();
   apiMocks.manifest.frames = [];
   apiMocks.forecast.points = [];
+  apiMocks.rain.points = [];
   apiMocks.locations = [];
   useWeatherStore.setState({
     selectedFrame: -1,
@@ -229,5 +243,51 @@ it("searches for a place, moves the forecast location, and saves a favorite", as
   fireEvent.click(screen.getByRole("button", { name: "Skift sprog" }));
   expect(
     screen.getByText("Your browser does not support location services."),
+  ).toBeInTheDocument();
+});
+
+it("explains the next-hour rain estimate and handles blocked alerts", async () => {
+  apiMocks.rain.points = [
+    {
+      startsAt: "2026-10-11T08:15:00Z",
+      endsAt: "2026-10-11T08:30:00Z",
+      precipitationMm: 0,
+      intensity: "none",
+    },
+    {
+      startsAt: "2026-10-11T08:30:00Z",
+      endsAt: "2026-10-11T08:45:00Z",
+      precipitationMm: 0.2,
+      intensity: "light",
+    },
+    {
+      startsAt: "2026-10-11T08:45:00Z",
+      endsAt: "2026-10-11T09:00:00Z",
+      precipitationMm: 0.4,
+      intensity: "light",
+    },
+    {
+      startsAt: "2026-10-11T09:00:00Z",
+      endsAt: "2026-10-11T09:15:00Z",
+      precipitationMm: 0.3,
+      intensity: "light",
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByText("Regn starter ca. 10.30")).toBeInTheDocument();
+  expect(screen.getByText("Forventet 0.90 mm")).toBeInTheDocument();
+  expect(screen.getByText(/interpoleret fra DMI/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Varsl mig" }));
+  expect(
+    screen.getByText("Notifikationer er blokeret i browseren."),
   ).toBeInTheDocument();
 });

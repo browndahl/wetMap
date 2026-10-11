@@ -14,6 +14,8 @@ const attribution = "Baseret på data fra DMI og efterfølgende bearbejdet";
 const jsonHeaders = { "Content-Type": "application/json; charset=utf-8" };
 const forecastCacheSeconds = 10 * 60;
 const forecastStaleSeconds = 6 * 60 * 60;
+const precipitationCacheSeconds = 5 * 60;
+const precipitationStaleSeconds = 30 * 60;
 const radarDispatchAgeMs = 20 * 60 * 1000;
 const locationCacheSeconds = 24 * 60 * 60;
 const reverseLocationCacheSeconds = 7 * 24 * 60 * 60;
@@ -61,6 +63,28 @@ interface ForecastPayload {
   source: "dmi-edr" | "open-meteo-dmi";
   model: "DMI HARMONIE AROME";
   points: ForecastPoint[];
+}
+
+type RainIntensity = "none" | "light" | "moderate" | "heavy";
+
+interface RainForecastPoint {
+  startsAt: string;
+  endsAt: string;
+  precipitationMm: number;
+  intensity: RainIntensity;
+}
+
+interface RainNextHourPayload {
+  latitude: number;
+  longitude: number;
+  fetchedAt: string;
+  attribution: typeof attribution;
+  source: "open-meteo-dmi";
+  model: "DMI HARMONIE AROME";
+  displayResolutionMinutes: 15;
+  sourceResolutionMinutes: 60;
+  isInterpolated: true;
+  points: RainForecastPoint[];
 }
 
 function cors(origin: string, env: Env): HeadersInit {
@@ -656,6 +680,206 @@ async function forecast(
   }
 }
 
+function precipitationHeaders(
+  cacheStatus: "HIT" | "MISS" | "STALE",
+): HeadersInit {
+  return {
+    ...jsonHeaders,
+    "Cache-Control": `public,max-age=${precipitationCacheSeconds},stale-while-revalidate=${precipitationStaleSeconds}`,
+    "X-DMI-Attribution": attribution,
+    "X-WetMap-Cache": cacheStatus,
+  };
+}
+
+function rainIntensity(precipitationMm: number): RainIntensity {
+  if (precipitationMm < 0.05) return "none";
+  if (precipitationMm < 0.5) return "light";
+  if (precipitationMm < 1.5) return "moderate";
+  return "heavy";
+}
+
+function validPrecipitation(payload: RainNextHourPayload): boolean {
+  return payload.points.some((point) => Date.parse(point.endsAt) > Date.now());
+}
+
+async function fetchOpenMeteoPrecipitation(
+  latitude: number,
+  longitude: number,
+  env: Env,
+): Promise<RainNextHourPayload> {
+  const upstream = new URL("/v1/forecast", env.OPEN_METEO_BASE_URL);
+  upstream.searchParams.set("latitude", latitude.toFixed(2));
+  upstream.searchParams.set("longitude", longitude.toFixed(2));
+  upstream.searchParams.set("minutely_15", "precipitation");
+  upstream.searchParams.set("forecast_minutely_15", "8");
+  upstream.searchParams.set("timezone", "GMT");
+  upstream.searchParams.set("models", "dmi_seamless");
+  const response = await fetch(upstream, {
+    headers: { Accept: "application/json", "User-Agent": "wetmap-edge/0.3" },
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok)
+    throw new Error(`Open-Meteo DMI precipitation returned ${response.status}`);
+  const data = (await response.json()) as {
+    latitude: number;
+    longitude: number;
+    minutely_15?: {
+      time?: string[];
+      precipitation?: Array<number | null>;
+    };
+  };
+  const minutely = data.minutely_15;
+  if (!minutely?.time?.length)
+    throw new Error("Open-Meteo DMI returned no precipitation points");
+
+  const now = Date.now();
+  const hourAhead = now + 60 * 60 * 1000;
+  const points = minutely.time
+    .map((value, index): RainForecastPoint | null => {
+      const endsAtMs = Date.parse(`${value}:00Z`);
+      if (!Number.isFinite(endsAtMs)) return null;
+      const precipitationMm = Math.max(0, minutely.precipitation?.[index] ?? 0);
+      return {
+        startsAt: new Date(endsAtMs - 15 * 60 * 1000).toISOString(),
+        endsAt: new Date(endsAtMs).toISOString(),
+        precipitationMm: Math.round(precipitationMm * 100) / 100,
+        intensity: rainIntensity(precipitationMm),
+      };
+    })
+    .filter(
+      (point): point is RainForecastPoint =>
+        point !== null &&
+        Date.parse(point.endsAt) > now &&
+        Date.parse(point.startsAt) < hourAhead,
+    )
+    .slice(0, 4);
+  if (!points.length)
+    throw new Error("DMI precipitation forecast contained no future points");
+
+  return {
+    latitude: data.latitude,
+    longitude: data.longitude,
+    fetchedAt: new Date().toISOString(),
+    attribution,
+    source: "open-meteo-dmi",
+    model: "DMI HARMONIE AROME",
+    displayResolutionMinutes: 15,
+    sourceResolutionMinutes: 60,
+    isInterpolated: true,
+    points,
+  };
+}
+
+async function refreshPrecipitation(
+  latitude: number,
+  longitude: number,
+  cacheKey: Request,
+  persistentKey: string,
+  env: Env,
+  edgeCache: Cache,
+): Promise<Response> {
+  const payload = await fetchOpenMeteoPrecipitation(latitude, longitude, env);
+  const body = JSON.stringify(payload);
+  const response = new Response(body, {
+    headers: precipitationHeaders("MISS"),
+  });
+  await Promise.all([
+    edgeCache.put(cacheKey, response.clone()),
+    env.RADAR.put(persistentKey, body, {
+      httpMetadata: {
+        contentType: "application/json",
+        cacheControl: "no-cache",
+      },
+    }),
+  ]);
+  return response;
+}
+
+async function precipitation(
+  url: URL,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
+  const latitude = Number(url.searchParams.get("lat"));
+  const longitude = Number(url.searchParams.get("lon"));
+  if (
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180
+  )
+    return problem(
+      400,
+      "Invalid coordinates",
+      "Latitude must be -90..90 and longitude -180..180.",
+    );
+
+  const roundedLat = latitude.toFixed(2);
+  const roundedLon = longitude.toFixed(2);
+  const cacheUrl = new URL(url);
+  cacheUrl.search = new URLSearchParams({
+    lat: roundedLat,
+    lon: roundedLon,
+  }).toString();
+  const cacheKey = new Request(cacheUrl, { method: "GET" });
+  const persistentKey = `precipitation/v1/${roundedLat}/${roundedLon}.json`;
+  const edgeCache = (caches as unknown as { default: Cache }).default;
+  const cached = await edgeCache.match(cacheKey);
+  if (cached) {
+    const headers = new Headers(cached.headers);
+    headers.set("X-WetMap-Cache", "HIT");
+    return new Response(cached.body, { status: cached.status, headers });
+  }
+
+  const persisted = await env.RADAR.get(persistentKey);
+  if (persisted) {
+    try {
+      const payload = await persisted.json<RainNextHourPayload>();
+      if (validPrecipitation(payload)) {
+        context.waitUntil(
+          refreshPrecipitation(
+            Number(roundedLat),
+            Number(roundedLon),
+            cacheKey,
+            persistentKey,
+            env,
+            edgeCache,
+          ).catch(() => undefined),
+        );
+        return new Response(JSON.stringify(payload), {
+          headers: precipitationHeaders("STALE"),
+        });
+      }
+    } catch (error) {
+      console.error("precipitation.cache.invalid", { error, persistentKey });
+    }
+  }
+
+  try {
+    return await refreshPrecipitation(
+      Number(roundedLat),
+      Number(roundedLon),
+      cacheKey,
+      persistentKey,
+      env,
+      edgeCache,
+    );
+  } catch (error) {
+    console.error("precipitation.upstream.failed", {
+      error,
+      latitude,
+      longitude,
+    });
+    return problem(
+      503,
+      "Precipitation forecast unavailable",
+      "The DMI HARMONIE precipitation forecast is temporarily unavailable.",
+    );
+  }
+}
+
 export default {
   async fetch(
     request: Request,
@@ -672,6 +896,8 @@ export default {
       response = await frames(request, env);
     else if (url.pathname === "/api/v1/weather/forecast")
       response = await forecast(url, env, context);
+    else if (url.pathname === "/api/v1/weather/precipitation")
+      response = await precipitation(url, env, context);
     else if (url.pathname === "/api/v1/locations/search")
       response = await searchLocations(url, env, context);
     else if (url.pathname === "/api/v1/locations/reverse")

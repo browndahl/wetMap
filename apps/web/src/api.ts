@@ -3,11 +3,13 @@ import type {
   LocationResult,
   LocationSearchResponse,
   RadarManifest,
+  RainNextHourResponse,
 } from "@wetmap/shared";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 const framesBase = import.meta.env.VITE_FRAMES_BASE_URL ?? apiBase;
 const forecastApiVersion = "2";
+const precipitationApiVersion = "1";
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
@@ -31,6 +33,16 @@ export const getForecast = (
 ) =>
   getJson<ForecastResponse>(
     `${apiBase}/api/v1/weather/forecast?lat=${latitude.toFixed(5)}&lon=${longitude.toFixed(5)}&v=${forecastApiVersion}`,
+    signal,
+  );
+
+export const getRainNextHour = (
+  latitude: number,
+  longitude: number,
+  signal?: AbortSignal,
+) =>
+  getJson<RainNextHourResponse>(
+    `${apiBase}/api/v1/weather/precipitation?lat=${latitude.toFixed(5)}&lon=${longitude.toFixed(5)}&v=${precipitationApiVersion}`,
     signal,
   );
 

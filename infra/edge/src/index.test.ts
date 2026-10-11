@@ -46,6 +46,23 @@ const openMeteoResponse = () =>
     },
   });
 
+const openMeteoPrecipitationResponse = () =>
+  Response.json({
+    latitude: 56.17,
+    longitude: 10.21,
+    minutely_15: {
+      time: [
+        "2026-10-10T22:15",
+        "2026-10-10T22:30",
+        "2026-10-10T22:45",
+        "2026-10-10T23:00",
+        "2026-10-10T23:15",
+        "2026-10-10T23:30",
+      ],
+      precipitation: [0, 0.1, 0.7, 1.8, 0, 0],
+    },
+  });
+
 function setup() {
   const cache = new MemoryCache();
   const r2 = new MemoryR2();
@@ -267,6 +284,126 @@ describe("forecast edge endpoint", () => {
 
     const response = await worker.fetch(
       new Request("https://api.test/api/v1/weather/forecast?lat=91&lon=10"),
+      env,
+      context,
+    );
+
+    expect(response.status).toBe(400);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+});
+
+describe("next-hour precipitation edge endpoint", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T22:15:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("returns the next four 15-minute DMI estimates with intensity", async () => {
+    const { env, context, r2 } = setup();
+    const upstream = vi.fn(async (_input: RequestInfo | URL) =>
+      openMeteoPrecipitationResponse(),
+    );
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/precipitation?lat=56.1629&lon=10.2039",
+      ),
+      env,
+      context,
+    );
+    const body = (await response.json()) as {
+      isInterpolated: boolean;
+      sourceResolutionMinutes: number;
+      points: Array<{
+        startsAt: string;
+        endsAt: string;
+        intensity: string;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-WetMap-Cache")).toBe("MISS");
+    expect(body.isInterpolated).toBe(true);
+    expect(body.sourceResolutionMinutes).toBe(60);
+    expect(body.points).toHaveLength(4);
+    expect(body.points[0]).toMatchObject({
+      startsAt: "2026-10-10T22:15:00.000Z",
+      endsAt: "2026-10-10T22:30:00.000Z",
+      intensity: "light",
+    });
+    expect(body.points.map((point) => point.intensity)).toEqual([
+      "light",
+      "moderate",
+      "heavy",
+      "none",
+    ]);
+    expect(upstream).toHaveBeenCalledOnce();
+    const requestedUrl = String(upstream.mock.calls[0]?.[0]);
+    expect(requestedUrl).toContain("minutely_15=precipitation");
+    expect(requestedUrl).toContain("models=dmi_seamless");
+    expect(r2.values.has("precipitation/v1/56.16/10.20.json")).toBe(true);
+  });
+
+  it("uses a still-relevant persistent estimate during an upstream outage", async () => {
+    const { env, context, r2, waits } = setup();
+    r2.values.set(
+      "precipitation/v1/55.68/12.57.json",
+      JSON.stringify({
+        latitude: 55.68,
+        longitude: 12.57,
+        fetchedAt: "2026-10-10T22:10:00Z",
+        attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
+        source: "open-meteo-dmi",
+        model: "DMI HARMONIE AROME",
+        displayResolutionMinutes: 15,
+        sourceResolutionMinutes: 60,
+        isInterpolated: true,
+        points: [
+          {
+            startsAt: "2026-10-10T22:15:00Z",
+            endsAt: "2026-10-10T22:30:00Z",
+            precipitationMm: 0.1,
+            intensity: "light",
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 503 })),
+    );
+
+    const response = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/precipitation?lat=55.6761&lon=12.5683",
+      ),
+      env,
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-WetMap-Cache")).toBe("STALE");
+    expect(waits).toHaveLength(1);
+    await Promise.all(waits);
+  });
+
+  it("returns a controlled error for invalid coordinates", async () => {
+    const { env, context } = setup();
+    const upstream = vi.fn();
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/precipitation?lat=56&lon=181",
+      ),
       env,
       context,
     );

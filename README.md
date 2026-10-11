@@ -4,7 +4,7 @@ WetMap is a dark-first, accessible 3D weather radar for Denmark. It renders **ob
 
 Production: **https://wetmap.pages.dev** · API: **https://wetmap-api.wetmap-edge.workers.dev**
 
-The radar timeline opens on the latest published observation and shows the real observation times for the preceding hour. “Now” is the browser clock. DMI's open composite radar feed contains observations, not future radar frames; future hours therefore appear in the HARMONIE point forecast instead of being presented as radar nowcast data.
+The radar timeline opens on the latest published observation and shows the real observation times for the preceding hour. “Now” is the browser clock. DMI's open composite radar feed contains observations, not future radar frames; future hours therefore appear in the HARMONIE point forecast instead of being presented as radar nowcast data. A separate “Rain next 60 min” card shows four 15-minute model estimates, with the UI explicitly disclosing that they are interpolated from HARMONIE's hourly resolution. Optional rain notifications are local browser alerts and work only while WetMap is open.
 
 ## Run locally
 

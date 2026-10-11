@@ -11,6 +11,7 @@
 - [x] Containers run read-only with `no-new-privileges`; API/worker run non-root.
 - [x] CodeQL, Dependabot, gitleaks, Trivy and CycloneDX SBOM workflows are configured.
 - [x] GPS is processed on-device for map location. It is sent only when a point forecast is explicitly selected/requested; no identity or database exists in v1.
+- [x] Rain notifications require an explicit click and browser permission. The preference and duplicate-suppression key remain in local storage; no push token or location is stored server-side.
 - [ ] Configure Cloudflare managed rules/rate rule and validate headers on the deployed domain.
 - [ ] Triage scanner findings and pin image digests before production approval.
 

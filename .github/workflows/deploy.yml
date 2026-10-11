@@ -48,10 +48,10 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: infra/edge
-          command: pages deploy ../../apps/web/dist --project-name=wetmap --branch=main
+          command: deploy
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: infra/edge
-          command: deploy
+          command: pages deploy ../../apps/web/dist --project-name=wetmap --branch=main

@@ -44,6 +44,28 @@ export interface ForecastResponse {
   points: ForecastPoint[];
 }
 
+export type RainIntensity = "none" | "light" | "moderate" | "heavy";
+
+export interface RainForecastPoint {
+  startsAt: string;
+  endsAt: string;
+  precipitationMm: number;
+  intensity: RainIntensity;
+}
+
+export interface RainNextHourResponse {
+  latitude: number;
+  longitude: number;
+  fetchedAt: string;
+  attribution: typeof DMI_ATTRIBUTION;
+  source: "open-meteo-dmi";
+  model: "DMI HARMONIE AROME";
+  displayResolutionMinutes: 15;
+  sourceResolutionMinutes: 60;
+  isInterpolated: true;
+  points: RainForecastPoint[];
+}
+
 export interface LocationResult {
   id: string;
   name: string;
