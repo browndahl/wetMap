@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { LoaderCircle, LocateFixed, MapPin, Search, Star } from "lucide-react";
 import type { LocationResult } from "@wetmap/shared";
 import { reverseLocation, searchLocations } from "../api";
-import { translate } from "../i18n";
+import { translate, type MessageKey } from "../i18n";
 import { type SelectedLocation, useWeatherStore } from "../store";
 
 const toSelectedLocation = (location: LocationResult): SelectedLocation => ({
@@ -28,7 +28,7 @@ export default function LocationSearch() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [locating, setLocating] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationError, setLocationError] = useState<MessageKey | null>(null);
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
 
   useEffect(() => setInput(selectedLocation.name), [selectedLocation]);
@@ -78,7 +78,7 @@ export default function LocationSearch() {
 
   const locateUser = () => {
     if (!("geolocation" in navigator)) {
-      setLocationError(t("locationUnavailable"));
+      setLocationError("locationUnavailable");
       return;
     }
     setLocating(true);
@@ -106,7 +106,7 @@ export default function LocationSearch() {
       },
       () => {
         setLocating(false);
-        setLocationError(t("locationDenied"));
+        setLocationError("locationDenied");
       },
       { enableHighAccuracy: false, timeout: 8_000, maximumAge: 5 * 60_000 },
     );
@@ -233,7 +233,7 @@ export default function LocationSearch() {
       )}
       {locationError && (
         <p className="location-error" role="alert">
-          {locationError}
+          {t(locationError)}
         </p>
       )}
     </section>

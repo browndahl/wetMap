@@ -221,4 +221,13 @@ it("searches for a place, moves the forecast location, and saves a favorite", as
   expect(window.localStorage.getItem("wetmap:favorite-locations")).toContain(
     "København",
   );
+
+  fireEvent.click(screen.getByRole("button", { name: "Find min placering" }));
+  expect(
+    screen.getByText("Din browser understøtter ikke placering."),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Skift sprog" }));
+  expect(
+    screen.getByText("Your browser does not support location services."),
+  ).toBeInTheDocument();
 });
