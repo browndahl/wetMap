@@ -26,7 +26,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy apps/web/dist --project-name=wetmap-staging --branch=main
+          workingDirectory: infra/edge
+          command: pages deploy ../../apps/web/dist --project-name=wetmap-staging --branch=main
   production:
     if: vars.CLOUDFLARE_CONFIGURED == 'true'
     needs: staging
@@ -46,7 +47,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy apps/web/dist --project-name=wetmap --branch=main
+          workingDirectory: infra/edge
+          command: pages deploy ../../apps/web/dist --project-name=wetmap --branch=main
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
