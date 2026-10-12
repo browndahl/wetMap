@@ -37,8 +37,21 @@ public sealed class DmiForecastClient(HttpClient httpClient, ILogger<DmiForecast
                 Number(properties, "wind-speed-10m"),
                 FractionToPercent(Number(properties, "fraction-of-cloud-cover"))));
         }
-        logger.LogInformation("Fetched {PointCount} DMI forecast points", result.Count);
-        return result.OrderBy(pointResult => pointResult.Step).Take(48).ToArray();
+        var previousAccumulation = 0d;
+        var normalized = result
+            .OrderBy(pointResult => pointResult.Step)
+            .Select(pointResult =>
+            {
+                if (pointResult.PrecipitationKgM2 is not { } accumulated)
+                    return pointResult;
+                var intervalAmount = Math.Round(Math.Max(0, accumulated - previousAccumulation), 3);
+                previousAccumulation = accumulated;
+                return pointResult with { PrecipitationKgM2 = intervalAmount };
+            })
+            .Take(48)
+            .ToArray();
+        logger.LogInformation("Fetched {PointCount} DMI forecast points", normalized.Length);
+        return normalized;
     }
 
     private static double? Number(JsonElement properties, string name) =>

@@ -271,7 +271,8 @@ components:
         forecastMethod: { type: string, enum: [optical-flow, persistence] }
         validationSamples: { type: integer, minimum: 0 }
         verificationCsi: { type: [number, "null"], minimum: 0, maximum: 1 }
-        skillOverPersistence: { type: [number, "null"], minimum: -1, maximum: 1 }
+        skillOverPersistence:
+          { type: [number, "null"], minimum: -1, maximum: 1 }
         sha256: { type: string }
     NowcastManifest:
       type: object
@@ -294,7 +295,11 @@ components:
         method:
           {
             type: string,
-            enum: [adaptive-optical-flow-persistence, dense-optical-flow-extrapolation],
+            enum:
+              [
+                adaptive-optical-flow-persistence,
+                dense-optical-flow-extrapolation,
+              ],
           }
         basedOnObservedAt: { type: string, format: date-time }
         sourceFrameCount: { type: integer, minimum: 0, maximum: 3 }
@@ -343,6 +348,8 @@ components:
             type: string,
             const: "Baseret på data fra DMI og efterfølgende bearbejdet",
           }
+        source: { type: string, enum: [dmi-edr, open-meteo-dmi] }
+        model: { type: string, const: "DMI HARMONIE AROME" }
         points:
           type: array
           items: { $ref: "#/components/schemas/ForecastPoint" }
@@ -382,7 +389,10 @@ components:
             const: "Baseret på data fra DMI og efterfølgende bearbejdet",
           }
         source:
-          { type: string, enum: [open-meteo-dmi, dmi-radar-nowcast-harmonie] }
+          {
+            type: string,
+            enum: [dmi-edr, open-meteo-dmi, dmi-radar-nowcast-harmonie],
+          }
         model: { type: string, const: "DMI HARMONIE AROME" }
         displayResolutionMinutes: { type: integer, const: 15 }
         sourceResolutionMinutes: { type: integer, const: 60 }
@@ -438,7 +448,10 @@ components:
                           required: [forecastMethod]
                           properties:
                             forecastMethod:
-                              { type: string, enum: [optical-flow, persistence] }
+                              {
+                                type: string,
+                                enum: [optical-flow, persistence],
+                              }
         byThresholdDbz:
           type: array
           maxItems: 3
@@ -494,11 +507,13 @@ components:
               criticalSuccessIndexSkill:
                 { type: [number, "null"], minimum: -1, maximum: 1 }
               dbzMeanAbsoluteError: { type: number, minimum: 0 }
-              forecastMethod: { type: string, enum: [optical-flow, persistence] }
+              forecastMethod:
+                { type: string, enum: [optical-flow, persistence] }
               thresholdScores:
                 type: array
                 maxItems: 3
-                items: { $ref: "#/components/schemas/VerificationThresholdScore" }
+                items:
+                  { $ref: "#/components/schemas/VerificationThresholdScore" }
     VerificationSummary:
       type: object
       required:

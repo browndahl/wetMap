@@ -39,8 +39,9 @@ flowchart LR
   DMI --> GH --> PW --> R2
   R2 --> Verify --> R2
   DMI --> Gauges --> Verify
-  DMI --> OM --> Edge
-  DMI -. direct forecast fallback .-> Edge
+  DMI -->|direct HARMONIE primary| Edge
+  DMI --> OM
+  OM -. latency/error fallback .-> Edge
   Photon -->|cached search + reverse lookup| Edge
   R2 --> Edge
   Edge --> Push --> User
@@ -50,6 +51,8 @@ flowchart LR
 ```
 
 The production path uses a small Cloudflare Worker because static frames, cached point forecasts, and cached Danish location search fit its free tier and avoid a cold-started container. The location search is Denmark-filtered and degrades independently, so a Photon outage does not remove radar, forecasts, map clicks, or saved browser favorites. The .NET 10 modular monolith remains the canonical, portable API and is used in Compose; see [ADR 0002](docs/adr/0002-edge-production-api.md).
+
+Point forecasts start with DMI's official HARMONIE DINI EDR API. After a 1.5-second head start, a slow or failed request is hedged through Open-Meteo's DMI distribution so an upstream latency spike does not freeze map interaction. Responses expose the selected provider, fallback state and dependency/cache durations through `X-WetMap-Provider`, `X-WetMap-Fallback` and `Server-Timing`. DMI's accumulated `total-precipitation` is differenced into hourly amounts before any 15-minute interpolation.
 
 Every new observation verifies all still-pending forecasts that target it, covering the available +5 to +60 minute horizons. A bounded 16-slot R2 ring buffer stores compressed 256×171 verification cubes; the public response keeps only 288 recent detailed results while retaining a larger internal calibration window. Metrics are split by lead time, forecast method and 10/20/35 dBZ threshold at `/api/v1/radar/nowcast/quality`. CSI is compared with no-motion persistence at the same lead time; positive skill means optical flow beat leaving the last echo in place.
 

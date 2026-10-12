@@ -21,6 +21,7 @@ interface Env {
 }
 
 const attribution = "Baseret på data fra DMI og efterfølgende bearbejdet";
+const attributionHeader = "Based on DMI data and subsequently processed";
 const jsonHeaders = { "Content-Type": "application/json; charset=utf-8" };
 const forecastCacheSeconds = 10 * 60;
 const forecastStaleSeconds = 6 * 60 * 60;
@@ -29,6 +30,102 @@ const precipitationStaleSeconds = 30 * 60;
 const radarDispatchAgeMs = 20 * 60 * 1000;
 const locationCacheSeconds = 24 * 60 * 60;
 const reverseLocationCacheSeconds = 7 * 24 * 60 * 60;
+const dmiPrimaryHeadStartMs = 1_500;
+
+type WeatherProvider = "dmi-edr" | "open-meteo-dmi";
+
+interface RequestTelemetry {
+  provider?: WeatherProvider;
+  fallback?: "none" | "open-meteo" | "stale";
+  cacheMs?: number;
+  r2Ms?: number;
+  dmiMs?: number;
+  openMeteoMs?: number;
+  totalMs?: number;
+}
+
+function elapsed(startedAt: number): number {
+  return Math.round((performance.now() - startedAt) * 10) / 10;
+}
+
+function telemetryHeaders(telemetry: RequestTelemetry): HeadersInit {
+  const timings = [
+    ["cache", telemetry.cacheMs],
+    ["r2", telemetry.r2Ms],
+    ["dmi", telemetry.dmiMs],
+    ["openmeteo", telemetry.openMeteoMs],
+    ["total", telemetry.totalMs],
+  ]
+    .filter((entry): entry is [string, number] => entry[1] !== undefined)
+    .map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`)
+    .join(", ");
+  return {
+    ...(timings ? { "Server-Timing": timings } : {}),
+    ...(telemetry.provider ? { "X-WetMap-Provider": telemetry.provider } : {}),
+    ...(telemetry.fallback ? { "X-WetMap-Fallback": telemetry.fallback } : {}),
+    "Timing-Allow-Origin": "*",
+  };
+}
+
+async function dmiPrimaryWithFallback<T>(
+  dmi: () => Promise<T>,
+  openMeteo: () => Promise<T>,
+): Promise<{
+  payload: T;
+  telemetry: RequestTelemetry;
+  backgroundDmi?: Promise<T>;
+}> {
+  const telemetry: RequestTelemetry = {};
+  let dmiSettled = false;
+  const dmiStartedAt = performance.now();
+  const dmiPromise = dmi()
+    .then((payload) => {
+      telemetry.dmiMs = elapsed(dmiStartedAt);
+      return { payload, provider: "dmi-edr" as const };
+    })
+    .catch((error: unknown) => {
+      telemetry.dmiMs = elapsed(dmiStartedAt);
+      throw error;
+    })
+    .finally(() => {
+      dmiSettled = true;
+    });
+  let headStartTimer: ReturnType<typeof setTimeout>;
+  const headStart = new Promise<null>((resolve) => {
+    headStartTimer = setTimeout(() => resolve(null), dmiPrimaryHeadStartMs);
+  });
+  const primary = await Promise.race([
+    dmiPromise.then((result) => result as typeof result | null),
+    headStart,
+  ]).catch(() => null);
+  clearTimeout(headStartTimer!);
+  if (primary) {
+    telemetry.provider = primary.provider;
+    telemetry.fallback = "none";
+    return { payload: primary.payload, telemetry };
+  }
+
+  const openMeteoStartedAt = performance.now();
+  const openMeteoPromise = openMeteo()
+    .then((payload) => {
+      telemetry.openMeteoMs = elapsed(openMeteoStartedAt);
+      return { payload, provider: "open-meteo-dmi" as const };
+    })
+    .catch((error: unknown) => {
+      telemetry.openMeteoMs = elapsed(openMeteoStartedAt);
+      throw error;
+    });
+  const selected = await Promise.any([dmiPromise, openMeteoPromise]);
+  telemetry.provider = selected.provider;
+  telemetry.fallback =
+    selected.provider === "open-meteo-dmi" ? "open-meteo" : "none";
+  const backgroundDmi =
+    selected.provider === "open-meteo-dmi" && !dmiSettled
+      ? dmiPromise.then((result) => result.payload)
+      : undefined;
+  if (telemetry.dmiMs === undefined) telemetry.dmiMs = elapsed(dmiStartedAt);
+  return { payload: selected.payload, telemetry, backgroundDmi };
+}
 
 interface PhotonFeature {
   geometry?: { coordinates?: unknown[] };
@@ -93,7 +190,7 @@ interface RainNextHourPayload {
   longitude: number;
   fetchedAt: string;
   attribution: typeof attribution;
-  source: "open-meteo-dmi" | "dmi-radar-nowcast-harmonie";
+  source: "dmi-edr" | "open-meteo-dmi" | "dmi-radar-nowcast-harmonie";
   model: "DMI HARMONIE AROME";
   displayResolutionMinutes: 15;
   sourceResolutionMinutes: 60;
@@ -150,7 +247,12 @@ function cors(origin: string, env: Env): HeadersInit {
     isPagesPreview = false;
   }
   return allowedOrigins.includes(origin) || isPagesPreview
-    ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" }
+    ? {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Expose-Headers":
+          "Server-Timing,X-WetMap-Provider,X-WetMap-Fallback,X-WetMap-Cache",
+        Vary: "Origin",
+      }
     : {};
 }
 
@@ -388,7 +490,7 @@ async function frames(request: Request, env: Env): Promise<Response> {
   object.writeHttpMetadata(headers);
   headers.set("ETag", object.httpEtag);
   headers.set("Cache-Control", "public,max-age=60,stale-while-revalidate=300");
-  headers.set("X-DMI-Attribution", attribution);
+  headers.set("X-DMI-Attribution", attributionHeader);
   return new Response(object.body, { headers });
 }
 
@@ -414,7 +516,7 @@ async function nowcast(request: Request, env: Env): Promise<Response> {
   object.writeHttpMetadata(headers);
   headers.set("ETag", object.httpEtag);
   headers.set("Cache-Control", "public,max-age=60,stale-while-revalidate=300");
-  headers.set("X-DMI-Attribution", attribution);
+  headers.set("X-DMI-Attribution", attributionHeader);
   return new Response(object.body, { headers });
 }
 
@@ -444,7 +546,7 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
   object.writeHttpMetadata(headers);
   headers.set("ETag", object.httpEtag);
   headers.set("Cache-Control", "public,max-age=300,stale-while-revalidate=900");
-  headers.set("X-DMI-Attribution", attribution);
+  headers.set("X-DMI-Attribution", attributionHeader);
   return new Response(object.body, { headers });
 }
 
@@ -538,12 +640,16 @@ async function ensureFreshRadar(env: Env): Promise<void> {
   await dispatchRadarIngestion(env);
 }
 
-function forecastHeaders(cacheStatus: "HIT" | "MISS" | "STALE"): HeadersInit {
+function forecastHeaders(
+  cacheStatus: "HIT" | "MISS" | "STALE",
+  telemetry: RequestTelemetry = {},
+): HeadersInit {
   return {
     ...jsonHeaders,
     "Cache-Control": `public,max-age=${forecastCacheSeconds},stale-while-revalidate=${forecastStaleSeconds}`,
-    "X-DMI-Attribution": attribution,
+    "X-DMI-Attribution": attributionHeader,
     "X-WetMap-Cache": cacheStatus,
+    ...telemetryHeaders(telemetry),
   };
 }
 
@@ -628,6 +734,7 @@ async function fetchDmiForecast(
   latitude: number,
   longitude: number,
   env: Env,
+  options: { precipitationOnly?: boolean; horizonHours?: number } = {},
 ): Promise<ForecastPayload> {
   const roundedLat = latitude.toFixed(2);
   const roundedLon = longitude.toFixed(2);
@@ -639,7 +746,15 @@ async function fetchDmiForecast(
   upstream.searchParams.set("crs", "crs84");
   upstream.searchParams.set(
     "parameter-name",
-    "temperature-2m,wind-speed-10m,total-precipitation,fraction-of-cloud-cover",
+    options.precipitationOnly
+      ? "total-precipitation"
+      : "temperature-2m,wind-speed-10m,total-precipitation,fraction-of-cloud-cover",
+  );
+  const currentHour = new Date();
+  currentHour.setUTCMinutes(0, 0, 0);
+  upstream.searchParams.set(
+    "datetime",
+    `${new Date(currentHour.getTime() - 60 * 60 * 1000).toISOString()}/${new Date(currentHour.getTime() + (options.horizonHours ?? 24) * 60 * 60 * 1000).toISOString()}`,
   );
   upstream.searchParams.set("f", "GeoJSON");
   const response = await fetch(upstream, {
@@ -647,26 +762,22 @@ async function fetchDmiForecast(
       Accept: "application/geo+json",
       "User-Agent": "wetmap-edge/0.2",
     },
-    signal: AbortSignal.timeout(5_000),
+    // The response path is hedged after 1.5 s; this longer timeout only lets
+    // the official DMI result replace the fallback cache in waitUntil().
+    signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`DMI EDR returned ${response.status}`);
   const data = (await response.json()) as {
     features?: Array<{ properties: Record<string, number | string | null> }>;
   };
-  return normaliseForecast({
-    latitude,
-    longitude,
-    fetchedAt: new Date().toISOString(),
-    attribution,
-    source: "dmi-edr",
-    model: "DMI HARMONIE AROME",
-    points: (data.features ?? []).map(({ properties }) => ({
+  const rawPoints = (data.features ?? [])
+    .map(({ properties }) => ({
       step: String(properties.step ?? ""),
       temperatureC:
         typeof properties["temperature-2m"] === "number"
           ? Math.round((properties["temperature-2m"] - 273.15) * 10) / 10
           : null,
-      precipitationKgM2:
+      accumulatedPrecipitation:
         typeof properties["total-precipitation"] === "number"
           ? properties["total-precipitation"]
           : null,
@@ -678,7 +789,34 @@ async function fetchDmiForecast(
         typeof properties["fraction-of-cloud-cover"] === "number"
           ? Math.round(properties["fraction-of-cloud-cover"] * 100)
           : null,
-    })),
+    }))
+    .filter((point) => Number.isFinite(Date.parse(point.step)))
+    .sort((left, right) => Date.parse(left.step) - Date.parse(right.step));
+  let previousAccumulation: number | null = null;
+  const points = rawPoints.map(
+    ({ accumulatedPrecipitation, ...point }): ForecastPoint => {
+      const precipitationKgM2 =
+        accumulatedPrecipitation === null
+          ? null
+          : Math.round(
+              Math.max(
+                0,
+                accumulatedPrecipitation - (previousAccumulation ?? 0),
+              ) * 1_000,
+            ) / 1_000;
+      if (accumulatedPrecipitation !== null)
+        previousAccumulation = accumulatedPrecipitation;
+      return { ...point, precipitationKgM2 };
+    },
+  );
+  return normaliseForecast({
+    latitude,
+    longitude,
+    fetchedAt: new Date().toISOString(),
+    attribution,
+    source: "dmi-edr",
+    model: "DMI HARMONIE AROME",
+    points,
   });
 }
 
@@ -689,29 +827,34 @@ async function refreshForecast(
   persistentKey: string,
   env: Env,
   edgeCache: Cache,
+  context: ExecutionContext,
 ): Promise<Response> {
-  let payload: ForecastPayload;
+  const startedAt = performance.now();
+  let selected: Awaited<
+    ReturnType<typeof dmiPrimaryWithFallback<ForecastPayload>>
+  >;
   try {
-    // Open-Meteo redistributes the same DMI HARMONIE model and shields the
-    // public DMI EDR service from one request for every map click.
-    payload = await fetchOpenMeteoForecast(latitude, longitude, env);
-  } catch (primaryError) {
-    try {
-      payload = await fetchDmiForecast(latitude, longitude, env);
-    } catch (secondaryError) {
-      console.error("forecast.upstream.failed", {
-        primaryError,
-        secondaryError,
-        latitude,
-        longitude,
-      });
-      throw secondaryError;
-    }
+    selected = await dmiPrimaryWithFallback(
+      () => fetchDmiForecast(latitude, longitude, env),
+      () => fetchOpenMeteoForecast(latitude, longitude, env),
+    );
+  } catch (error) {
+    console.error("forecast.upstream.failed", { error, latitude, longitude });
+    throw error;
   }
+  const { payload, telemetry, backgroundDmi } = selected;
   if (!payload.points.length)
     throw new Error("Forecast contained no current or future points");
   const body = JSON.stringify(payload);
-  const response = new Response(body, { headers: forecastHeaders("MISS") });
+  telemetry.totalMs = elapsed(startedAt);
+  console.log("forecast.provider.selected", {
+    latitude,
+    longitude,
+    ...telemetry,
+  });
+  const response = new Response(body, {
+    headers: forecastHeaders("MISS", telemetry),
+  });
   await Promise.all([
     edgeCache.put(cacheKey, response.clone()),
     env.RADAR.put(persistentKey, body, {
@@ -721,6 +864,46 @@ async function refreshForecast(
       },
     }),
   ]);
+  if (backgroundDmi) {
+    context.waitUntil(
+      backgroundDmi
+        .then(async (dmiPayload) => {
+          if (!dmiPayload.points.length)
+            throw new Error("Direct DMI background refresh returned no points");
+          const dmiBody = JSON.stringify(dmiPayload);
+          const dmiTelemetry: RequestTelemetry = {
+            provider: "dmi-edr",
+            fallback: "none",
+            dmiMs: telemetry.dmiMs,
+            totalMs: elapsed(startedAt),
+          };
+          const dmiResponse = new Response(dmiBody, {
+            headers: forecastHeaders("MISS", dmiTelemetry),
+          });
+          await Promise.all([
+            edgeCache.put(cacheKey, dmiResponse.clone()),
+            env.RADAR.put(persistentKey, dmiBody, {
+              httpMetadata: {
+                contentType: "application/json",
+                cacheControl: "no-cache",
+              },
+            }),
+          ]);
+          console.log("forecast.provider.refreshed", {
+            latitude,
+            longitude,
+            ...dmiTelemetry,
+          });
+        })
+        .catch((error) =>
+          console.warn("forecast.background-dmi.failed", {
+            error,
+            latitude,
+            longitude,
+          }),
+        ),
+    );
+  }
   return response;
 }
 
@@ -729,6 +912,7 @@ async function forecast(
   env: Env,
   context: ExecutionContext,
 ): Promise<Response> {
+  const startedAt = performance.now();
   const latitude = Number(url.searchParams.get("lat"));
   const longitude = Number(url.searchParams.get("lon"));
   if (
@@ -754,16 +938,30 @@ async function forecast(
     lon: roundedLon,
   }).toString();
   const cacheKey = new Request(cacheUrl, { method: "GET" });
-  const persistentKey = `forecast/v2/${roundedLat}/${roundedLon}.json`;
+  const persistentKey = `forecast/v3/${roundedLat}/${roundedLon}.json`;
   const edgeCache = (caches as unknown as { default: Cache }).default;
+  const cacheStartedAt = performance.now();
   const cached = await edgeCache.match(cacheKey);
   if (cached) {
     const headers = new Headers(cached.headers);
     headers.set("X-WetMap-Cache", "HIT");
+    const telemetry: RequestTelemetry = {
+      provider: (headers.get("X-WetMap-Provider") ?? undefined) as
+        | WeatherProvider
+        | undefined,
+      fallback: (headers.get("X-WetMap-Fallback") ??
+        undefined) as RequestTelemetry["fallback"],
+      cacheMs: elapsed(cacheStartedAt),
+      totalMs: elapsed(startedAt),
+    };
+    for (const [name, value] of Object.entries(telemetryHeaders(telemetry)))
+      headers.set(name, value);
     return new Response(cached.body, { status: cached.status, headers });
   }
 
+  const r2StartedAt = performance.now();
   const persisted = await env.RADAR.get(persistentKey);
+  const r2Ms = elapsed(r2StartedAt);
   if (persisted) {
     try {
       const payload = await persisted.json<ForecastPayload>();
@@ -776,10 +974,16 @@ async function forecast(
             persistentKey,
             env,
             edgeCache,
+            context,
           ).catch(() => undefined),
         );
         return new Response(JSON.stringify(normaliseForecast(payload)), {
-          headers: forecastHeaders("STALE"),
+          headers: forecastHeaders("STALE", {
+            provider: payload.source,
+            fallback: "stale",
+            r2Ms,
+            totalMs: elapsed(startedAt),
+          }),
         });
       }
     } catch (error) {
@@ -795,6 +999,7 @@ async function forecast(
       persistentKey,
       env,
       edgeCache,
+      context,
     );
   } catch {
     return problem(
@@ -807,12 +1012,14 @@ async function forecast(
 
 function precipitationHeaders(
   cacheStatus: "HIT" | "MISS" | "STALE",
+  telemetry: RequestTelemetry = {},
 ): HeadersInit {
   return {
     ...jsonHeaders,
     "Cache-Control": `public,max-age=${precipitationCacheSeconds},stale-while-revalidate=${precipitationStaleSeconds}`,
-    "X-DMI-Attribution": attribution,
+    "X-DMI-Attribution": attributionHeader,
     "X-WetMap-Cache": cacheStatus,
+    ...telemetryHeaders(telemetry),
   };
 }
 
@@ -1001,7 +1208,9 @@ function combineRadarAndModel(
         (sample) => sample.forecastMethod === "persistence",
       )
         ? ("persistence" as const)
-        : coveredSamples.some((sample) => sample.forecastMethod === "optical-flow")
+        : coveredSamples.some(
+              (sample) => sample.forecastMethod === "optical-flow",
+            )
           ? ("optical-flow" as const)
           : null,
     };
@@ -1019,6 +1228,50 @@ function combineRadarAndModel(
     source: "dmi-radar-nowcast-harmonie",
     basedOnObservedAt: radar.metadata.basedOnObservedAt,
     radarBasedUntil: latestCoveredSample?.predictedAt,
+    points,
+  };
+}
+
+function forecastToRainPayload(
+  forecastPayload: ForecastPayload,
+): RainNextHourPayload {
+  const now = Date.now();
+  const quarterMs = 15 * 60 * 1000;
+  const firstEnd = Math.floor(now / quarterMs) * quarterMs + quarterMs;
+  const hourlyPoints = forecastPayload.points
+    .filter(
+      (point): point is ForecastPoint & { precipitationKgM2: number } =>
+        point.precipitationKgM2 !== null &&
+        Number.isFinite(Date.parse(point.step)),
+    )
+    .sort((left, right) => Date.parse(left.step) - Date.parse(right.step));
+  if (!hourlyPoints.length)
+    throw new Error("DMI EDR returned no precipitation points");
+  const points = Array.from({ length: 4 }, (_, index): RainForecastPoint => {
+    const endsAtMs = firstEnd + index * quarterMs;
+    const hourlyPoint = hourlyPoints.find(
+      (point) => Date.parse(point.step) >= endsAtMs,
+    );
+    if (!hourlyPoint)
+      throw new Error("DMI EDR precipitation does not cover the next hour");
+    const precipitationMm = Math.max(0, hourlyPoint.precipitationKgM2 / 4);
+    return {
+      startsAt: new Date(endsAtMs - quarterMs).toISOString(),
+      endsAt: new Date(endsAtMs).toISOString(),
+      precipitationMm: Math.round(precipitationMm * 100) / 100,
+      intensity: rainIntensity(precipitationMm),
+    };
+  });
+  return {
+    latitude: forecastPayload.latitude,
+    longitude: forecastPayload.longitude,
+    fetchedAt: forecastPayload.fetchedAt,
+    attribution,
+    source: forecastPayload.source,
+    model: forecastPayload.model,
+    displayResolutionMinutes: 15,
+    sourceResolutionMinutes: 60,
+    isInterpolated: true,
     points,
   };
 }
@@ -1098,11 +1351,28 @@ async function refreshPrecipitation(
   persistentKey: string,
   env: Env,
   edgeCache: Cache,
+  context: ExecutionContext,
 ): Promise<Response> {
-  const payload = await fetchOpenMeteoPrecipitation(latitude, longitude, env);
+  const startedAt = performance.now();
+  const { payload, telemetry, backgroundDmi } = await dmiPrimaryWithFallback(
+    async () =>
+      forecastToRainPayload(
+        await fetchDmiForecast(latitude, longitude, env, {
+          precipitationOnly: true,
+          horizonHours: 2,
+        }),
+      ),
+    () => fetchOpenMeteoPrecipitation(latitude, longitude, env),
+  );
   const body = JSON.stringify(payload);
+  telemetry.totalMs = elapsed(startedAt);
+  console.log("precipitation.provider.selected", {
+    latitude,
+    longitude,
+    ...telemetry,
+  });
   const response = new Response(body, {
-    headers: precipitationHeaders("MISS"),
+    headers: precipitationHeaders("MISS", telemetry),
   });
   await Promise.all([
     edgeCache.put(cacheKey, response.clone()),
@@ -1113,6 +1383,44 @@ async function refreshPrecipitation(
       },
     }),
   ]);
+  if (backgroundDmi) {
+    context.waitUntil(
+      backgroundDmi
+        .then(async (dmiPayload) => {
+          const dmiBody = JSON.stringify(dmiPayload);
+          const dmiTelemetry: RequestTelemetry = {
+            provider: "dmi-edr",
+            fallback: "none",
+            dmiMs: telemetry.dmiMs,
+            totalMs: elapsed(startedAt),
+          };
+          const dmiResponse = new Response(dmiBody, {
+            headers: precipitationHeaders("MISS", dmiTelemetry),
+          });
+          await Promise.all([
+            edgeCache.put(cacheKey, dmiResponse.clone()),
+            env.RADAR.put(persistentKey, dmiBody, {
+              httpMetadata: {
+                contentType: "application/json",
+                cacheControl: "no-cache",
+              },
+            }),
+          ]);
+          console.log("precipitation.provider.refreshed", {
+            latitude,
+            longitude,
+            ...dmiTelemetry,
+          });
+        })
+        .catch((error) =>
+          console.warn("precipitation.background-dmi.failed", {
+            error,
+            latitude,
+            longitude,
+          }),
+        ),
+    );
+  }
   return response;
 }
 
@@ -1121,6 +1429,7 @@ async function modelPrecipitation(
   env: Env,
   context: ExecutionContext,
 ): Promise<Response> {
+  const startedAt = performance.now();
   const latitude = Number(url.searchParams.get("lat"));
   const longitude = Number(url.searchParams.get("lon"));
   if (
@@ -1145,16 +1454,30 @@ async function modelPrecipitation(
     lon: roundedLon,
   }).toString();
   const cacheKey = new Request(cacheUrl, { method: "GET" });
-  const persistentKey = `precipitation/v1/${roundedLat}/${roundedLon}.json`;
+  const persistentKey = `precipitation/v2/${roundedLat}/${roundedLon}.json`;
   const edgeCache = (caches as unknown as { default: Cache }).default;
+  const cacheStartedAt = performance.now();
   const cached = await edgeCache.match(cacheKey);
   if (cached) {
     const headers = new Headers(cached.headers);
     headers.set("X-WetMap-Cache", "HIT");
+    const telemetry: RequestTelemetry = {
+      provider: (headers.get("X-WetMap-Provider") ?? undefined) as
+        | WeatherProvider
+        | undefined,
+      fallback: (headers.get("X-WetMap-Fallback") ??
+        undefined) as RequestTelemetry["fallback"],
+      cacheMs: elapsed(cacheStartedAt),
+      totalMs: elapsed(startedAt),
+    };
+    for (const [name, value] of Object.entries(telemetryHeaders(telemetry)))
+      headers.set(name, value);
     return new Response(cached.body, { status: cached.status, headers });
   }
 
+  const r2StartedAt = performance.now();
   const persisted = await env.RADAR.get(persistentKey);
+  const r2Ms = elapsed(r2StartedAt);
   if (persisted) {
     try {
       const payload = await persisted.json<RainNextHourPayload>();
@@ -1167,10 +1490,19 @@ async function modelPrecipitation(
             persistentKey,
             env,
             edgeCache,
+            context,
           ).catch(() => undefined),
         );
         return new Response(JSON.stringify(payload), {
-          headers: precipitationHeaders("STALE"),
+          headers: precipitationHeaders("STALE", {
+            provider:
+              payload.source === "dmi-radar-nowcast-harmonie"
+                ? undefined
+                : payload.source,
+            fallback: "stale",
+            r2Ms,
+            totalMs: elapsed(startedAt),
+          }),
         });
       }
     } catch (error) {
@@ -1186,6 +1518,7 @@ async function modelPrecipitation(
       persistentKey,
       env,
       edgeCache,
+      context,
     );
   } catch (error) {
     console.error("precipitation.upstream.failed", {

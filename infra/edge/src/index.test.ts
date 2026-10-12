@@ -103,6 +103,21 @@ const openMeteoPrecipitationResponse = () =>
     },
   });
 
+const dmiResponse = (
+  accumulatedPrecipitation: Array<number | null> = [0, 0.4, 1.2],
+) =>
+  Response.json({
+    features: futureTimes.map((step, index) => ({
+      properties: {
+        step: `${step}:00.000Z`,
+        "temperature-2m": 283.15 + index,
+        "total-precipitation": accumulatedPrecipitation[index],
+        "wind-speed-10m": 4 + index,
+        "fraction-of-cloud-cover": 0.5,
+      },
+    })),
+  });
+
 function setup() {
   const cache = new MemoryCache();
   const r2 = new MemoryR2();
@@ -300,9 +315,9 @@ describe("forecast edge endpoint", () => {
     vi.restoreAllMocks();
   });
 
-  it("serves DMI HARMONIE through the low-latency provider and persists it", async () => {
+  it("serves direct DMI HARMONIE as the primary provider and persists it", async () => {
     const { env, context, r2 } = setup();
-    const upstream = vi.fn(async () => openMeteoResponse());
+    const upstream = vi.fn(async () => dmiResponse());
     vi.stubGlobal("fetch", upstream);
 
     const response = await worker.fetch(
@@ -319,18 +334,44 @@ describe("forecast edge endpoint", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("X-WetMap-Cache")).toBe("MISS");
-    expect(body.source).toBe("open-meteo-dmi");
+    expect(body.source).toBe("dmi-edr");
     expect(body.points).toHaveLength(3);
-    expect(body.points[0].step).toBe("2026-10-10T22:00:00Z");
+    expect(body.points[0].step).toBe("2026-10-10T22:00:00.000Z");
+    expect(response.headers.get("X-WetMap-Provider")).toBe("dmi-edr");
+    expect(response.headers.get("X-WetMap-Fallback")).toBe("none");
+    expect(response.headers.get("Server-Timing")).toContain("dmi;dur=");
     expect(upstream).toHaveBeenCalledTimes(1);
-    expect(r2.values.has("forecast/v2/56.16/10.20.json")).toBe(true);
+    expect(r2.values.has("forecast/v3/56.16/10.20.json")).toBe(true);
+  });
+
+  it("turns DMI cumulative precipitation into per-hour amounts", async () => {
+    const { env, context } = setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => dmiResponse([0.2, 0.7, 0.65])),
+    );
+
+    const response = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/forecast?lat=56.1629&lon=10.2039",
+      ),
+      env,
+      context,
+    );
+    const body = (await response.json()) as {
+      points: Array<{ precipitationKgM2: number }>;
+    };
+
+    expect(body.points.map((point) => point.precipitationKgM2)).toEqual([
+      0.2, 0.5, 0,
+    ]);
   });
 
   it("allows Cloudflare Pages preview deployments without opening CORS globally", async () => {
     const { env, context } = setup();
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => openMeteoResponse()),
+      vi.fn(async () => dmiResponse()),
     );
     const response = await worker.fetch(
       new Request(
@@ -359,7 +400,7 @@ describe("forecast edge endpoint", () => {
 
   it("coalesces nearby clicks onto the same model-grid cache entry", async () => {
     const { env, context } = setup();
-    const upstream = vi.fn(async () => openMeteoResponse());
+    const upstream = vi.fn(async () => dmiResponse());
     vi.stubGlobal("fetch", upstream);
 
     await worker.fetch(
@@ -382,23 +423,13 @@ describe("forecast edge endpoint", () => {
     expect(upstream).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to DMI EDR when the primary distributor is unavailable", async () => {
+  it("falls back to Open-Meteo when direct DMI is unavailable", async () => {
     const { env, context } = setup();
     const upstream = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
-      if (url.origin === "https://open-meteo.test")
+      if (url.origin === "https://dmi.test")
         return new Response(null, { status: 503 });
-      return Response.json({
-        features: futureTimes.map((step) => ({
-          properties: {
-            step: `${step}:00.000Z`,
-            "temperature-2m": 283.15,
-            "total-precipitation": 0.2,
-            "wind-speed-10m": 4,
-            "fraction-of-cloud-cover": 0.5,
-          },
-        })),
-      });
+      return openMeteoResponse();
     });
     vi.stubGlobal("fetch", upstream);
 
@@ -415,15 +446,57 @@ describe("forecast edge endpoint", () => {
     };
 
     expect(response.status).toBe(200);
-    expect(body.source).toBe("dmi-edr");
-    expect(body.points[0].temperatureC).toBe(10);
+    expect(body.source).toBe("open-meteo-dmi");
+    expect(body.points[0].temperatureC).toBe(11);
+    expect(response.headers.get("X-WetMap-Fallback")).toBe("open-meteo");
     expect(upstream).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds a slow direct-DMI request with the low-latency fallback", async () => {
+    const { env, context, waits } = setup();
+    const upstream = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.origin === "https://dmi.test")
+        return await new Promise<Response>((resolve) =>
+          setTimeout(() => resolve(dmiResponse()), 5_000),
+        );
+      return openMeteoResponse();
+    });
+    vi.stubGlobal("fetch", upstream);
+
+    const responsePromise = worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/forecast?lat=55.6761&lon=12.5683",
+      ),
+      env,
+      context,
+    );
+    await vi.advanceTimersByTimeAsync(1_500);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-WetMap-Provider")).toBe("open-meteo-dmi");
+    expect(response.headers.get("X-WetMap-Fallback")).toBe("open-meteo");
+    expect(upstream).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(3_500);
+    await Promise.all(waits);
+    const refreshed = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/forecast?lat=55.6761&lon=12.5683",
+      ),
+      env,
+      context,
+    );
+    expect(refreshed.headers.get("X-WetMap-Cache")).toBe("HIT");
+    expect(refreshed.headers.get("X-WetMap-Provider")).toBe("dmi-edr");
+    expect(refreshed.headers.get("X-WetMap-Fallback")).toBe("none");
   });
 
   it("returns a persistent last-known-good forecast while refreshing in the background", async () => {
     const { env, context, r2, waits } = setup();
     r2.values.set(
-      "forecast/v2/57.05/9.92.json",
+      "forecast/v3/57.05/9.92.json",
       JSON.stringify({
         latitude: 57.05,
         longitude: 9.92,
@@ -444,7 +517,7 @@ describe("forecast edge endpoint", () => {
     );
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => openMeteoResponse()),
+      vi.fn(async () => dmiResponse()),
     );
 
     const response = await worker.fetch(
@@ -511,10 +584,10 @@ describe("next-hour precipitation edge endpoint", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns the next four 15-minute DMI estimates with intensity", async () => {
+  it("interpolates direct DMI hourly precipitation into four 15-minute estimates", async () => {
     const { env, context, r2 } = setup();
     const upstream = vi.fn(async (_input: RequestInfo | URL) =>
-      openMeteoPrecipitationResponse(),
+      dmiResponse([0, 0.4, 7.6]),
     );
     vi.stubGlobal("fetch", upstream);
 
@@ -547,15 +620,41 @@ describe("next-hour precipitation edge endpoint", () => {
     });
     expect(body.points.map((point) => point.intensity)).toEqual([
       "light",
-      "moderate",
+      "light",
+      "light",
       "heavy",
-      "none",
     ]);
     expect(upstream).toHaveBeenCalledOnce();
     const requestedUrl = String(upstream.mock.calls[0]?.[0]);
-    expect(requestedUrl).toContain("minutely_15=precipitation");
-    expect(requestedUrl).toContain("models=dmi_seamless");
-    expect(r2.values.has("precipitation/v1/56.16/10.20.json")).toBe(true);
+    expect(requestedUrl).toContain("dmi.test");
+    expect(requestedUrl).toContain("forecastedr");
+    expect(response.headers.get("X-WetMap-Provider")).toBe("dmi-edr");
+    expect(r2.values.has("precipitation/v2/56.16/10.20.json")).toBe(true);
+  });
+
+  it("uses Open-Meteo precipitation when direct DMI fails", async () => {
+    const { env, context } = setup();
+    const upstream = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      return url.origin === "https://dmi.test"
+        ? new Response(null, { status: 503 })
+        : openMeteoPrecipitationResponse();
+    });
+    vi.stubGlobal("fetch", upstream);
+
+    const response = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/precipitation?lat=56.1629&lon=10.2039",
+      ),
+      env,
+      context,
+    );
+    const body = (await response.json()) as { source: string };
+
+    expect(response.status).toBe(200);
+    expect(body.source).toBe("open-meteo-dmi");
+    expect(response.headers.get("X-WetMap-Fallback")).toBe("open-meteo");
+    expect(upstream).toHaveBeenCalledTimes(2);
   });
 
   it("anchors near-term boxes to the same radar nowcast shown on the map", async () => {
@@ -595,7 +694,7 @@ describe("next-hour precipitation edge endpoint", () => {
     r2.values.set("nowcast/point-risk-1.bin", pointCube);
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => openMeteoPrecipitationResponse()),
+      vi.fn(async () => dmiResponse([0, 0.4, 7.6])),
     );
 
     const response = await worker.fetch(
@@ -630,15 +729,15 @@ describe("next-hour precipitation edge endpoint", () => {
     expect(body.points.every((point) => point.source === "radar-nowcast")).toBe(
       true,
     );
-    expect(body.points.some((point) => point.forecastMethod === "persistence")).toBe(
-      true,
-    );
+    expect(
+      body.points.some((point) => point.forecastMethod === "persistence"),
+    ).toBe(true);
   });
 
   it("uses a still-relevant persistent estimate during an upstream outage", async () => {
     const { env, context, r2, waits } = setup();
     r2.values.set(
-      "precipitation/v1/55.68/12.57.json",
+      "precipitation/v2/55.68/12.57.json",
       JSON.stringify({
         latitude: 55.68,
         longitude: 12.57,

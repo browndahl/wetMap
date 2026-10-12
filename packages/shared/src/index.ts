@@ -93,7 +93,7 @@ export interface RainNextHourResponse {
   longitude: number;
   fetchedAt: string;
   attribution: typeof DMI_ATTRIBUTION;
-  source: "open-meteo-dmi" | "dmi-radar-nowcast-harmonie";
+  source: "dmi-edr" | "open-meteo-dmi" | "dmi-radar-nowcast-harmonie";
   model: "DMI HARMONIE AROME";
   displayResolutionMinutes: 15;
   sourceResolutionMinutes: 60;

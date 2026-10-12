@@ -5,6 +5,6 @@
 - Integration: .NET `WebApplicationFactory`; Docker health and manifest path.
 - Accessibility: Playwright + axe against the built app; keyboard range/buttons and reduced-motion are first-class.
 - Visual: browser screenshots against the cache-free staging deployment; verify automatic animation, observation/nowcast labelling, rain interval legibility, and responsive chrome.
-- Load: `tests/load/api.js` validates cached manifest/forecast response rate without attacking DMI; only run against staging.
+- Load: `tests/load/api.js` warms one coordinate, then independently enforces cached p95 <300 ms for the radar manifest, point forecast and hybrid precipitation endpoints. It also checks provider/timing provenance without repeatedly attacking DMI; only run against staging.
 - Chaos: `apps/worker/tests` and runbook cover 429, corrupt HDF, schema changes, isolated nowcast failure, stale risk grids, and last-good-manifest behavior.
 - Web Push: unit tests cover opt-in, persistence, opt-out, CORS rejection and risk lookup. True background delivery must additionally be smoke-tested on a real notification-capable browser/device because jsdom and CI cannot grant OS notification permission.
