@@ -254,6 +254,14 @@ export default function RainNextHour({
                             point.reflectivityDbz == null
                               ? ""
                               : ` · ${point.reflectivityDbz} dBZ`
+                          }${
+                            point.forecastMethod
+                              ? ` · ${t(
+                                  point.forecastMethod === "persistence"
+                                    ? "nowcastPersistence"
+                                    : "nowcastOpticalFlow",
+                                )}`
+                              : ""
                           }`
                         : t("modelSource")
                     }

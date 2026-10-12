@@ -24,6 +24,10 @@ Separate cached R2 reads from DMI forecast misses using traces. Validate Workers
 
 Disable the bad manifest entry (do not overwrite its immutable object), compare SHA-256, run `wetmap-worker --inspect file.h5`, and confirm projection/corners. Republish a new manifest pointing at the last good frames. Add the case to the synthetic fixture.
 
+## 6. Nowcast precision degradation
+
+Open `/api/v1/radar/nowcast/quality` and separate the affected lead time and dBZ threshold before tuning. Do not infer +60-minute quality from +10-minute results. Compare `criticalSuccessIndex` with `meanPersistenceCriticalSuccessIndex` and inspect `byForecastMethod`; a negative optical-flow skill of at most −0.02 with 12 or more optical-flow samples should select persistence on the next generated forecast. If no horizons beyond +10 appear after 65 minutes, inspect `verification-state.json`, the 16 ring-buffer cube objects, checksum failures and workflow logs. Treat `groundGauge` separately: DMI MetObs is raw and sparse, so a station disagreement is evidence to investigate—not proof that the entire radar field is wrong. Roll back if the public report schema, point forecast and map frame no longer agree.
+
 ## Rollback and recovery
 
 Pages/Worker: redeploy the prior Git SHA. Worker: revert and dispatch once; idempotency skips existing objects. R2: restore `frames.json` from the previous workflow log/staging copy. Target RTO/RPO are in `SLO.md`. No v1 database exists; if Phase 2 adds one, automated daily backups plus a quarterly isolated restore test become a release gate.

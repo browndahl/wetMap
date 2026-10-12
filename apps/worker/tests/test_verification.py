@@ -5,7 +5,14 @@ import numpy as np
 from PIL import Image
 
 from wetmap_worker.nowcast import POINT_GRID_HEIGHT, POINT_GRID_WIDTH
-from wetmap_worker.verification import append_verification_history, verify_previous_nowcast
+from wetmap_worker.verification import (
+    append_verification_history,
+    public_verification_report,
+    quality_by_lead,
+    update_verification_state,
+    verification_candidates,
+    verify_previous_nowcast,
+)
 
 
 def test_scores_previous_nowcast_against_new_observation(tmp_path: Path) -> None:
@@ -67,7 +74,78 @@ def test_scores_previous_nowcast_against_new_observation(tmp_path: Path) -> None
     assert result["criticalSuccessIndex"] > 0.9
     assert result["persistenceCriticalSuccessIndex"] is not None
     assert result["criticalSuccessIndexSkill"] is not None
+    assert [score["thresholdDbz"] for score in result["thresholdScores"]] == [10, 20, 35]
     history = append_verification_history(tmp_path / "history.json", result)
     assert history["sampleCount"] == 1
     assert history["meanCriticalSuccessIndex"] > 0.9
     assert history["meanCriticalSuccessIndexSkill"] is not None
+
+
+def test_groups_multiple_forecast_horizons_and_keeps_public_payload_bounded(
+    tmp_path: Path,
+) -> None:
+    base = {
+        "verifiedAt": "2026-10-11T12:31:00Z",
+        "predictedAt": "2026-10-11T12:30:00Z",
+        "observedAt": "2026-10-11T12:30:00Z",
+        "thresholdDbz": 20,
+        "validPixels": 100,
+        "hits": 50,
+        "misses": 10,
+        "falseAlarms": 20,
+        "correctNegatives": 20,
+        "precision": 0.7143,
+        "recall": 0.8333,
+        "criticalSuccessIndex": 0.625,
+        "dbzMeanAbsoluteError": 4.0,
+        "persistenceCriticalSuccessIndex": 0.5,
+        "criticalSuccessIndexSkill": 0.125,
+        "forecastMethod": "optical-flow",
+        "thresholdScores": [],
+    }
+    results = [
+        {**base, "basedOnObservedAt": "2026-10-11T12:15:00Z", "leadMinutes": 15},
+        {**base, "basedOnObservedAt": "2026-10-11T12:00:00Z", "leadMinutes": 30},
+    ]
+
+    history = append_verification_history(tmp_path / "missing.json", results)
+    assert history["sampleCount"] == 2
+    assert [row["leadMinutes"] for row in history["byLeadMinutes"]] == [15, 30]
+    public = public_verification_report(history, recent_results=1)
+    assert public["sampleCount"] == 2
+    assert public["returnedResultCount"] == 1
+    profile = quality_by_lead(history)[15]
+    assert profile["opticalFlowSampleCount"] == 1
+    assert profile["opticalFlowMeanCriticalSuccessIndexSkill"] == 0.125
+
+
+def test_tracks_pending_forecasts_for_every_matching_horizon() -> None:
+    forecasts = []
+    for minute, lead in ((15, 15), (0, 30)):
+        forecasts.append(
+            {
+                "generatedAt": f"2026-10-11T12:{minute:02d}:30Z",
+                "basedOnObservedAt": f"2026-10-11T12:{minute:02d}:00Z",
+                "dataKey": f"nowcast/verification-cubes/cube-{minute:02d}.npz",
+                "frames": [
+                    {
+                        "leadMinutes": lead,
+                        "predictedAt": "2026-10-11T12:30:00Z",
+                    }
+                ],
+            }
+        )
+    state = {"forecasts": forecasts}
+
+    candidates = verification_candidates(state, "2026-10-11T12:30:00Z")
+
+    assert len(candidates) == 2
+    updated = update_verification_state(
+        state,
+        {
+            "generatedAt": "2026-10-11T12:30:30Z",
+            "basedOnObservedAt": "2026-10-11T12:30:00Z",
+            "frames": [],
+        },
+    )
+    assert len(updated["forecasts"]) == 3

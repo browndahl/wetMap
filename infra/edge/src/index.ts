@@ -107,7 +107,9 @@ interface PointRiskMetadata {
   schemaVersion: 1;
   generatedAt: string;
   basedOnObservedAt: string;
-  method: "dense-optical-flow-extrapolation";
+  method:
+    | "adaptive-optical-flow-persistence"
+    | "dense-optical-flow-extrapolation";
   bounds: [number, number, number, number];
   width: number;
   height: number;
@@ -119,6 +121,8 @@ interface PointRiskMetadata {
     leadMinutes: number;
     predictedAt: string;
     confidence: number;
+    forecastMethod?: "optical-flow" | "persistence";
+    validationSamples?: number;
   }>;
 }
 
@@ -126,6 +130,8 @@ interface RadarPointSample {
   leadMinutes: number;
   predictedAt: string;
   confidence: number;
+  forecastMethod?: "optical-flow" | "persistence";
+  validationSamples?: number;
   reflectivityDbz: number | null;
 }
 
@@ -396,7 +402,7 @@ async function nowcast(request: Request, env: Env): Promise<Response> {
         schemaVersion: 1,
         generatedAt: new Date(0).toISOString(),
         attribution,
-        method: "dense-optical-flow-extrapolation",
+        method: "adaptive-optical-flow-persistence",
         basedOnObservedAt: new Date(0).toISOString(),
         sourceFrameCount: 0,
         frames: [],
@@ -419,12 +425,16 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
   if (!object)
     return Response.json(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         generatedAt: new Date(0).toISOString(),
         thresholdDbz: 20,
+        thresholdsDbz: [10, 20, 35],
         sampleCount: 0,
+        returnedResultCount: 0,
         meanCriticalSuccessIndex: null,
         meanCriticalSuccessIndexSkill: null,
+        byLeadMinutes: [],
+        byThresholdDbz: [],
         results: [],
       },
       { headers: jsonHeaders },
@@ -987,6 +997,13 @@ function combineRadarAndModel(
             coveredSamples.length) *
             100,
         ) / 100,
+      forecastMethod: coveredSamples.some(
+        (sample) => sample.forecastMethod === "persistence",
+      )
+        ? ("persistence" as const)
+        : coveredSamples.some((sample) => sample.forecastMethod === "optical-flow")
+          ? ("optical-flow" as const)
+          : null,
     };
   });
   if (!radarPointCount)

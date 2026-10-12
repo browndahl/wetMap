@@ -14,12 +14,15 @@ from PIL import Image
 
 from .model import ATTRIBUTION, Frame
 
-METHOD = "dense-optical-flow-extrapolation"
+METHOD = "adaptive-optical-flow-persistence"
 LEAD_MINUTES = tuple(range(5, 61, 5))
 RISK_WIDTH = 128
 RISK_HEIGHT = 96
 POINT_GRID_WIDTH = 768
 POINT_GRID_HEIGHT = 512
+VERIFICATION_GRID_WIDTH = 256
+VERIFICATION_GRID_HEIGHT = 171
+VERIFICATION_RING_SLOTS = 16
 
 
 def _parse_time(value: str) -> datetime:
@@ -95,11 +98,15 @@ def _risk_bucket(alpha: np.ndarray) -> str:
     return base64.b64encode(categories.tobytes()).decode("ascii")
 
 
-def _reflectivity_grid(alpha: np.ndarray) -> np.ndarray:
+def _reflectivity_grid(
+    alpha: np.ndarray,
+    width: int = POINT_GRID_WIDTH,
+    height: int = POINT_GRID_HEIGHT,
+) -> np.ndarray:
     """Encode dBZ + 32; zero is no coverage and 14 is covered/no echo."""
     reduced = cv2.resize(
         alpha,
-        (POINT_GRID_WIDTH, POINT_GRID_HEIGHT),
+        (width, height),
         interpolation=cv2.INTER_AREA,
     )
     dbz = np.rint((reduced.astype(np.float32) - 45) * (60 / 175) - 10)
@@ -115,6 +122,7 @@ def generate_nowcast(
     source_paths: list[Path],
     source_frames: list[Frame],
     output_directory: Path,
+    quality_by_lead: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], list[Path]]:
     if len(source_paths) < 2 or len(source_paths) != len(source_frames):
         raise ValueError("Nowcast requires at least two matching radar frames")
@@ -144,6 +152,11 @@ def generate_nowcast(
         }
     ]
     point_frames = [_reflectivity_grid(latest[..., 3])]
+    verification_frames = [
+        _reflectivity_grid(
+            latest[..., 3], VERIFICATION_GRID_WIDTH, VERIFICATION_GRID_HEIGHT
+        )
+    ]
     point_frame_entries: list[dict[str, Any]] = [
         {
             "leadMinutes": 0,
@@ -153,7 +166,46 @@ def generate_nowcast(
     ]
     output_paths: list[Path] = []
     for lead_minutes in LEAD_MINUTES:
-        raw_prediction = _advect(latest, flow, lead_minutes)
+        optical_flow_prediction = _advect(latest, flow, lead_minutes)
+        quality = (quality_by_lead or {}).get(lead_minutes, {})
+        validation_samples = int(
+            quality.get("opticalFlowSampleCount", quality.get("sampleCount", 0)) or 0
+        )
+        skill = quality.get(
+            "opticalFlowMeanCriticalSuccessIndexSkill",
+            quality.get("meanCriticalSuccessIndexSkill"),
+        )
+        use_persistence = (
+            validation_samples >= 12
+            and isinstance(skill, (int, float))
+            and skill <= -0.02
+        )
+        raw_prediction = latest.copy() if use_persistence else optical_flow_prediction
+        forecast_method = "persistence" if use_persistence else "optical-flow"
+        heuristic_confidence = max(0.25, math.exp(-lead_minutes / 75))
+        if use_persistence:
+            verified_csi = quality.get(
+                "persistenceCriticalSuccessIndex",
+                quality.get(
+                    "meanPersistenceCriticalSuccessIndex",
+                    quality.get("criticalSuccessIndex"),
+                ),
+            )
+        else:
+            verified_csi = quality.get(
+                "opticalFlowCriticalSuccessIndex",
+                quality.get("criticalSuccessIndex"),
+            )
+        if validation_samples >= 6 and isinstance(verified_csi, (int, float)):
+            empirical_confidence = min(0.95, max(0.2, 0.2 + 0.75 * verified_csi))
+            empirical_weight = min(0.8, validation_samples / 60)
+            confidence = (
+                heuristic_confidence * (1 - empirical_weight)
+                + empirical_confidence * empirical_weight
+            )
+        else:
+            confidence = heuristic_confidence
+        confidence = round(min(0.95, max(0.2, confidence)), 2)
         risk_entries.append(
             {
                 "leadMinutes": lead_minutes,
@@ -164,12 +216,18 @@ def generate_nowcast(
             }
         )
         point_frames.append(_reflectivity_grid(raw_prediction[..., 3]))
-        prediction = raw_prediction.copy()
-        confidence = max(0.25, math.exp(-lead_minutes / 75))
-        prediction[..., 3] = np.rint(prediction[..., 3] * confidence).astype(np.uint8)
+        verification_frames.append(
+            _reflectivity_grid(
+                raw_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
         identifier = f"{latest_frame.id}-plus-{lead_minutes:02d}m"
         target = output_directory / f"{identifier}.webp"
-        Image.fromarray(prediction).save(target, "WEBP", lossless=True, method=6)
+        # Confidence is metadata. It must never attenuate measured/predicted dBZ,
+        # otherwise the map and point forecast would disagree about intensity.
+        Image.fromarray(raw_prediction).save(target, "WEBP", lossless=True, method=6)
         output_paths.append(target)
         frame_entries.append(
             {
@@ -182,7 +240,11 @@ def generate_nowcast(
                 "bounds": latest_frame.bounds,
                 "product": "DBZH_NOWCAST",
                 "unit": "dBZ",
-                "confidence": round(confidence, 2),
+                "confidence": confidence,
+                "forecastMethod": forecast_method,
+                "validationSamples": validation_samples,
+                "verificationCsi": verified_csi,
+                "skillOverPersistence": skill,
                 "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
             }
         )
@@ -190,7 +252,9 @@ def generate_nowcast(
             {
                 "leadMinutes": lead_minutes,
                 "predictedAt": risk_entries[-1]["predictedAt"],
-                "confidence": round(confidence, 2),
+                "confidence": confidence,
+                "forecastMethod": forecast_method,
+                "validationSamples": validation_samples,
             }
         )
 
@@ -235,6 +299,30 @@ def generate_nowcast(
     }
     (output_directory / "point-risk.json").write_text(
         json.dumps(point_grid, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    verification_cube_path = output_directory / "verification-cube.npz"
+    np.savez_compressed(
+        verification_cube_path,
+        cube=np.stack(verification_frames, axis=-1),
+    )
+    verification_slot = int(latest_time.timestamp() // 300) % VERIFICATION_RING_SLOTS
+    verification_forecast = {
+        "schemaVersion": 1,
+        "generatedAt": generated_at,
+        "basedOnObservedAt": latest_frame.observedAt,
+        "method": METHOD,
+        "bounds": latest_frame.bounds,
+        "width": VERIFICATION_GRID_WIDTH,
+        "height": VERIFICATION_GRID_HEIGHT,
+        "frameCount": len(point_frame_entries),
+        "encoding": "npz-pixel-major-uint8-dbz-plus-32",
+        "dataKey": f"nowcast/verification-cubes/cube-{verification_slot:02d}.npz",
+        "frames": point_frame_entries,
+        "sha256": hashlib.sha256(verification_cube_path.read_bytes()).hexdigest(),
+    }
+    (output_directory / "verification-forecast.json").write_text(
+        json.dumps(verification_forecast, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
     return manifest, risk, output_paths

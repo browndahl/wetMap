@@ -136,7 +136,7 @@ describe("radar nowcast edge endpoint", () => {
         schemaVersion: 1,
         generatedAt: "2026-10-11T12:11:00Z",
         attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
-        method: "dense-optical-flow-extrapolation",
+        method: "adaptive-optical-flow-persistence",
         basedOnObservedAt: "2026-10-11T12:10:00Z",
         sourceFrameCount: 3,
         frames: [{ id: "frame-plus-05m", leadMinutes: 5 }],
@@ -155,7 +155,7 @@ describe("radar nowcast edge endpoint", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toContain("max-age=60");
-    expect(body.method).toBe("dense-optical-flow-extrapolation");
+    expect(body.method).toBe("adaptive-optical-flow-persistence");
     expect(body.frames).toHaveLength(1);
   });
 
@@ -183,6 +183,26 @@ describe("radar nowcast edge endpoint", () => {
     expect(response.status).toBe(200);
     expect(body.sampleCount).toBe(2);
     expect(response.headers.get("Cache-Control")).toContain("max-age=300");
+  });
+
+  it("returns the multi-horizon quality contract before samples exist", async () => {
+    const { env, context } = setup();
+
+    const response = await worker.fetch(
+      new Request("https://api.test/api/v1/radar/nowcast/quality"),
+      env,
+      context,
+    );
+    const body = (await response.json()) as {
+      schemaVersion: number;
+      thresholdsDbz: number[];
+      byLeadMinutes: unknown[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.schemaVersion).toBe(2);
+    expect(body.thresholdsDbz).toEqual([10, 20, 35]);
+    expect(body.byLeadMinutes).toEqual([]);
   });
 });
 
@@ -546,6 +566,8 @@ describe("next-hour precipitation edge endpoint", () => {
         Date.parse("2026-10-10T22:10:00Z") + leadIndex * 5 * 60_000,
       ).toISOString(),
       confidence: Math.max(0.45, 1 - leadIndex * 0.045),
+      forecastMethod:
+        leadIndex >= 9 ? ("persistence" as const) : ("optical-flow" as const),
     }));
     r2.values.set(
       "nowcast/point-risk.json",
@@ -553,7 +575,7 @@ describe("next-hour precipitation edge endpoint", () => {
         schemaVersion: 1,
         generatedAt: "2026-10-10T22:15:00Z",
         basedOnObservedAt: "2026-10-10T22:10:00Z",
-        method: "dense-optical-flow-extrapolation",
+        method: "adaptive-optical-flow-persistence",
         bounds: [8, 54, 13, 58],
         width: 2,
         height: 2,
@@ -590,6 +612,7 @@ describe("next-hour precipitation edge endpoint", () => {
         source?: string;
         intensity: string;
         reflectivityDbz?: number;
+        forecastMethod?: string | null;
       }>;
     };
 
@@ -605,6 +628,9 @@ describe("next-hour precipitation edge endpoint", () => {
       reflectivityDbz: 35,
     });
     expect(body.points.every((point) => point.source === "radar-nowcast")).toBe(
+      true,
+    );
+    expect(body.points.some((point) => point.forecastMethod === "persistence")).toBe(
       true,
     );
   });

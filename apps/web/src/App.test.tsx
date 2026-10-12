@@ -23,7 +23,7 @@ const apiMocks = vi.hoisted(() => ({
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
-    method: "dense-optical-flow-extrapolation",
+    method: "adaptive-optical-flow-persistence",
     basedOnObservedAt: "2026-10-10T21:00:00Z",
     sourceFrameCount: 3,
     frames: [] as Array<Record<string, unknown>>,
@@ -152,6 +152,7 @@ it("labels future optical-flow frames as nowcasts with confidence", async () => 
       product: "DBZH_NOWCAST",
       unit: "dBZ",
       confidence: 0.88,
+      forecastMethod: "optical-flow",
       sha256: "predicted",
     },
   ];
@@ -172,7 +173,9 @@ it("labels future optical-flow frames as nowcasts with confidence", async () => 
     { timeout: 1_500 },
   );
   expect(screen.getByText("Radar-nowcast · +5 min")).toBeInTheDocument();
-  expect(screen.getByText("Sikkerhed 88%")).toBeInTheDocument();
+  expect(
+    screen.getByText("Estimeret sikkerhed 88% · Optisk flow"),
+  ).toBeInTheDocument();
   expect(screen.getByText(/optisk flow/)).toBeInTheDocument();
 });
 
@@ -395,6 +398,7 @@ it("labels radar-backed intervals and weak echoes without claiming ground rain",
       source: "radar-nowcast",
       reflectivityDbz: 14,
       confidence: 0.94,
+      forecastMethod: "persistence",
     },
     {
       startsAt: "2026-10-11T08:30:00Z",
@@ -415,6 +419,9 @@ it("labels radar-backed intervals and weak echoes without claiming ground rain",
 
   expect(await screen.findByText("Radar + model")).toBeInTheDocument();
   expect(screen.getByText("Radar · 14")).toBeInTheDocument();
+  expect(
+    screen.getByTitle("Radar · 14 dBZ · Stabilitetsmodel"),
+  ).toBeInTheDocument();
   expect(screen.getByText("Model")).toBeInTheDocument();
   expect(
     screen.getByText("Svagt radarekko · regn ved jorden er usikkert"),

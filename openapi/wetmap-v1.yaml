@@ -39,7 +39,7 @@ paths:
     get:
       operationId: getRadarNowcastQuality
       summary: Returns rolling verification of earlier nowcasts against observations
-      description: Scores significant precipitation echoes at 20 dBZ after the predicted timestamp becomes observable.
+      description: Scores every available 5–60 minute horizon at 10, 20 and 35 dBZ after the predicted timestamp becomes observable, compares against persistence, and includes a separate raw DMI rain-gauge check when available.
       responses:
         "200":
           description: Rolling verification metrics, or an empty result before the first comparison
@@ -268,6 +268,10 @@ components:
         product: { type: string, const: DBZH_NOWCAST }
         unit: { type: string, const: dBZ }
         confidence: { type: number, minimum: 0, maximum: 1 }
+        forecastMethod: { type: string, enum: [optical-flow, persistence] }
+        validationSamples: { type: integer, minimum: 0 }
+        verificationCsi: { type: [number, "null"], minimum: 0, maximum: 1 }
+        skillOverPersistence: { type: [number, "null"], minimum: -1, maximum: 1 }
         sha256: { type: string }
     NowcastManifest:
       type: object
@@ -287,7 +291,11 @@ components:
             type: string,
             const: "Baseret på data fra DMI og efterfølgende bearbejdet",
           }
-        method: { type: string, const: dense-optical-flow-extrapolation }
+        method:
+          {
+            type: string,
+            enum: [adaptive-optical-flow-persistence, dense-optical-flow-extrapolation],
+          }
         basedOnObservedAt: { type: string, format: date-time }
         sourceFrameCount: { type: integer, minimum: 0, maximum: 3 }
         frames:
@@ -349,6 +357,8 @@ components:
         source: { type: string, enum: [radar-nowcast, harmonie] }
         reflectivityDbz: { type: [number, "null"] }
         confidence: { type: [number, "null"], minimum: 0, maximum: 1 }
+        forecastMethod:
+          { type: [string, "null"], enum: [optical-flow, persistence, null] }
     RainNextHourResponse:
       type: object
       required:
@@ -395,14 +405,51 @@ components:
         - meanCriticalSuccessIndexSkill
         - results
       properties:
-        schemaVersion: { type: integer, const: 1 }
+        schemaVersion: { type: integer, const: 2 }
         generatedAt: { type: string, format: date-time }
+        latestVerifiedAt: { type: [string, "null"], format: date-time }
         thresholdDbz: { type: number, const: 20 }
-        sampleCount: { type: integer, minimum: 0, maximum: 288 }
+        thresholdsDbz:
+          type: array
+          items: { type: number, enum: [10, 20, 35] }
+        sampleCount: { type: integer, minimum: 0 }
+        returnedResultCount: { type: integer, minimum: 0, maximum: 288 }
         meanCriticalSuccessIndex:
           { type: [number, "null"], minimum: 0, maximum: 1 }
         meanCriticalSuccessIndexSkill:
           { type: [number, "null"], minimum: -1, maximum: 1 }
+        byLeadMinutes:
+          type: array
+          maxItems: 12
+          items:
+            allOf:
+              - $ref: "#/components/schemas/VerificationSummary"
+              - type: object
+                required: [leadMinutes]
+                properties:
+                  leadMinutes: { type: integer, minimum: 5, maximum: 60 }
+                  byForecastMethod:
+                    type: array
+                    maxItems: 2
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/VerificationSummary"
+                        - type: object
+                          required: [forecastMethod]
+                          properties:
+                            forecastMethod:
+                              { type: string, enum: [optical-flow, persistence] }
+        byThresholdDbz:
+          type: array
+          maxItems: 3
+          items:
+            allOf:
+              - $ref: "#/components/schemas/VerificationSummary"
+              - type: object
+                required: [thresholdDbz]
+                properties:
+                  thresholdDbz: { type: number, enum: [10, 20, 35] }
+        groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
         results:
           type: array
           maxItems: 288
@@ -447,6 +494,109 @@ components:
               criticalSuccessIndexSkill:
                 { type: [number, "null"], minimum: -1, maximum: 1 }
               dbzMeanAbsoluteError: { type: number, minimum: 0 }
+              forecastMethod: { type: string, enum: [optical-flow, persistence] }
+              thresholdScores:
+                type: array
+                maxItems: 3
+                items: { $ref: "#/components/schemas/VerificationThresholdScore" }
+    VerificationSummary:
+      type: object
+      required:
+        - sampleCount
+        - validPixels
+        - hits
+        - misses
+        - falseAlarms
+        - precision
+        - recall
+        - criticalSuccessIndex
+        - meanDbzMeanAbsoluteError
+        - meanCriticalSuccessIndexSkill
+      properties:
+        sampleCount: { type: integer, minimum: 0 }
+        validPixels: { type: integer, minimum: 0 }
+        hits: { type: integer, minimum: 0 }
+        misses: { type: integer, minimum: 0 }
+        falseAlarms: { type: integer, minimum: 0 }
+        precision: { type: [number, "null"], minimum: 0, maximum: 1 }
+        recall: { type: [number, "null"], minimum: 0, maximum: 1 }
+        criticalSuccessIndex: { type: [number, "null"], minimum: 0, maximum: 1 }
+        meanDbzMeanAbsoluteError: { type: [number, "null"], minimum: 0 }
+        meanCriticalSuccessIndexSkill:
+          { type: [number, "null"], minimum: -1, maximum: 1 }
+        meanPersistenceCriticalSuccessIndex:
+          { type: [number, "null"], minimum: 0, maximum: 1 }
+    VerificationThresholdScore:
+      type: object
+      required:
+        - thresholdDbz
+        - validPixels
+        - hits
+        - misses
+        - falseAlarms
+        - correctNegatives
+        - precision
+        - recall
+        - criticalSuccessIndex
+        - persistenceCriticalSuccessIndex
+        - criticalSuccessIndexSkill
+        - dbzMeanAbsoluteError
+      properties:
+        thresholdDbz: { type: number, enum: [10, 20, 35] }
+        validPixels: { type: integer, minimum: 0 }
+        hits: { type: integer, minimum: 0 }
+        misses: { type: integer, minimum: 0 }
+        falseAlarms: { type: integer, minimum: 0 }
+        correctNegatives: { type: integer, minimum: 0 }
+        precision: { type: [number, "null"], minimum: 0, maximum: 1 }
+        recall: { type: [number, "null"], minimum: 0, maximum: 1 }
+        criticalSuccessIndex: { type: [number, "null"], minimum: 0, maximum: 1 }
+        persistenceCriticalSuccessIndex:
+          { type: [number, "null"], minimum: 0, maximum: 1 }
+        criticalSuccessIndexSkill:
+          { type: [number, "null"], minimum: -1, maximum: 1 }
+        dbzMeanAbsoluteError: { type: number, minimum: 0 }
+    GroundGaugeQuality:
+      type: object
+      required:
+        - schemaVersion
+        - generatedAt
+        - source
+        - parameterId
+        - radarThresholdDbz
+        - gaugeThresholdMm10m
+        - observationCount
+        - stationComparisonCount
+        - hits
+        - misses
+        - falseAlarms
+        - correctNegatives
+        - precision
+        - recall
+        - criticalSuccessIndex
+        - results
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        generatedAt: { type: string, format: date-time }
+        source: { type: string, const: dmi-metobs-raw }
+        parameterId: { type: string, const: precip_past10min }
+        radarThresholdDbz: { type: number, const: 20 }
+        gaugeThresholdMm10m: { type: number, const: 0.1 }
+        observationCount: { type: integer, minimum: 0 }
+        stationComparisonCount: { type: integer, minimum: 0 }
+        hits: { type: integer, minimum: 0 }
+        misses: { type: integer, minimum: 0 }
+        falseAlarms: { type: integer, minimum: 0 }
+        correctNegatives: { type: integer, minimum: 0 }
+        precision: { type: [number, "null"], minimum: 0, maximum: 1 }
+        recall: { type: [number, "null"], minimum: 0, maximum: 1 }
+        criticalSuccessIndex: { type: [number, "null"], minimum: 0, maximum: 1 }
+        note: { type: string }
+        returnedResultCount: { type: integer, minimum: 0, maximum: 24 }
+        results:
+          type: array
+          maxItems: 24
+          items: { type: object }
     LocationResult:
       type: object
       required: [id, name, context, latitude, longitude, type]

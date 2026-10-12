@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -59,43 +60,41 @@ def download_frames_r2(output_directory: Path, frame_names: Iterable[str]) -> li
     return downloaded
 
 
-def download_previous_nowcast_r2(destination: Path) -> bool:
-    """Download the prior point nowcast and optional verification history."""
+def download_verification_r2(destination: Path) -> bool:
+    """Download the compact verification ledger and pending forecast state."""
     from botocore.exceptions import ClientError
 
     destination.mkdir(parents=True, exist_ok=True)
     client = _r2_client()
     bucket = os.environ["R2_BUCKET"]
-    metadata_path = destination / "point-risk.json"
-    try:
-        client.download_file(bucket, "nowcast/point-risk.json", str(metadata_path))
-    except ClientError as error:
-        if error.response.get("Error", {}).get("Code") in {
-            "404",
-            "NoSuchKey",
-            "NotFound",
-        }:
-            return False
-        raise
-    point_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    data_key = point_metadata.get("dataKey", "nowcast/point-risk.bin")
-    for key, name, required in (
-        (data_key, "point-risk.bin", True),
-        ("nowcast/verification.json", "verification.json", False),
+    downloaded = False
+    for key, name in (
+        ("nowcast/verification-state.json", "verification-state.json"),
+        ("nowcast/verification-history.json", "verification-history.json"),
+        ("nowcast/verification.json", "verification.json"),
+        ("nowcast/gauge-verification-history.json", "gauge-verification-history.json"),
     ):
         try:
             client.download_file(bucket, key, str(destination / name))
+            downloaded = True
         except ClientError as error:
             if error.response.get("Error", {}).get("Code") in {
                 "404",
                 "NoSuchKey",
                 "NotFound",
             }:
-                if required:
-                    return False
                 continue
             raise
-    return (destination / "point-risk.bin").exists()
+    return downloaded
+
+
+def download_verification_cube_r2(destination: Path, data_key: str) -> Path:
+    """Download one bounded ring-buffer cube referenced by verified state."""
+    if not re.fullmatch(r"nowcast/verification-cubes/cube-\d{2}\.npz", data_key):
+        raise ValueError("Invalid verification cube key")
+    target = destination / Path(data_key).name
+    _r2_client().download_file(os.environ["R2_BUCKET"], data_key, str(target))
+    return target
 
 
 def upload_r2(output_directory: Path, frame_paths: Iterable[Path] | None = None) -> None:
@@ -124,7 +123,11 @@ def upload_r2(output_directory: Path, frame_paths: Iterable[Path] | None = None)
     )
 
 
-def upload_nowcast_r2(nowcast_directory: Path, frame_paths: Iterable[Path]) -> None:
+def upload_nowcast_r2(
+    nowcast_directory: Path,
+    frame_paths: Iterable[Path],
+    upload_verification: bool = True,
+) -> None:
     """Replace short-lived nowcast assets, publishing manifests last."""
     bucket = os.environ["R2_BUCKET"]
     client = _r2_client()
@@ -145,9 +148,34 @@ def upload_nowcast_r2(nowcast_directory: Path, frame_paths: Iterable[Path]) -> N
             "CacheControl": "no-cache",
         },
     )
+    verification_forecast_path = nowcast_directory / "verification-forecast.json"
+    verification_cube_path = nowcast_directory / "verification-cube.npz"
+    if (
+        upload_verification
+        and verification_forecast_path.exists()
+        and verification_cube_path.exists()
+    ):
+        verification_forecast = json.loads(
+            verification_forecast_path.read_text(encoding="utf-8")
+        )
+        client.upload_file(
+            str(verification_cube_path),
+            bucket,
+            verification_forecast["dataKey"],
+            ExtraArgs={
+                "ContentType": "application/octet-stream",
+                "CacheControl": "no-store",
+            },
+        )
     metadata_names = ["nowcast.json", "risk.json", "point-risk.json"]
-    if (nowcast_directory / "verification.json").exists():
-        metadata_names.append("verification.json")
+    for optional_name in (
+        "verification.json",
+        "verification-history.json",
+        "verification-state.json",
+        "gauge-verification-history.json",
+    ):
+        if upload_verification and (nowcast_directory / optional_name).exists():
+            metadata_names.append(optional_name)
     for name in metadata_names:
         client.upload_file(
             str(nowcast_directory / name),

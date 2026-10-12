@@ -4,7 +4,7 @@ WetMap is a dark-first, accessible 3D weather radar for Denmark. It renders **ob
 
 Production: **https://wetmap.pages.dev** · API: **https://wetmap-api.wetmap-edge.workers.dev**
 
-On first load, the radar automatically animates recent observations and continues into a separately labelled **radar nowcast** up to +60 minutes. The nowcast estimates motion from the latest two or three measured radar fields with dense optical flow, then advects the newest field. It is a short-term extrapolation—not a future measurement—and its displayed confidence decreases with lead time. “Rain next 60 min” is anchored to the same 500 m DMI radar/nowcast around the selected point, while HARMONIE is an explicitly labelled per-interval fallback when radar coverage is unavailable. Radar intervals show their peak dBZ and estimate millimetres with the composite's Z–R relation. Optional Web Push alerts are sent by the Cloudflare Worker and can arrive while the installed PWA/browser is closed, subject to operating-system and browser delivery policies.
+On first load, the radar automatically animates recent observations and continues into a separately labelled **radar nowcast** up to +60 minutes. The nowcast estimates motion from the latest two or three measured radar fields with dense optical flow, then advects the newest field. Once a lead time has at least 12 optical-flow verification samples, WetMap can fall back to no-motion persistence when optical flow is demonstrably worse. Confidence is metadata and never attenuates the displayed dBZ field. It is a short-term extrapolation—not a future measurement. “Rain next 60 min” is anchored to the same 500 m DMI radar/nowcast around the selected point, while HARMONIE is an explicitly labelled per-interval fallback when radar coverage is unavailable. Radar intervals show their peak dBZ and estimate millimetres with the composite's Z–R relation. Optional Web Push alerts are sent by the Cloudflare Worker and can arrive while the installed PWA/browser is closed, subject to operating-system and browser delivery policies.
 
 ## Run locally
 
@@ -27,7 +27,8 @@ flowchart LR
   GH["GitHub Actions\nradar processing"]
   PW["Python worker\nODIM HDF5 + optical-flow nowcast"]
   R2["Cloudflare R2\nframes, nowcast, push subscriptions"]
-  Verify["Rolling verification\nforecast vs next observation"]
+  Verify["Multi-horizon verification\n+5 to +60 min, 3 thresholds"]
+  Gauges["DMI raw rain gauges\nground-level cross-check"]
   Edge["Cloudflare Worker\nAPI, cache + Web Push"]
   Push["Browser push service\nbackground delivery"]
   Pages["Cloudflare Pages\nReact PWA"]
@@ -37,6 +38,7 @@ flowchart LR
   Scheduler -->|dispatch when >20 min old| GH
   DMI --> GH --> PW --> R2
   R2 --> Verify --> R2
+  DMI --> Gauges --> Verify
   DMI --> OM --> Edge
   DMI -. direct forecast fallback .-> Edge
   Photon -->|cached search + reverse lookup| Edge
@@ -49,7 +51,9 @@ flowchart LR
 
 The production path uses a small Cloudflare Worker because static frames, cached point forecasts, and cached Danish location search fit its free tier and avoid a cold-started container. The location search is Denmark-filtered and degrades independently, so a Photon outage does not remove radar, forecasts, map clicks, or saved browser favorites. The .NET 10 modular monolith remains the canonical, portable API and is used in Compose; see [ADR 0002](docs/adr/0002-edge-production-api.md).
 
-Every ingestion run also verifies the preceding nowcast against the newly observed radar field at a 20 dBZ significant-echo threshold. The rolling precision, recall, critical-success index, false alarms, misses and dBZ mean absolute error are available at `/api/v1/radar/nowcast/quality`. CSI is compared with a no-motion persistence forecast at the same lead time; positive skill means optical flow beat simply leaving the last echo in place. These metrics quantify skill; they do not imply perfect street-level certainty.
+Every new observation verifies all still-pending forecasts that target it, covering the available +5 to +60 minute horizons. A bounded 16-slot R2 ring buffer stores compressed 256×171 verification cubes; the public response keeps only 288 recent detailed results while retaining a larger internal calibration window. Metrics are split by lead time, forecast method and 10/20/35 dBZ threshold at `/api/v1/radar/nowcast/quality`. CSI is compared with no-motion persistence at the same lead time; positive skill means optical flow beat leaving the last echo in place.
+
+The same ingestion run cross-checks the observed radar field against DMI `precip_past10min` gauges whose timestamps are within six minutes. Gauge verification is reported separately because DMI MetObs values are raw, sparse station measurements; they improve ground-level evidence but cannot prove whether rain reaches every arbitrary map coordinate. These metrics quantify skill and do not imply perfect street-level certainty.
 
 ## Repository
 

@@ -9,18 +9,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .dmi import DmiClient
+from .gauges import (
+    append_gauge_history,
+    compare_radar_to_gauges,
+    fetch_recent_gauge_observations,
+    public_gauge_report,
+)
 from .model import Frame, manifest
 from .nowcast import generate_nowcast
 from .processor import inspect_odim, process_hdf5
 from .storage import (
     download_frames_r2,
     download_manifest_r2,
-    download_previous_nowcast_r2,
+    download_verification_cube_r2,
+    download_verification_r2,
     upload_nowcast_r2,
     upload_r2,
     write_json_atomic,
 )
-from .verification import append_verification_history, verify_previous_nowcast
+from .verification import (
+    append_verification_history,
+    public_verification_report,
+    quality_by_lead,
+    update_verification_state,
+    verification_candidates,
+    verify_previous_nowcast,
+)
 
 
 def configure_logs() -> None:
@@ -71,6 +85,7 @@ def run(output: Path, limit: int, upload: bool) -> None:
     write_json_atomic(existing_path, manifest(frames))
 
     nowcast_paths: list[Path] = []
+    upload_verification_assets = False
     downloaded_source_paths: list[Path] = []
     source_frames = frames[-3:]
     if len(source_frames) >= 2:
@@ -86,32 +101,159 @@ def run(output: Path, limit: int, upload: bool) -> None:
                 source_paths = [output / name for name in source_names]
             if all(path.exists() for path in source_paths):
                 nowcast_directory = output / "nowcast"
+                previous_state: dict = {}
+                full_history: dict | None = None
+                gauge_history: dict | None = None
+                verification_results_added = False
+                gauge_result_added = False
                 with tempfile.TemporaryDirectory(prefix="wetmap-previous-nowcast-") as previous:
                     previous_directory = Path(previous)
-                    try:
-                        if upload and download_previous_nowcast_r2(previous_directory):
-                            verification = verify_previous_nowcast(
-                                previous_directory / "point-risk.json",
-                                previous_directory / "point-risk.bin",
-                                source_paths[-1],
-                                source_frames[-1].observedAt,
-                            )
-                            if verification:
-                                previous_history = previous_directory / "verification.json"
-                                history = append_verification_history(
-                                    previous_history, verification
+                    if upload:
+                        try:
+                            download_verification_r2(previous_directory)
+                            state_path = previous_directory / "verification-state.json"
+                            if state_path.exists():
+                                previous_state = json.loads(state_path.read_text(encoding="utf-8"))
+                            history_path = previous_directory / "verification-history.json"
+                            if not history_path.exists():
+                                history_path = previous_directory / "verification.json"
+                            if history_path.exists():
+                                full_history = append_verification_history(
+                                    history_path, []
                                 )
-                                write_json_atomic(nowcast_directory / "verification.json", history)
-                    except Exception:
-                        # Verification is observability and must not block a fresh nowcast.
-                        logging.exception("nowcast.verification.failed")
+                            verified_pairs = {
+                                (
+                                    entry.get("basedOnObservedAt"),
+                                    entry.get("observedAt"),
+                                )
+                                for entry in (full_history or {}).get("results", [])
+                            }
+                            verifications: list[dict] = []
+                            for candidate in verification_candidates(
+                                previous_state, source_frames[-1].observedAt
+                            ):
+                                if (
+                                    candidate.get("basedOnObservedAt"),
+                                    source_frames[-1].observedAt,
+                                ) in verified_pairs:
+                                    continue
+                                try:
+                                    cube_path = download_verification_cube_r2(
+                                        previous_directory, candidate["dataKey"]
+                                    )
+                                    verification = verify_previous_nowcast(
+                                        candidate,
+                                        cube_path,
+                                        source_paths[-1],
+                                        source_frames[-1].observedAt,
+                                    )
+                                    if verification:
+                                        verifications.append(verification)
+                                except Exception:
+                                    logging.exception(
+                                        "nowcast.verification.candidate.failed",
+                                        extra={
+                                            "basedOnObservedAt": candidate.get(
+                                                "basedOnObservedAt"
+                                            )
+                                        },
+                                    )
+                            if verifications:
+                                verification_results_added = True
+                                full_history = append_verification_history(
+                                    history_path, verifications
+                                )
+                        except Exception:
+                            # Verification is observability and must not block fresh radar.
+                            logging.exception("nowcast.verification.failed")
+                        gauge_history_path = (
+                            previous_directory / "gauge-verification-history.json"
+                        )
+                        if gauge_history_path.exists():
+                            try:
+                                gauge_history = json.loads(
+                                    gauge_history_path.read_text(encoding="utf-8")
+                                )
+                            except json.JSONDecodeError:
+                                gauge_history = None
+                        gauge_already_verified = any(
+                            entry.get("radarObservedAt")
+                            == source_frames[-1].observedAt
+                            for entry in (gauge_history or {}).get("results", [])
+                        )
+                        if not gauge_already_verified:
+                            try:
+                                gauge_result = compare_radar_to_gauges(
+                                    fetch_recent_gauge_observations(
+                                        os.getenv(
+                                            "DMI_METOBS_URL",
+                                            "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items",
+                                        )
+                                    ),
+                                    source_paths[-1],
+                                    source_frames[-1].observedAt,
+                                    source_frames[-1].bounds,
+                                )
+                                gauge_history = append_gauge_history(
+                                    gauge_history_path,
+                                    gauge_result,
+                                )
+                                gauge_result_added = True
+                            except Exception:
+                                # Raw station data is secondary and cannot block radar.
+                                logging.exception("radar.gauge-verification.failed")
                 nowcast, risk, nowcast_paths = generate_nowcast(
                     source_paths,
                     source_frames,
                     nowcast_directory,
+                    quality_by_lead(full_history),
                 )
                 write_json_atomic(nowcast_directory / "nowcast.json", nowcast)
                 write_json_atomic(nowcast_directory / "risk.json", risk)
+                verification_forecast_path = nowcast_directory / "verification-forecast.json"
+                if verification_forecast_path.exists():
+                    verification_forecast = json.loads(
+                        verification_forecast_path.read_text(encoding="utf-8")
+                    )
+                    verification_state = update_verification_state(
+                        previous_state, verification_forecast
+                    )
+                    is_new_forecast = not any(
+                        entry.get("basedOnObservedAt")
+                        == verification_forecast["basedOnObservedAt"]
+                        for entry in previous_state.get("forecasts", [])
+                    )
+                    upload_verification_assets = (
+                        is_new_forecast
+                        or verification_results_added
+                        or gauge_result_added
+                    )
+                    write_json_atomic(
+                        nowcast_directory / "verification-state.json",
+                        verification_state,
+                    )
+                if gauge_history:
+                    write_json_atomic(
+                        nowcast_directory / "gauge-verification-history.json",
+                        gauge_history,
+                    )
+                if full_history or gauge_history:
+                    if not full_history:
+                        full_history = append_verification_history(
+                            nowcast_directory / "verification-history.json", []
+                        )
+                    write_json_atomic(
+                        nowcast_directory / "verification-history.json", full_history
+                    )
+                    public_report = public_verification_report(full_history)
+                    if gauge_history:
+                        public_report["groundGauge"] = public_gauge_report(
+                            gauge_history
+                        )
+                    write_json_atomic(
+                        nowcast_directory / "verification.json",
+                        public_report,
+                    )
         except Exception:
             # A derived forecast must never prevent publication of fresh observations.
             logging.exception("nowcast.generation.failed")
@@ -120,7 +262,11 @@ def run(output: Path, limit: int, upload: bool) -> None:
     if upload:
         upload_r2(output, new_frame_paths)
         if nowcast_paths:
-            upload_nowcast_r2(output / "nowcast", nowcast_paths)
+            upload_nowcast_r2(
+                output / "nowcast",
+                nowcast_paths,
+                upload_verification_assets,
+            )
     logging.info(
         json.dumps(
             {

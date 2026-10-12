@@ -421,6 +421,13 @@ export default function App() {
                       <span className="timeline-gap">
                         {t("nowcastConfidence")}{" "}
                         {Math.round(activeFrame.confidence * 100)}%
+                        {activeFrame.forecastMethod
+                          ? ` · ${t(
+                              activeFrame.forecastMethod === "persistence"
+                                ? "nowcastPersistence"
+                                : "nowcastOpticalFlow",
+                            )}`
+                          : ""}
                       </span>
                     </>
                   ) : (

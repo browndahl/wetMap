@@ -37,6 +37,10 @@ export interface NowcastFrame {
   product: "DBZH_NOWCAST";
   unit: "dBZ";
   confidence: number;
+  forecastMethod?: "optical-flow" | "persistence";
+  validationSamples?: number;
+  verificationCsi?: number | null;
+  skillOverPersistence?: number | null;
   sha256: string;
 }
 
@@ -44,7 +48,9 @@ export interface NowcastManifest {
   schemaVersion: 1;
   generatedAt: string;
   attribution: typeof DMI_ATTRIBUTION;
-  method: "dense-optical-flow-extrapolation";
+  method:
+    | "adaptive-optical-flow-persistence"
+    | "dense-optical-flow-extrapolation";
   basedOnObservedAt: string;
   sourceFrameCount: number;
   frames: NowcastFrame[];
@@ -79,6 +85,7 @@ export interface RainForecastPoint {
   source?: RainPointSource;
   reflectivityDbz?: number | null;
   confidence?: number | null;
+  forecastMethod?: "optical-flow" | "persistence" | null;
 }
 
 export interface RainNextHourResponse {

@@ -49,6 +49,20 @@ def test_upload_run_only_processes_new_frames(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setattr(cli, "DmiClient", FakeClient)
     monkeypatch.setattr(cli, "process_hdf5", fake_process)
     monkeypatch.setattr(cli, "download_frames_r2", fake_download_frames)
+    monkeypatch.setattr(cli, "download_verification_r2", lambda _directory: False)
+    monkeypatch.setattr(cli, "fetch_recent_gauge_observations", lambda *_args: [])
+    monkeypatch.setattr(
+        cli,
+        "compare_radar_to_gauges",
+        lambda *_args: {
+            "verifiedAt": "2026-10-10T20:06:00Z",
+            "radarObservedAt": "2026-10-10T20:05:00Z",
+            "hits": 0,
+            "misses": 0,
+            "falseAlarms": 0,
+            "correctNegatives": 0,
+        },
+    )
     monkeypatch.setattr(cli, "generate_nowcast", lambda *_args: ({}, {}, []))
     monkeypatch.setattr(cli, "upload_r2", lambda _output, paths: uploaded.extend(paths))
 
