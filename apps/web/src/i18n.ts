@@ -132,6 +132,9 @@ const messages = {
     precisionGroundCheck: "Kontrol mod regnmålere",
     precisionStationComparisons: "stationssammenligninger",
     precisionGroundPending: "Afventer stationsdata",
+    precisionGaugeDetected: "Målt regn fanget",
+    precisionGaugeMissed: "Målt regn overset",
+    precisionGaugeThreshold: "20 dBZ sammenlignet med ≥0,1 mm / 10 min.",
     precisionUpdated: "Verificeret",
   },
   en: {
@@ -267,6 +270,9 @@ const messages = {
     precisionGroundCheck: "Ground-gauge check",
     precisionStationComparisons: "station comparisons",
     precisionGroundPending: "Awaiting station data",
+    precisionGaugeDetected: "Measured rain detected",
+    precisionGaugeMissed: "Measured rain missed",
+    precisionGaugeThreshold: "20 dBZ compared with ≥0.1 mm / 10 min.",
     precisionUpdated: "Verified",
   },
 } as const;

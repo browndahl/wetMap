@@ -46,6 +46,14 @@ export default function PrecisionObservatory({ locale }: Props) {
     retry: 2,
   });
   const observatory = quality.data?.observatory;
+  const groundGauge = quality.data?.groundGauge;
+  const groundGaugeEvents = groundGauge
+    ? groundGauge.hits + groundGauge.misses
+    : 0;
+  const groundGaugeMissRate =
+    groundGauge && groundGaugeEvents > 0
+      ? groundGauge.misses / groundGaugeEvents
+      : null;
   const status: PrecisionStatus = observatory?.overallStatus ?? "collecting";
   const StatusIcon =
     status === "verified"
@@ -173,14 +181,31 @@ export default function PrecisionObservatory({ locale }: Props) {
 
               <div className="quality-ground">
                 <CloudRain size={15} aria-hidden="true" />
-                <span>
+                <div>
                   <strong>{t("precisionGroundCheck")}</strong>
-                  {quality.data.groundGauge
-                    ? `${quality.data.groundGauge.stationComparisonCount.toLocaleString(
-                        locale === "da" ? "da-DK" : "en-GB",
-                      )} ${t("precisionStationComparisons")}`
-                    : t("precisionGroundPending")}
-                </span>
+                  <span>
+                    {groundGauge
+                      ? `${groundGauge.stationComparisonCount.toLocaleString(
+                          locale === "da" ? "da-DK" : "en-GB",
+                        )} ${t("precisionStationComparisons")}`
+                      : t("precisionGroundPending")}
+                  </span>
+                  {groundGauge && (
+                    <>
+                      <dl>
+                        <div>
+                          <dt>{t("precisionGaugeDetected")}</dt>
+                          <dd>{percentage(groundGauge.recall)}</dd>
+                        </div>
+                        <div>
+                          <dt>{t("precisionGaugeMissed")}</dt>
+                          <dd>{percentage(groundGaugeMissRate)}</dd>
+                        </div>
+                      </dl>
+                      <small>{t("precisionGaugeThreshold")}</small>
+                    </>
+                  )}
+                </div>
               </div>
 
               <footer className="quality-footer">

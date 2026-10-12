@@ -74,12 +74,12 @@ const apiMocks = vi.hoisted(() => ({
     groundGauge: {
       observationCount: 12,
       stationComparisonCount: 1260,
-      hits: 0,
-      misses: 0,
+      hits: 1,
+      misses: 3,
       falseAlarms: 0,
-      precision: null,
-      recall: null,
-      criticalSuccessIndex: null,
+      precision: 1,
+      recall: 0.25,
+      criticalSuccessIndex: 0.25,
     },
   },
   forecast: {
@@ -255,6 +255,10 @@ it("opens the precision observatory with honest dry-weather status", async () =>
   expect(screen.getByText("+15 min")).toBeInTheDocument();
   expect(screen.getAllByText("Falske varsler")).toHaveLength(4);
   expect(screen.getByText("1.260 stationssammenligninger")).toBeInTheDocument();
+  expect(screen.getByText("Målt regn fanget")).toBeInTheDocument();
+  expect(screen.getByText("25%")).toBeInTheDocument();
+  expect(screen.getByText("Målt regn overset")).toBeInTheDocument();
+  expect(screen.getByText("75%")).toBeInTheDocument();
 });
 
 afterEach(() => {
