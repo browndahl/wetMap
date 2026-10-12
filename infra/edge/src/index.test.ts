@@ -220,8 +220,8 @@ describe("radar nowcast edge endpoint", () => {
     };
 
     expect(response.status).toBe(200);
-    expect(body.schemaVersion).toBe(4);
-    expect(body.thresholdsDbz).toEqual([10, 20, 35]);
+    expect(body.schemaVersion).toBe(5);
+    expect(body.thresholdsDbz).toEqual([5, 10, 15, 20, 35]);
     expect(body.byLeadMinutes).toEqual([]);
     expect(body.observatory.overallStatus).toBe("collecting");
     expect(body.observatory.targetHorizonMinutes).toEqual([15, 30, 45, 60]);
@@ -242,6 +242,7 @@ describe("radar nowcast edge endpoint", () => {
         totalSampleCount: 48,
         observatory: {
           schemaVersion: 1,
+          thresholdDbz: 20,
           overallStatus: "awaiting-rain",
           targetHorizonMinutes: [15, 30, 45, 60],
           verifiedHorizonCount: 0,
@@ -256,6 +257,13 @@ describe("radar nowcast edge endpoint", () => {
           precision: null,
           recall: null,
           criticalSuccessIndex: null,
+          calibration: {
+            schemaVersion: 1,
+            status: "awaiting-overlap",
+            appliedThresholdDbz: 20,
+            appliedSpatialRadiusPixels: 3,
+            candidates: [],
+          },
           results: [{ large: "history-is-not-forwarded" }],
         },
         results: [{ large: "history-is-not-forwarded" }],
@@ -269,13 +277,19 @@ describe("radar nowcast edge endpoint", () => {
     );
     const body = (await response.json()) as {
       observatory: { overallStatus: string };
-      groundGauge: { stationComparisonCount: number; results?: unknown[] };
+      groundGauge: {
+        stationComparisonCount: number;
+        calibration: { status: string; appliedThresholdDbz: number };
+        results?: unknown[];
+      };
       results?: unknown[];
     };
 
     expect(response.status).toBe(200);
     expect(body.observatory.overallStatus).toBe("awaiting-rain");
     expect(body.groundGauge.stationComparisonCount).toBe(1260);
+    expect(body.groundGauge.calibration.status).toBe("awaiting-overlap");
+    expect(body.groundGauge.calibration.appliedThresholdDbz).toBe(20);
     expect(body.groundGauge.results).toBeUndefined();
     expect(body.results).toBeUndefined();
   });

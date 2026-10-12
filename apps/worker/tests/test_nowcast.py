@@ -42,17 +42,27 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
         for index, path in enumerate(paths)
     ]
 
-    manifest, risk, outputs = generate_nowcast(paths, frames, tmp_path / "nowcast")
+    manifest, risk, outputs = generate_nowcast(
+        paths,
+        frames,
+        tmp_path / "nowcast",
+        rain_threshold_dbz=15,
+        rain_radius_pixels=5,
+    )
 
     assert manifest["method"] == "adaptive-optical-flow-persistence"
     assert manifest["algorithmVersion"] == ALGORITHM_VERSION
     assert manifest["basedOnObservedAt"] == frames[-1].observedAt
+    assert manifest["rainThresholdDbz"] == 15
+    assert manifest["rainRadiusPixels"] == 5
     assert [frame["leadMinutes"] for frame in manifest["frames"]] == list(LEAD_MINUTES)
     assert len(outputs) == len(LEAD_MINUTES)
     assert all(path.exists() for path in outputs)
     assert manifest["frames"][0]["confidence"] > manifest["frames"][-1]["confidence"]
     assert risk["width"] == RISK_WIDTH
     assert risk["height"] == RISK_HEIGHT
+    assert risk["thresholdsDbz"] == [0, 10, 15]
+    assert risk["alertPolicy"]["minimumReflectivityDbz"] == 15
     decoded = base64.b64decode(risk["frames"][0]["intensity"])
     assert len(decoded) == RISK_WIDTH * RISK_HEIGHT
     assert max(decoded) >= 2
@@ -64,6 +74,8 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     assert point_metadata["frameCount"] == len(LEAD_MINUTES) + 1
     assert point_metadata["frames"][0]["leadMinutes"] == 0
     assert point_metadata["dataKey"].startswith("nowcast/point-risk-")
+    assert point_metadata["rainThresholdDbz"] == 15
+    assert point_metadata["neighborhoodRadiusPixels"] == 5
     assert len(point_grid) == POINT_GRID_WIDTH * POINT_GRID_HEIGHT * (len(LEAD_MINUTES) + 1)
     verification_metadata = json.loads(
         (tmp_path / "nowcast/verification-forecast.json").read_text()

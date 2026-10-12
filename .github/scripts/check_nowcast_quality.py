@@ -46,3 +46,24 @@ if report.get("schemaVersion", 1) >= 4:
         f"{observatory.get('overallStatus', 'unknown')} with "
         f"{observatory.get('verifiedHorizonCount', 0)}/4 verified horizons"
     )
+
+ground_gauge = report.get("groundGauge") or {}
+if ground_gauge.get("schemaVersion", 0) >= 3:
+    calibration = ground_gauge.get("calibration") or {}
+    candidates = calibration.get("candidates") or []
+    combinations = {
+        (int(candidate["thresholdDbz"]), int(candidate["spatialRadiusPixels"]))
+        for candidate in candidates
+    }
+    required_combinations = {
+        (threshold, radius) for threshold in (5, 10, 15, 20) for radius in (1, 3, 5)
+    }
+    if combinations != required_combinations:
+        raise SystemExit(
+            "Radar threshold calibration grid is incomplete; expected 12 candidates"
+        )
+    print(
+        "Radar calibration status "
+        f"{calibration.get('status', 'unknown')} with applied threshold "
+        f"{calibration.get('appliedThresholdDbz', 'unknown')} dBZ"
+    )

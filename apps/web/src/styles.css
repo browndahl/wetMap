@@ -862,6 +862,77 @@ a {
   color: var(--text-2);
   font-size: 0.45rem;
 }
+.quality-calibration {
+  margin-top: 0.5rem;
+  padding: 0.55rem;
+  border: 1px solid oklch(1 0 0 / 8%);
+  border-radius: 0.7rem;
+  background: oklch(0.1 0.025 235 / 38%);
+}
+.quality-calibration header,
+.quality-calibration p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.quality-calibration header strong {
+  font-size: 0.61rem;
+}
+.quality-calibration header span {
+  color: var(--warning);
+  font-size: 0.48rem;
+  font-weight: 750;
+}
+.quality-calibration p {
+  margin: 0.4rem 0 0;
+  color: var(--text-2);
+  font-size: 0.49rem;
+}
+.quality-calibration p strong {
+  color: var(--text-1);
+}
+.quality-thresholds {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+}
+.quality-thresholds div {
+  min-width: 0;
+  padding: 0.32rem;
+  border-radius: 0.42rem;
+  background: oklch(0.08 0.02 235 / 36%);
+}
+.quality-thresholds div.is-eligible {
+  box-shadow: inset 0 0 0 1px oklch(0.76 0.16 155 / 35%);
+}
+.quality-thresholds strong,
+.quality-thresholds span {
+  display: block;
+}
+.quality-thresholds strong {
+  color: var(--accent);
+  font-size: 0.5rem;
+}
+.quality-thresholds span {
+  overflow: hidden;
+  margin-top: 0.1rem;
+  color: var(--text-2);
+  font-size: 0.42rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quality-calibration > small {
+  display: block;
+  margin-top: 0.4rem;
+  color: var(--text-2);
+  font-size: 0.43rem;
+  line-height: 1.35;
+}
+.quality-calibration > small.is-warning {
+  color: var(--warning);
+}
 .quality-footer {
   margin-top: 0.65rem;
   padding-top: 0.55rem;

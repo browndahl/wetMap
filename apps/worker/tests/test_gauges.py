@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -52,14 +53,63 @@ def test_compares_radar_echo_with_time_aligned_ground_gauges(tmp_path: Path) -> 
     history = append_gauge_history(tmp_path / "history.json", result)
     assert history["stationComparisonCount"] == 2
     assert history["precision"] == 0.5
-    assert history["comparisonVersion"] == "10m-window-3px-v1"
+    assert history["comparisonVersion"] == "10m-window-threshold-radius-grid-v2"
     assert [row["thresholdDbz"] for row in history["byRadarThresholdDbz"]] == [
         5,
         10,
         15,
         20,
     ]
+    assert len(result["calibrationCandidates"]) == 12
+    assert history["calibration"]["status"] == "collecting"
+    assert history["calibration"]["appliedThresholdDbz"] == 20
     assert public_gauge_report(history, 1)["returnedResultCount"] == 1
+
+
+def test_calibration_promotes_only_after_guarded_evidence(tmp_path: Path) -> None:
+    radar = np.zeros((64, 96, 4), dtype=np.uint8)
+    radar[..., 3] = 133
+    radar_path = tmp_path / "radar.webp"
+    Image.fromarray(radar).save(radar_path, "WEBP", lossless=True)
+    result = compare_radar_to_gauges(
+        [
+            {
+                "stationId": "wet",
+                "observedAt": "2026-10-12T08:10:00Z",
+                "precipitationMm": 0.2,
+                "longitude": 10.0,
+                "latitude": 56.0,
+            },
+            {
+                "stationId": "dry",
+                "observedAt": "2026-10-12T08:10:00Z",
+                "precipitationMm": 0.0,
+                "longitude": 11.0,
+                "latitude": 56.0,
+            },
+        ],
+        radar_path,
+        "2026-10-12T08:10:00Z",
+        [7, 54, 13, 58],
+    )
+    history_path = tmp_path / "history.json"
+    previous = []
+    for index in range(23):
+        entry = dict(result)
+        entry["radarObservedAt"] = f"2026-10-11T{index:02d}:10:00Z"
+        previous.append(entry)
+    history_path.write_text(json.dumps({"results": previous}), encoding="utf-8")
+
+    history = append_gauge_history(history_path, result)
+
+    calibration = history["calibration"]
+    assert calibration["observationCount"] == 24
+    assert calibration["status"] == "calibrated"
+    assert calibration["safeToPromote"] is True
+    assert calibration["recommendedThresholdDbz"] == 20
+    assert calibration["recommendedSpatialRadiusPixels"] == 1
+    assert calibration["appliedThresholdDbz"] == 20
+    assert calibration["appliedSpatialRadiusPixels"] == 1
 
 
 def test_uses_the_gauges_full_accumulation_window(tmp_path: Path) -> None:

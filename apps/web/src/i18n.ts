@@ -134,7 +134,20 @@ const messages = {
     precisionGroundPending: "Afventer stationsdata",
     precisionGaugeDetected: "Målt regn fanget",
     precisionGaugeMissed: "Målt regn overset",
-    precisionGaugeThreshold: "20 dBZ sammenlignet med ≥0,1 mm / 10 min.",
+    precisionGaugeThreshold: "sammenlignet med ≥0,1 mm / 10 min.",
+    precisionCalibration: "Tærskelkalibrering",
+    precisionCalibrationCollecting: "Indsamler nyt datasæt",
+    precisionCalibrationAwaiting: "Afventer radar/regn-overlap",
+    precisionCalibrationInconclusive: "Ingen sikker forbedring",
+    precisionCalibrationCalibrated: "Kalibreret",
+    precisionAppliedThreshold: "Anvendt grænse",
+    precisionRadius: "søgeradius",
+    precisionGaugeDetectedShort: "fanget",
+    precisionCalibrationRuns: "kalibreringskørsler",
+    precisionCalibrationSafety:
+      "Grænsen skifter kun efter tilstrækkelige træffere og dokumenteret forbedring.",
+    precisionCalibrationForecastGate:
+      "Stationskalibreringen er klar, men promotion afventer nowcast-kvalitet ved samme grænse.",
     precisionUpdated: "Verificeret",
   },
   en: {
@@ -272,7 +285,20 @@ const messages = {
     precisionGroundPending: "Awaiting station data",
     precisionGaugeDetected: "Measured rain detected",
     precisionGaugeMissed: "Measured rain missed",
-    precisionGaugeThreshold: "20 dBZ compared with ≥0.1 mm / 10 min.",
+    precisionGaugeThreshold: "compared with ≥0.1 mm / 10 min.",
+    precisionCalibration: "Threshold calibration",
+    precisionCalibrationCollecting: "Collecting new dataset",
+    precisionCalibrationAwaiting: "Awaiting radar/rain overlap",
+    precisionCalibrationInconclusive: "No safe improvement",
+    precisionCalibrationCalibrated: "Calibrated",
+    precisionAppliedThreshold: "Applied threshold",
+    precisionRadius: "search radius",
+    precisionGaugeDetectedShort: "detected",
+    precisionCalibrationRuns: "calibration runs",
+    precisionCalibrationSafety:
+      "The threshold changes only after enough hits and a documented improvement.",
+    precisionCalibrationForecastGate:
+      "Station calibration is ready, but promotion awaits nowcast quality at the same threshold.",
     precisionUpdated: "Verified",
   },
 } as const;

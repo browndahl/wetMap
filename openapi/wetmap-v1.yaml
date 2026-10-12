@@ -39,7 +39,7 @@ paths:
     get:
       operationId: getRadarNowcastQuality
       summary: Returns rolling verification of earlier nowcasts against observations
-      description: Scores every available 5–60 minute horizon at 10, 20 and 35 dBZ after the predicted timestamp becomes observable, compares against persistence, and includes a separate raw DMI rain-gauge check when available.
+      description: Scores every available 5–60 minute horizon at 5, 10, 15, 20 and 35 dBZ after the predicted timestamp becomes observable, compares against persistence, and includes a separate raw DMI rain-gauge calibration when available.
       responses:
         "200":
           description: Rolling verification metrics, or an empty result before the first comparison
@@ -468,14 +468,14 @@ components:
         - observatory
         - results
       properties:
-        schemaVersion: { type: integer, const: 4 }
+        schemaVersion: { type: integer, const: 5 }
         generatedAt: { type: string, format: date-time }
         algorithmVersion: { type: string }
         latestVerifiedAt: { type: [string, "null"], format: date-time }
         thresholdDbz: { type: number, const: 20 }
         thresholdsDbz:
           type: array
-          items: { type: number, enum: [10, 20, 35] }
+          items: { type: number, enum: [5, 10, 15, 20, 35] }
         sampleCount: { type: integer, minimum: 0 }
         totalSampleCount: { type: integer, minimum: 0 }
         returnedResultCount: { type: integer, minimum: 0, maximum: 288 }
@@ -509,14 +509,14 @@ components:
                               }
         byThresholdDbz:
           type: array
-          maxItems: 3
+          maxItems: 5
           items:
             allOf:
               - $ref: "#/components/schemas/VerificationSummary"
               - type: object
                 required: [thresholdDbz]
                 properties:
-                  thresholdDbz: { type: number, enum: [10, 20, 35] }
+                  thresholdDbz: { type: number, enum: [5, 10, 15, 20, 35] }
         byAlgorithmVersion:
           type: array
           items:
@@ -527,6 +527,10 @@ components:
               latestVerifiedAt: { type: string, format: date-time }
               sampleCount: { type: integer, minimum: 0 }
         observatory: { $ref: "#/components/schemas/PrecisionObservatory" }
+        observatoryByThresholdDbz:
+          type: array
+          maxItems: 4
+          items: { $ref: "#/components/schemas/PrecisionObservatory" }
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
         results:
           type: array
@@ -578,7 +582,7 @@ components:
                 { type: string, enum: [optical-flow, persistence] }
               thresholdScores:
                 type: array
-                maxItems: 3
+                maxItems: 5
                 items:
                   { $ref: "#/components/schemas/VerificationThresholdScore" }
     PrecisionObservatoryResponse:
@@ -593,7 +597,7 @@ components:
         - totalSampleCount
         - observatory
       properties:
-        schemaVersion: { type: integer, minimum: 4 }
+        schemaVersion: { type: integer, minimum: 5 }
         generatedAt: { type: string, format: date-time }
         latestVerifiedAt: { type: [string, "null"], format: date-time }
         algorithmVersion: { type: string }
@@ -606,6 +610,7 @@ components:
       type: object
       required:
         - schemaVersion
+        - thresholdDbz
         - overallStatus
         - targetHorizonMinutes
         - qualityGate
@@ -613,6 +618,7 @@ components:
         - horizons
       properties:
         schemaVersion: { type: integer, const: 1 }
+        thresholdDbz: { type: number, enum: [5, 10, 15, 20] }
         overallStatus:
           {
             type: string,
@@ -712,7 +718,7 @@ components:
         - criticalSuccessIndexSkill
         - dbzMeanAbsoluteError
       properties:
-        thresholdDbz: { type: number, enum: [10, 20, 35] }
+        thresholdDbz: { type: number, enum: [5, 10, 15, 20, 35] }
         validPixels: { type: integer, minimum: 0 }
         hits: { type: integer, minimum: 0 }
         misses: { type: integer, minimum: 0 }
@@ -745,12 +751,14 @@ components:
         - precision
         - recall
         - criticalSuccessIndex
+        - calibration
         - results
       properties:
-        schemaVersion: { type: integer, const: 2 }
+        schemaVersion: { type: integer, const: 3 }
         generatedAt: { type: string, format: date-time }
         source: { type: string, const: dmi-metobs-raw }
-        comparisonVersion: { type: string, const: 10m-window-3px-v1 }
+        comparisonVersion:
+          { type: string, const: 10m-window-threshold-radius-grid-v2 }
         parameterId: { type: string, const: precip_past10min }
         radarThresholdDbz: { type: number, const: 20 }
         gaugeThresholdMm10m: { type: number, const: 0.1 }
@@ -778,12 +786,99 @@ components:
         byComparisonVersion:
           type: array
           items: { type: object }
+        calibration: { $ref: "#/components/schemas/RadarThresholdCalibration" }
         note: { type: string }
         returnedResultCount: { type: integer, minimum: 0, maximum: 24 }
         results:
           type: array
           maxItems: 24
           items: { type: object }
+    RadarThresholdCalibration:
+      type: object
+      required:
+        - schemaVersion
+        - status
+        - safeToPromote
+        - minimumObservationCount
+        - minimumWetEventCount
+        - minimumRadarEventCount
+        - minimumHitCount
+        - minimumCriticalSuccessIndex
+        - minimumCriticalSuccessIndexImprovement
+        - observationCount
+        - forecastQualityStatus
+        - recommendedThresholdDbz
+        - recommendedSpatialRadiusPixels
+        - criticalSuccessIndexImprovement
+        - appliedThresholdDbz
+        - appliedSpatialRadiusPixels
+        - candidates
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        status:
+          {
+            type: string,
+            enum: [collecting, awaiting-overlap, inconclusive, calibrated],
+          }
+        safeToPromote: { type: boolean }
+        minimumObservationCount: { type: integer, minimum: 1 }
+        minimumWetEventCount: { type: integer, minimum: 1 }
+        minimumRadarEventCount: { type: integer, minimum: 1 }
+        minimumHitCount: { type: integer, minimum: 1 }
+        minimumCriticalSuccessIndex: { type: number, minimum: 0, maximum: 1 }
+        minimumCriticalSuccessIndexImprovement:
+          { type: number, minimum: 0, maximum: 1 }
+        observationCount: { type: integer, minimum: 0 }
+        forecastQualityStatus:
+          {
+            type: string,
+            enum: [collecting, awaiting-rain, verified, degraded],
+          }
+        recommendedThresholdDbz:
+          { type: [number, "null"], enum: [5, 10, 15, 20, null] }
+        recommendedSpatialRadiusPixels:
+          { type: [integer, "null"], enum: [1, 3, 5, null] }
+        criticalSuccessIndexImprovement:
+          { type: [number, "null"], minimum: -1, maximum: 1 }
+        appliedThresholdDbz: { type: number, enum: [5, 10, 15, 20] }
+        appliedSpatialRadiusPixels: { type: integer, enum: [1, 3, 5] }
+        candidates:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items: { $ref: "#/components/schemas/RadarCalibrationCandidate" }
+    RadarCalibrationCandidate:
+      type: object
+      required:
+        - thresholdDbz
+        - spatialRadiusPixels
+        - hits
+        - misses
+        - falseAlarms
+        - correctNegatives
+        - wetEventCount
+        - radarEventCount
+        - precision
+        - recall
+        - criticalSuccessIndex
+        - falseAlarmRate
+        - missRate
+        - eligible
+      properties:
+        thresholdDbz: { type: number, enum: [5, 10, 15, 20] }
+        spatialRadiusPixels: { type: integer, enum: [1, 3, 5] }
+        hits: { type: integer, minimum: 0 }
+        misses: { type: integer, minimum: 0 }
+        falseAlarms: { type: integer, minimum: 0 }
+        correctNegatives: { type: integer, minimum: 0 }
+        wetEventCount: { type: integer, minimum: 0 }
+        radarEventCount: { type: integer, minimum: 0 }
+        precision: { type: [number, "null"], minimum: 0, maximum: 1 }
+        recall: { type: [number, "null"], minimum: 0, maximum: 1 }
+        criticalSuccessIndex: { type: [number, "null"], minimum: 0, maximum: 1 }
+        falseAlarmRate: { type: [number, "null"], minimum: 0, maximum: 1 }
+        missRate: { type: [number, "null"], minimum: 0, maximum: 1 }
+        eligible: { type: boolean }
     LocationResult:
       type: object
       required: [id, name, context, latitude, longitude, type]

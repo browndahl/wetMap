@@ -21,7 +21,7 @@ from .nowcast import (
 
 SIGNIFICANT_ECHO_DBZ = 20
 LEGACY_ALGORITHM_VERSION = "legacy-unversioned"
-VERIFICATION_THRESHOLDS_DBZ = (10, 20, 35)
+VERIFICATION_THRESHOLDS_DBZ = (5, 10, 15, 20, 35)
 FORECAST_MATCH_TOLERANCE_SECONDS = 180
 FORECAST_RETENTION_MINUTES = 65
 OBSERVATORY_MINIMUM_EVENT_PIXELS = 100
@@ -277,12 +277,22 @@ def _observatory_horizon(
     target_lead_minutes: int,
     window_start_minutes: int,
     window_end_minutes: int,
+    threshold_dbz: int = SIGNIFICANT_ECHO_DBZ,
 ) -> dict[str, Any]:
-    entries = [
-        entry
-        for entry in history
-        if window_start_minutes <= int(entry.get("leadMinutes", 0)) <= window_end_minutes
-    ]
+    entries: list[dict[str, Any]] = []
+    for entry in history:
+        if not (window_start_minutes <= int(entry.get("leadMinutes", 0)) <= window_end_minutes):
+            continue
+        threshold_entry = next(
+            (
+                score
+                for score in entry.get("thresholdScores", [])
+                if int(score["thresholdDbz"]) == threshold_dbz
+            ),
+            entry if int(entry.get("thresholdDbz", -999)) == threshold_dbz else None,
+        )
+        if threshold_entry:
+            entries.append(threshold_entry)
     summary = _aggregate_scores(entries)
     event_pixel_count = summary["hits"] + summary["misses"] + summary["falseAlarms"]
     has_enough_samples = summary["sampleCount"] >= ALERT_MINIMUM_VALIDATION_SAMPLES
@@ -318,9 +328,11 @@ def _observatory_horizon(
     }
 
 
-def _observatory_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
+def _observatory_summary(
+    history: list[dict[str, Any]], threshold_dbz: int = SIGNIFICANT_ECHO_DBZ
+) -> dict[str, Any]:
     horizons = [
-        _observatory_horizon(history, target, start, end)
+        _observatory_horizon(history, target, start, end, threshold_dbz)
         for target, start, end in OBSERVATORY_HORIZON_WINDOWS
     ]
     statuses = {horizon["status"] for horizon in horizons}
@@ -334,6 +346,7 @@ def _observatory_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
         overall_status = "verified"
     return {
         "schemaVersion": 1,
+        "thresholdDbz": threshold_dbz,
         "overallStatus": overall_status,
         "targetHorizonMinutes": [target for target, _start, _end in OBSERVATORY_HORIZON_WINDOWS],
         "qualityGate": {
@@ -358,7 +371,7 @@ def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> d
     active_summary = _cohort_summary(active_history)
     result_slice = history[-recent_limit:] if recent_limit is not None else history
     return {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "generatedAt": history[-1]["verifiedAt"] if history else now,
         "algorithmVersion": active_version,
         "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
@@ -374,6 +387,9 @@ def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> d
             for version, entries in sorted(cohorts.items())
         ],
         "observatory": _observatory_summary(active_history),
+        "observatoryByThresholdDbz": [
+            _observatory_summary(active_history, threshold) for threshold in (5, 10, 15, 20)
+        ],
         "results": result_slice,
     }
 
@@ -430,7 +446,10 @@ def public_verification_report(
     return report
 
 
-def quality_by_lead(history: dict[str, Any] | None) -> dict[int, dict[str, Any]]:
+def quality_by_lead(
+    history: dict[str, Any] | None,
+    threshold_dbz: int = SIGNIFICANT_ECHO_DBZ,
+) -> dict[int, dict[str, Any]]:
     if not history or history.get("algorithmVersion") != ALGORITHM_VERSION:
         return {}
     profiles: dict[int, dict[str, Any]] = {}
@@ -449,7 +468,15 @@ def quality_by_lead(history: dict[str, Any] | None) -> dict[int, dict[str, Any]]
             profile["persistenceSampleCount"] = persistence["sampleCount"]
             profile["persistenceCriticalSuccessIndex"] = persistence["criticalSuccessIndex"]
         profiles[int(entry["leadMinutes"])] = profile
-    for horizon in history.get("observatory", {}).get("horizons", []):
+    observatory = next(
+        (
+            entry
+            for entry in history.get("observatoryByThresholdDbz", [])
+            if int(entry.get("thresholdDbz", -999)) == threshold_dbz
+        ),
+        history.get("observatory", {}),
+    )
+    for horizon in observatory.get("horizons", []):
         for lead_minutes in range(
             int(horizon["windowStartMinutes"]),
             int(horizon["windowEndMinutes"]) + 1,

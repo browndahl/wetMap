@@ -6,6 +6,32 @@ from wetmap_worker.model import Frame, manifest
 from wetmap_worker.storage import write_json_atomic
 
 
+def test_promotes_calibration_only_after_matching_nowcast_quality_is_verified() -> None:
+    gauge_history = {
+        "calibration": {
+            "safeToPromote": True,
+            "recommendedThresholdDbz": 15,
+            "recommendedSpatialRadiusPixels": 5,
+        }
+    }
+    verification_history = {
+        "observatoryByThresholdDbz": [{"thresholdDbz": 15, "overallStatus": "awaiting-rain"}]
+    }
+
+    assert cli.operational_radar_calibration(gauge_history, verification_history) == (
+        20,
+        1,
+    )
+    assert gauge_history["calibration"]["forecastQualityStatus"] == "awaiting-rain"
+
+    verification_history["observatoryByThresholdDbz"][0]["overallStatus"] = "verified"
+    assert cli.operational_radar_calibration(gauge_history, verification_history) == (
+        15,
+        5,
+    )
+    assert gauge_history["calibration"]["appliedThresholdDbz"] == 15
+
+
 def test_upload_run_only_processes_new_frames(tmp_path: Path, monkeypatch) -> None:
     old_frame = Frame(
         "old",
@@ -63,7 +89,7 @@ def test_upload_run_only_processes_new_frames(tmp_path: Path, monkeypatch) -> No
             "correctNegatives": 0,
         },
     )
-    monkeypatch.setattr(cli, "generate_nowcast", lambda *_args: ({}, {}, []))
+    monkeypatch.setattr(cli, "generate_nowcast", lambda *_args, **_kwargs: ({}, {}, []))
     monkeypatch.setattr(cli, "upload_r2", lambda _output, paths: uploaded.extend(paths))
 
     cli.run(tmp_path, limit=2, upload=True)

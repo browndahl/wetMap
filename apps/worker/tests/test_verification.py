@@ -74,7 +74,13 @@ def test_scores_previous_nowcast_against_new_observation(tmp_path: Path) -> None
     assert result["criticalSuccessIndex"] > 0.9
     assert result["persistenceCriticalSuccessIndex"] is not None
     assert result["criticalSuccessIndexSkill"] is not None
-    assert [score["thresholdDbz"] for score in result["thresholdScores"]] == [10, 20, 35]
+    assert [score["thresholdDbz"] for score in result["thresholdScores"]] == [
+        5,
+        10,
+        15,
+        20,
+        35,
+    ]
     history = append_verification_history(tmp_path / "history.json", result)
     assert history["sampleCount"] == 1
     assert history["meanCriticalSuccessIndex"] > 0.9
@@ -102,7 +108,22 @@ def test_groups_multiple_forecast_horizons_and_keeps_public_payload_bounded(
         "criticalSuccessIndexSkill": 0.125,
         "forecastMethod": "optical-flow",
         "algorithmVersion": ALGORITHM_VERSION,
-        "thresholdScores": [],
+        "thresholdScores": [
+            {
+                "thresholdDbz": 15,
+                "validPixels": 100,
+                "hits": 55,
+                "misses": 5,
+                "falseAlarms": 15,
+                "correctNegatives": 25,
+                "precision": 0.7857,
+                "recall": 0.9167,
+                "criticalSuccessIndex": 0.7333,
+                "dbzMeanAbsoluteError": 3.0,
+                "persistenceCriticalSuccessIndex": 0.55,
+                "criticalSuccessIndexSkill": 0.1833,
+            }
+        ],
     }
     results = [
         {**base, "basedOnObservedAt": "2026-10-11T12:15:00Z", "leadMinutes": 15},
@@ -115,7 +136,7 @@ def test_groups_multiple_forecast_horizons_and_keeps_public_payload_bounded(
     public = public_verification_report(history, recent_results=1)
     assert public["sampleCount"] == 2
     assert public["returnedResultCount"] == 1
-    assert public["schemaVersion"] == 4
+    assert public["schemaVersion"] == 5
     assert public["observatory"]["targetHorizonMinutes"] == [15, 30, 45, 60]
     assert public["observatory"]["horizons"][0]["sampleCount"] == 1
     profile = quality_by_lead(history)[15]
@@ -123,6 +144,15 @@ def test_groups_multiple_forecast_horizons_and_keeps_public_payload_bounded(
     assert profile["opticalFlowMeanCriticalSuccessIndexSkill"] == 0.125
     assert profile["operationalSampleCount"] == 1
     assert profile["operationalStatus"] == "collecting"
+    threshold_profile = quality_by_lead(history, 15)[15]
+    assert threshold_profile["operationalSampleCount"] == 1
+    assert threshold_profile["operationalCriticalSuccessIndex"] == 0.7333
+    assert [entry["thresholdDbz"] for entry in history["observatoryByThresholdDbz"]] == [
+        5,
+        10,
+        15,
+        20,
+    ]
 
 
 def test_observatory_uses_horizon_windows_and_requires_rain_evidence(

@@ -34,6 +34,8 @@ interface RiskManifest {
   width: number;
   height: number;
   encoding: "uint8-base64";
+  thresholdsDbz?: [number, number, number];
+  alertPolicy?: { minimumReflectivityDbz?: number };
   frames: Array<{
     leadMinutes: number;
     predictedAt: string;
@@ -50,7 +52,7 @@ const prefix = "push/subscriptions/";
 const scanStateKey = "push/scan-state.json";
 const subscriptionsPerInvocation = 40;
 const maximumRiskAgeMs = 30 * 60_000;
-// Bucket 3 begins at 20 dBZ, the same boundary the 15-minute cards use for rain.
+// Bucket 3 begins at the calibrated boundary declared by the worker.
 const minimumAlertIntensity = 3;
 
 const validBase64Url = (value: unknown, minimumLength: number) =>

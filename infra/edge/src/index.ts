@@ -257,6 +257,7 @@ interface PointRiskMetadata {
   encoding: "pixel-major-uint8-dbz-plus-32";
   dataKey?: string;
   neighborhoodRadiusPixels: number;
+  rainThresholdDbz?: number;
   frames: Array<{
     leadMinutes: number;
     predictedAt: string;
@@ -566,6 +567,7 @@ async function nowcast(request: Request, env: Env): Promise<Response> {
 function emptyPrecisionObservatory() {
   return {
     schemaVersion: 1,
+    thresholdDbz: 20,
     overallStatus: "collecting",
     targetHorizonMinutes: [15, 30, 45, 60],
     qualityGate: {
@@ -611,11 +613,11 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
   if (!object)
     return Response.json(
       {
-        schemaVersion: 4,
+        schemaVersion: 5,
         generatedAt: new Date(0).toISOString(),
         algorithmVersion: "adaptive-optical-flow-persistence-v1",
         thresholdDbz: 20,
-        thresholdsDbz: [10, 20, 35],
+        thresholdsDbz: [5, 10, 15, 20, 35],
         sampleCount: 0,
         totalSampleCount: 0,
         returnedResultCount: 0,
@@ -663,6 +665,7 @@ async function precisionObservatory(
       precision: number | null;
       recall: number | null;
       criticalSuccessIndex: number | null;
+      calibration?: unknown;
     };
   };
   const headers = new Headers(qualityResponse.headers);
@@ -687,6 +690,7 @@ async function precisionObservatory(
             precision: report.groundGauge.precision,
             recall: report.groundGauge.recall,
             criticalSuccessIndex: report.groundGauge.criticalSuccessIndex,
+            calibration: report.groundGauge.calibration,
           }
         : undefined,
     },
@@ -1213,6 +1217,11 @@ async function radarPointSamples(
     metadata.width > 2_048 ||
     metadata.height < 1 ||
     metadata.height > 2_048 ||
+    (metadata.rainThresholdDbz !== undefined &&
+      ![5, 10, 15, 20].includes(metadata.rainThresholdDbz)) ||
+    !Number.isFinite(metadata.neighborhoodRadiusPixels) ||
+    metadata.neighborhoodRadiusPixels < 0 ||
+    metadata.neighborhoodRadiusPixels > 5 ||
     !/^nowcast\/point-risk-(?:[01])\.bin$|^nowcast\/point-risk\.bin$/.test(
       dataKey,
     ) ||
@@ -1247,7 +1256,7 @@ async function radarPointSamples(
   );
   const radius = Math.max(
     0,
-    Math.min(2, Math.round(metadata.neighborhoodRadiusPixels ?? 1)),
+    Math.min(5, Math.round(metadata.neighborhoodRadiusPixels ?? 1)),
   );
   const xStart = Math.max(0, x - radius);
   const xEnd = Math.min(metadata.width - 1, x + radius);
@@ -1295,9 +1304,12 @@ async function radarPointSamples(
   };
 }
 
-function radarIntensity(reflectivityDbz: number): RainIntensity {
+function radarIntensity(
+  reflectivityDbz: number,
+  rainThresholdDbz = 20,
+): RainIntensity {
   if (reflectivityDbz < -10) return "none";
-  if (reflectivityDbz < 20) return "trace";
+  if (reflectivityDbz < rainThresholdDbz) return "trace";
   if (reflectivityDbz < 35) return "light";
   if (reflectivityDbz < 45) return "moderate";
   return "heavy";
@@ -1455,7 +1467,7 @@ function combineRadarAndModel(
     return {
       ...point,
       precipitationMm: Math.round(averageRate * 0.25 * 100) / 100,
-      intensity: radarIntensity(peakDbz),
+      intensity: radarIntensity(peakDbz, radar.metadata.rainThresholdDbz ?? 20),
       source: "radar-nowcast" as const,
       reflectivityDbz: Math.round(peakDbz),
       confidence:

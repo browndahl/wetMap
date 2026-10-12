@@ -47,6 +47,7 @@ export default function PrecisionObservatory({ locale }: Props) {
   });
   const observatory = quality.data?.observatory;
   const groundGauge = quality.data?.groundGauge;
+  const calibration = groundGauge?.calibration;
   const groundGaugeEvents = groundGauge
     ? groundGauge.hits + groundGauge.misses
     : 0;
@@ -202,18 +203,84 @@ export default function PrecisionObservatory({ locale }: Props) {
                           <dd>{percentage(groundGaugeMissRate)}</dd>
                         </div>
                       </dl>
-                      <small>{t("precisionGaugeThreshold")}</small>
+                      <small>
+                        {calibration?.appliedThresholdDbz ??
+                          quality.data.thresholdDbz}{" "}
+                        dBZ {t("precisionGaugeThreshold")}
+                      </small>
                     </>
                   )}
                 </div>
               </div>
+
+              {calibration && (
+                <section className="quality-calibration">
+                  <header>
+                    <strong>{t("precisionCalibration")}</strong>
+                    <span>
+                      {t(
+                        calibration.status === "calibrated"
+                          ? "precisionCalibrationCalibrated"
+                          : calibration.status === "inconclusive"
+                            ? "precisionCalibrationInconclusive"
+                            : calibration.status === "awaiting-overlap"
+                              ? "precisionCalibrationAwaiting"
+                              : "precisionCalibrationCollecting",
+                      )}
+                    </span>
+                  </header>
+                  <p>
+                    {t("precisionAppliedThreshold")}:{" "}
+                    <strong>{calibration.appliedThresholdDbz} dBZ</strong> ·{" "}
+                    {t("precisionRadius")}{" "}
+                    <strong>{calibration.appliedSpatialRadiusPixels} px</strong>
+                  </p>
+                  <div className="quality-thresholds">
+                    {calibration.candidates
+                      .filter(
+                        (candidate) =>
+                          candidate.spatialRadiusPixels ===
+                          calibration.appliedSpatialRadiusPixels,
+                      )
+                      .map((candidate) => (
+                        <div
+                          className={candidate.eligible ? "is-eligible" : ""}
+                          key={candidate.thresholdDbz}
+                        >
+                          <strong>{candidate.thresholdDbz} dBZ</strong>
+                          <span>
+                            CSI {percentage(candidate.criticalSuccessIndex)} ·{" "}
+                            {t("precisionGaugeDetectedShort")}{" "}
+                            {percentage(candidate.recall)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                  <small>
+                    {calibration.observationCount}/
+                    {calibration.minimumObservationCount}{" "}
+                    {t("precisionCalibrationRuns")} ·{" "}
+                    {t("precisionCalibrationSafety")}
+                  </small>
+                  {calibration.safeToPromote &&
+                    calibration.forecastQualityStatus !== "verified" && (
+                      <small className="is-warning">
+                        {t("precisionCalibrationForecastGate")}
+                      </small>
+                    )}
+                </section>
+              )}
 
               <footer className="quality-footer">
                 <span>
                   {t("precisionUpdated")}{" "}
                   {formatTime(quality.data.generatedAt, locale)}
                 </span>
-                <span>20 dBZ · {quality.data.algorithmVersion}</span>
+                <span>
+                  {calibration?.appliedThresholdDbz ??
+                    quality.data.thresholdDbz}{" "}
+                  dBZ · {quality.data.algorithmVersion}
+                </span>
               </footer>
             </>
           )}

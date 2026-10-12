@@ -52,6 +52,8 @@ export interface NowcastManifest {
     | "adaptive-optical-flow-persistence"
     | "dense-optical-flow-extrapolation";
   algorithmVersion?: string;
+  rainThresholdDbz?: 5 | 10 | 15 | 20;
+  rainRadiusPixels?: 1 | 3 | 5;
   basedOnObservedAt: string;
   sourceFrameCount: number;
   frames: NowcastFrame[];
@@ -90,6 +92,7 @@ export interface PrecisionHorizon extends VerificationSummary {
 
 export interface PrecisionObservatory {
   schemaVersion: 1;
+  thresholdDbz: number;
   overallStatus: PrecisionStatus;
   targetHorizonMinutes: Array<15 | 30 | 45 | 60>;
   qualityGate: {
@@ -111,6 +114,50 @@ export interface GroundGaugeQuality {
   precision: number | null;
   recall: number | null;
   criticalSuccessIndex: number | null;
+  calibration?: RadarThresholdCalibration;
+}
+
+export type RadarCalibrationStatus =
+  | "collecting"
+  | "awaiting-overlap"
+  | "inconclusive"
+  | "calibrated";
+
+export interface RadarCalibrationCandidate {
+  thresholdDbz: 5 | 10 | 15 | 20;
+  spatialRadiusPixels: 1 | 3 | 5;
+  hits: number;
+  misses: number;
+  falseAlarms: number;
+  correctNegatives: number;
+  wetEventCount: number;
+  radarEventCount: number;
+  precision: number | null;
+  recall: number | null;
+  criticalSuccessIndex: number | null;
+  falseAlarmRate: number | null;
+  missRate: number | null;
+  eligible: boolean;
+}
+
+export interface RadarThresholdCalibration {
+  schemaVersion: 1;
+  status: RadarCalibrationStatus;
+  safeToPromote: boolean;
+  minimumObservationCount: number;
+  minimumWetEventCount: number;
+  minimumRadarEventCount: number;
+  minimumHitCount: number;
+  minimumCriticalSuccessIndex: number;
+  minimumCriticalSuccessIndexImprovement: number;
+  observationCount: number;
+  forecastQualityStatus: PrecisionStatus;
+  recommendedThresholdDbz: 5 | 10 | 15 | 20 | null;
+  recommendedSpatialRadiusPixels: 1 | 3 | 5 | null;
+  criticalSuccessIndexImprovement: number | null;
+  appliedThresholdDbz: 5 | 10 | 15 | 20;
+  appliedSpatialRadiusPixels: 1 | 3 | 5;
+  candidates: RadarCalibrationCandidate[];
 }
 
 export interface NowcastQualityResponse {

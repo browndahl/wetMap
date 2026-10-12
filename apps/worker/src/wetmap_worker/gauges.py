@@ -12,19 +12,23 @@ from PIL import Image
 
 from .nowcast import POINT_GRID_HEIGHT, POINT_GRID_WIDTH, _parse_time, _reflectivity_grid
 
-DMI_METOBS_URL = (
-    "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items"
-)
+DMI_METOBS_URL = "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items"
 GAUGE_PARAMETER = "precip_past10min"
 GAUGE_WET_THRESHOLD_MM = 0.1
 RADAR_WET_THRESHOLD_DBZ = 20
 RADAR_THRESHOLDS_DBZ = (5, 10, 15, 20)
 SPATIAL_RADII_PIXELS = (1, 3, 5)
-PRIMARY_SPATIAL_RADIUS_PIXELS = 3
+PRIMARY_SPATIAL_RADIUS_PIXELS = 1
 GAUGE_ACCUMULATION_MINUTES = 10
-GAUGE_COMPARISON_VERSION = "10m-window-3px-v1"
+GAUGE_COMPARISON_VERSION = "10m-window-threshold-radius-grid-v2"
 LEGACY_GAUGE_COMPARISON_VERSION = "legacy-instant-1px"
 MAXIMUM_TIME_OFFSET_MINUTES = 6
+CALIBRATION_MINIMUM_OBSERVATIONS = 24
+CALIBRATION_MINIMUM_WET_EVENTS = 20
+CALIBRATION_MINIMUM_RADAR_EVENTS = 20
+CALIBRATION_MINIMUM_HITS = 5
+CALIBRATION_MINIMUM_CSI = 0.2
+CALIBRATION_MINIMUM_CSI_IMPROVEMENT = 0.05
 
 
 def fetch_recent_gauge_observations(
@@ -108,6 +112,29 @@ def _score_counts(counts: dict[str, int]) -> dict[str, Any]:
     }
 
 
+def _candidate_score(counts: dict[str, int]) -> dict[str, Any]:
+    scored = _score_counts(counts)
+    hits = counts["hits"]
+    misses = counts["misses"]
+    false_alarms = counts["falseAlarms"]
+    wet_events = hits + misses
+    radar_events = hits + false_alarms
+    return {
+        **scored,
+        "wetEventCount": wet_events,
+        "radarEventCount": radar_events,
+        "falseAlarmRate": _ratio(false_alarms, radar_events),
+        "missRate": _ratio(misses, wet_events),
+        "eligible": (
+            wet_events >= CALIBRATION_MINIMUM_WET_EVENTS
+            and radar_events >= CALIBRATION_MINIMUM_RADAR_EVENTS
+            and hits >= CALIBRATION_MINIMUM_HITS
+            and isinstance(scored["criticalSuccessIndex"], (int, float))
+            and scored["criticalSuccessIndex"] >= CALIBRATION_MINIMUM_CSI
+        ),
+    }
+
+
 def compare_radar_to_gauges(
     observations: list[dict[str, Any]],
     observed_frame_path: Path,
@@ -119,9 +146,9 @@ def compare_radar_to_gauges(
     radar_time = _parse_time(observed_at)
     nearest_by_station: dict[str, tuple[float, datetime, dict[str, Any]]] = {}
     for observation in observations:
-        offset_minutes = abs(
-            (_parse_time(observation["observedAt"]) - radar_time).total_seconds()
-        ) / 60
+        offset_minutes = (
+            abs((_parse_time(observation["observedAt"]) - radar_time).total_seconds()) / 60
+        )
         if offset_minutes > MAXIMUM_TIME_OFFSET_MINUTES:
             continue
         station = observation["stationId"]
@@ -137,21 +164,19 @@ def compare_radar_to_gauges(
     grids = [
         (
             _parse_time(frame_time),
-            _reflectivity_grid(
-                np.asarray(Image.open(frame_path).convert("RGBA"))[..., 3]
-            ),
+            _reflectivity_grid(np.asarray(Image.open(frame_path).convert("RGBA"))[..., 3]),
         )
         for frame_path, frame_time in input_frames
     ]
     west, south, east, north = bounds
     north_y = _mercator_y(north)
     south_y = _mercator_y(south)
-    threshold_counts = {
-        threshold: _empty_counts() for threshold in RADAR_THRESHOLDS_DBZ
+    candidate_counts = {
+        (threshold, radius): _empty_counts()
+        for threshold in RADAR_THRESHOLDS_DBZ
+        for radius in SPATIAL_RADII_PIXELS
     }
-    spatial_counts = {
-        radius: _empty_counts() for radius in SPATIAL_RADII_PIXELS
-    }
+    spatial_counts = {radius: _empty_counts() for radius in SPATIAL_RADII_PIXELS}
     compared = 0
     trace_gauges = 0
     offsets: list[float] = []
@@ -168,10 +193,7 @@ def compare_radar_to_gauges(
             POINT_GRID_HEIGHT - 1,
             max(
                 0,
-                int(
-                    ((north_y - _mercator_y(latitude)) / (north_y - south_y))
-                    * POINT_GRID_HEIGHT
-                ),
+                int(((north_y - _mercator_y(latitude)) / (north_y - south_y)) * POINT_GRID_HEIGHT),
             ),
         )
         gauge_time = _parse_time(observation["observedAt"])
@@ -195,14 +217,14 @@ def compare_radar_to_gauges(
                 if covered.size:
                     covered_values.append(covered)
             if covered_values:
-                dbz_by_radius[radius] = int(
-                    max(int(np.max(values)) for values in covered_values)
-                ) - 32
+                dbz_by_radius[radius] = (
+                    int(max(int(np.max(values)) for values in covered_values)) - 32
+                )
         if PRIMARY_SPATIAL_RADIUS_PIXELS not in dbz_by_radius:
             continue
-        primary_dbz = dbz_by_radius[PRIMARY_SPATIAL_RADIUS_PIXELS]
-        for threshold, counts in threshold_counts.items():
-            _add_outcome(counts, primary_dbz >= threshold, gauge_wet)
+        for (threshold, radius), counts in candidate_counts.items():
+            if radius in dbz_by_radius:
+                _add_outcome(counts, dbz_by_radius[radius] >= threshold, gauge_wet)
         for radius, counts in spatial_counts.items():
             if radius in dbz_by_radius:
                 _add_outcome(
@@ -214,7 +236,9 @@ def compare_radar_to_gauges(
         compared += 1
         offsets.append(offset_minutes)
 
-    primary = _score_counts(threshold_counts[RADAR_WET_THRESHOLD_DBZ])
+    primary = _score_counts(
+        candidate_counts[(RADAR_WET_THRESHOLD_DBZ, PRIMARY_SPATIAL_RADIUS_PIXELS)]
+    )
 
     return {
         "verifiedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -228,17 +252,27 @@ def compare_radar_to_gauges(
         "spatialRadiusPixels": PRIMARY_SPATIAL_RADIUS_PIXELS,
         "stationCount": compared,
         "traceStationCount": trace_gauges,
-        "meanTimeOffsetMinutes": (
-            round(sum(offsets) / len(offsets), 2) if offsets else None
-        ),
+        "meanTimeOffsetMinutes": (round(sum(offsets) / len(offsets), 2) if offsets else None),
         **primary,
         "byRadarThresholdDbz": [
-            {"thresholdDbz": threshold, **_score_counts(counts)}
-            for threshold, counts in threshold_counts.items()
+            {
+                "thresholdDbz": threshold,
+                **_score_counts(candidate_counts[(threshold, PRIMARY_SPATIAL_RADIUS_PIXELS)]),
+            }
+            for threshold in RADAR_THRESHOLDS_DBZ
         ],
         "bySpatialRadiusPixels": [
             {"radiusPixels": radius, **_score_counts(counts)}
             for radius, counts in spatial_counts.items()
+        ],
+        "calibrationCandidates": [
+            {
+                "thresholdDbz": threshold,
+                "spatialRadiusPixels": radius,
+                **_candidate_score(candidate_counts[(threshold, radius)]),
+            }
+            for threshold in RADAR_THRESHOLDS_DBZ
+            for radius in SPATIAL_RADII_PIXELS
         ],
     }
 
@@ -253,10 +287,107 @@ def _aggregate_profiles(
             counts = grouped.setdefault(value, _empty_counts())
             for count_key in counts:
                 counts[count_key] += int(profile.get(count_key, 0))
+    return [{identity: value, **_score_counts(counts)} for value, counts in sorted(grouped.items())]
+
+
+def _aggregate_calibration_candidates(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[int, int], dict[str, int]] = {}
+    for entry in history:
+        for candidate in entry.get("calibrationCandidates", []):
+            key = (
+                int(candidate["thresholdDbz"]),
+                int(candidate["spatialRadiusPixels"]),
+            )
+            counts = grouped.setdefault(key, _empty_counts())
+            for count_key in counts:
+                counts[count_key] += int(candidate.get(count_key, 0))
     return [
-        {identity: value, **_score_counts(counts)}
-        for value, counts in sorted(grouped.items())
+        {
+            "thresholdDbz": threshold,
+            "spatialRadiusPixels": radius,
+            **_candidate_score(counts),
+        }
+        for (threshold, radius), counts in sorted(grouped.items())
     ]
+
+
+def _calibration_summary(
+    history: list[dict[str, Any]], candidates: list[dict[str, Any]]
+) -> dict[str, Any]:
+    baseline = next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate["thresholdDbz"] == RADAR_WET_THRESHOLD_DBZ
+            and candidate["spatialRadiusPixels"] == PRIMARY_SPATIAL_RADIUS_PIXELS
+        ),
+        None,
+    )
+    eligible = [candidate for candidate in candidates if candidate["eligible"]]
+    recommended = (
+        max(
+            eligible,
+            key=lambda candidate: (
+                candidate["criticalSuccessIndex"],
+                candidate["recall"],
+                candidate["precision"],
+                -abs(candidate["thresholdDbz"] - RADAR_WET_THRESHOLD_DBZ),
+                -abs(candidate["spatialRadiusPixels"] - PRIMARY_SPATIAL_RADIUS_PIXELS),
+            ),
+        )
+        if eligible
+        else None
+    )
+    baseline_csi = (baseline or {}).get("criticalSuccessIndex")
+    recommended_csi = (recommended or {}).get("criticalSuccessIndex")
+    improvement = (
+        round(float(recommended_csi) - float(baseline_csi or 0), 4)
+        if isinstance(recommended_csi, (int, float))
+        else None
+    )
+    enough_observations = len(history) >= CALIBRATION_MINIMUM_OBSERVATIONS
+    safe_to_promote = bool(
+        enough_observations
+        and recommended
+        and (
+            recommended["thresholdDbz"] == RADAR_WET_THRESHOLD_DBZ
+            and recommended["spatialRadiusPixels"] == PRIMARY_SPATIAL_RADIUS_PIXELS
+            or isinstance(improvement, (int, float))
+            and improvement >= CALIBRATION_MINIMUM_CSI_IMPROVEMENT
+        )
+    )
+    if not enough_observations:
+        status = "collecting"
+    elif not eligible:
+        status = "awaiting-overlap"
+    elif safe_to_promote:
+        status = "calibrated"
+    else:
+        status = "inconclusive"
+    # Gauge evidence may recommend a boundary, but the CLI promotes it only after
+    # nowcast skill at that same boundary is independently verified.
+    applied = baseline
+    return {
+        "schemaVersion": 1,
+        "status": status,
+        "safeToPromote": safe_to_promote,
+        "minimumObservationCount": CALIBRATION_MINIMUM_OBSERVATIONS,
+        "minimumWetEventCount": CALIBRATION_MINIMUM_WET_EVENTS,
+        "minimumRadarEventCount": CALIBRATION_MINIMUM_RADAR_EVENTS,
+        "minimumHitCount": CALIBRATION_MINIMUM_HITS,
+        "minimumCriticalSuccessIndex": CALIBRATION_MINIMUM_CSI,
+        "minimumCriticalSuccessIndexImprovement": CALIBRATION_MINIMUM_CSI_IMPROVEMENT,
+        "observationCount": len(history),
+        "recommendedThresholdDbz": (recommended or {}).get("thresholdDbz"),
+        "recommendedSpatialRadiusPixels": (recommended or {}).get("spatialRadiusPixels"),
+        "criticalSuccessIndexImprovement": improvement,
+        "forecastQualityStatus": "collecting",
+        "appliedThresholdDbz": (applied or {}).get("thresholdDbz", RADAR_WET_THRESHOLD_DBZ),
+        "appliedSpatialRadiusPixels": (applied or {}).get(
+            "spatialRadiusPixels", PRIMARY_SPATIAL_RADIUS_PIXELS
+        ),
+        "candidates": candidates,
+    }
 
 
 def append_gauge_history(
@@ -271,17 +402,15 @@ def append_gauge_history(
         except (json.JSONDecodeError, AttributeError):
             history = []
     history = [
-        entry
-        for entry in history
-        if entry.get("radarObservedAt") != result["radarObservedAt"]
+        entry for entry in history if entry.get("radarObservedAt") != result["radarObservedAt"]
     ]
     history.append(result)
     history.sort(key=lambda entry: entry["radarObservedAt"])
     history = history[-maximum_entries:]
+
     def version_for(entry: dict[str, Any]) -> str:
-        return str(
-            entry.get("comparisonVersion", LEGACY_GAUGE_COMPARISON_VERSION)
-        )
+        return str(entry.get("comparisonVersion", LEGACY_GAUGE_COMPARISON_VERSION))
+
     active_version = version_for(history[-1])
     active_history = [entry for entry in history if version_for(entry) == active_version]
 
@@ -293,10 +422,7 @@ def append_gauge_history(
         trace_stations = sum(int(entry.get("traceStationCount", 0)) for entry in entries)
         return {
             "observationCount": len(entries),
-            "stationComparisonCount": hits
-            + misses
-            + false_alarms
-            + correct_negatives,
+            "stationComparisonCount": hits + misses + false_alarms + correct_negatives,
             "hits": hits,
             "misses": misses,
             "falseAlarms": false_alarms,
@@ -308,9 +434,10 @@ def append_gauge_history(
         }
 
     active_summary = summarize(active_history)
+    calibration_candidates = _aggregate_calibration_candidates(active_history)
     versions = sorted({str(version_for(entry)) for entry in history})
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": result["verifiedAt"],
         "source": "dmi-metobs-raw",
         "comparisonVersion": active_version,
@@ -327,12 +454,11 @@ def append_gauge_history(
         "bySpatialRadiusPixels": _aggregate_profiles(
             active_history, "bySpatialRadiusPixels", "radiusPixels"
         ),
+        "calibration": _calibration_summary(active_history, calibration_candidates),
         "byComparisonVersion": [
             {
                 "comparisonVersion": version,
-                **summarize(
-                    [entry for entry in history if version_for(entry) == version]
-                ),
+                **summarize([entry for entry in history if version_for(entry) == version]),
             }
             for version in versions
         ],
@@ -347,8 +473,7 @@ def public_gauge_report(history: dict[str, Any], recent_results: int = 24) -> di
     active_results = [
         entry
         for entry in history.get("results", [])
-        if entry.get("comparisonVersion", LEGACY_GAUGE_COMPARISON_VERSION)
-        == active_version
+        if entry.get("comparisonVersion", LEGACY_GAUGE_COMPARISON_VERSION) == active_version
     ]
     report["results"] = active_results[-recent_results:]
     report["returnedResultCount"] = len(report["results"])

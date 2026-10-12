@@ -41,6 +41,41 @@ def configure_logs() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(message)s")
 
 
+def operational_radar_calibration(
+    gauge_history: dict | None,
+    verification_history: dict | None,
+) -> tuple[int, int]:
+    calibration = (gauge_history or {}).get("calibration", {})
+    recommended_threshold = calibration.get("recommendedThresholdDbz")
+    recommended_radius = calibration.get("recommendedSpatialRadiusPixels")
+    threshold_observatory = next(
+        (
+            entry
+            for entry in (verification_history or {}).get("observatoryByThresholdDbz", [])
+            if entry.get("thresholdDbz") == recommended_threshold
+        ),
+        None,
+    )
+    forecast_quality_status = (
+        threshold_observatory.get("overallStatus", "collecting")
+        if threshold_observatory
+        else "collecting"
+    )
+    promote = bool(
+        calibration.get("safeToPromote")
+        and recommended_threshold in (5, 10, 15, 20)
+        and recommended_radius in (1, 3, 5)
+        and forecast_quality_status == "verified"
+    )
+    threshold = int(recommended_threshold if promote else 20)
+    radius = int(recommended_radius if promote else 1)
+    if calibration:
+        calibration["forecastQualityStatus"] = forecast_quality_status
+        calibration["appliedThresholdDbz"] = threshold
+        calibration["appliedSpatialRadiusPixels"] = radius
+    return threshold, radius
+
+
 def run(output: Path, limit: int, upload: bool) -> None:
     output.mkdir(parents=True, exist_ok=True)
     client = DmiClient(os.getenv("DMI_BASE_URL", "https://opendataapi.dmi.dk"))
@@ -118,9 +153,7 @@ def run(output: Path, limit: int, upload: bool) -> None:
                             if not history_path.exists():
                                 history_path = previous_directory / "verification.json"
                             if history_path.exists():
-                                full_history = append_verification_history(
-                                    history_path, []
-                                )
+                                full_history = append_verification_history(history_path, [])
                             verified_pairs = {
                                 (
                                     entry.get("basedOnObservedAt"),
@@ -153,9 +186,7 @@ def run(output: Path, limit: int, upload: bool) -> None:
                                     logging.exception(
                                         "nowcast.verification.candidate.failed",
                                         extra={
-                                            "basedOnObservedAt": candidate.get(
-                                                "basedOnObservedAt"
-                                            )
+                                            "basedOnObservedAt": candidate.get("basedOnObservedAt")
                                         },
                                     )
                             if verifications:
@@ -166,9 +197,7 @@ def run(output: Path, limit: int, upload: bool) -> None:
                         except Exception:
                             # Verification is observability and must not block fresh radar.
                             logging.exception("nowcast.verification.failed")
-                        gauge_history_path = (
-                            previous_directory / "gauge-verification-history.json"
-                        )
+                        gauge_history_path = previous_directory / "gauge-verification-history.json"
                         if gauge_history_path.exists():
                             try:
                                 gauge_history = json.loads(
@@ -177,8 +206,7 @@ def run(output: Path, limit: int, upload: bool) -> None:
                             except json.JSONDecodeError:
                                 gauge_history = None
                         gauge_already_verified = any(
-                            entry.get("radarObservedAt")
-                            == source_frames[-1].observedAt
+                            entry.get("radarObservedAt") == source_frames[-1].observedAt
                             for entry in (gauge_history or {}).get("results", [])
                         )
                         if not gauge_already_verified:
@@ -196,10 +224,7 @@ def run(output: Path, limit: int, upload: bool) -> None:
                                     radar_frames=list(
                                         zip(
                                             source_paths,
-                                            (
-                                                frame.observedAt
-                                                for frame in source_frames
-                                            ),
+                                            (frame.observedAt for frame in source_frames),
                                             strict=True,
                                         )
                                     ),
@@ -212,11 +237,16 @@ def run(output: Path, limit: int, upload: bool) -> None:
                             except Exception:
                                 # Raw station data is secondary and cannot block radar.
                                 logging.exception("radar.gauge-verification.failed")
+                rain_threshold_dbz, rain_radius_pixels = operational_radar_calibration(
+                    gauge_history, full_history
+                )
                 nowcast, risk, nowcast_paths = generate_nowcast(
                     source_paths,
                     source_frames,
                     nowcast_directory,
-                    quality_by_lead(full_history),
+                    quality_by_lead(full_history, rain_threshold_dbz),
+                    rain_threshold_dbz=rain_threshold_dbz,
+                    rain_radius_pixels=rain_radius_pixels,
                 )
                 write_json_atomic(nowcast_directory / "nowcast.json", nowcast)
                 write_json_atomic(nowcast_directory / "risk.json", risk)
@@ -229,14 +259,11 @@ def run(output: Path, limit: int, upload: bool) -> None:
                         previous_state, verification_forecast
                     )
                     is_new_forecast = not any(
-                        entry.get("basedOnObservedAt")
-                        == verification_forecast["basedOnObservedAt"]
+                        entry.get("basedOnObservedAt") == verification_forecast["basedOnObservedAt"]
                         for entry in previous_state.get("forecasts", [])
                     )
                     upload_verification_assets = (
-                        is_new_forecast
-                        or verification_results_added
-                        or gauge_result_added
+                        is_new_forecast or verification_results_added or gauge_result_added
                     )
                     write_json_atomic(
                         nowcast_directory / "verification-state.json",
@@ -252,14 +279,10 @@ def run(output: Path, limit: int, upload: bool) -> None:
                         full_history = append_verification_history(
                             nowcast_directory / "verification-history.json", []
                         )
-                    write_json_atomic(
-                        nowcast_directory / "verification-history.json", full_history
-                    )
+                    write_json_atomic(nowcast_directory / "verification-history.json", full_history)
                     public_report = public_verification_report(full_history)
                     if gauge_history:
-                        public_report["groundGauge"] = public_gauge_report(
-                            gauge_history
-                        )
+                        public_report["groundGauge"] = public_gauge_report(gauge_history)
                     write_json_atomic(
                         nowcast_directory / "verification.json",
                         public_report,

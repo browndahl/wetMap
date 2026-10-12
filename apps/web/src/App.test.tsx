@@ -40,6 +40,7 @@ const apiMocks = vi.hoisted(() => ({
     meanCriticalSuccessIndexSkill: null,
     observatory: {
       schemaVersion: 1,
+      thresholdDbz: 20,
       overallStatus: "awaiting-rain",
       targetHorizonMinutes: [15, 30, 45, 60],
       qualityGate: {
@@ -80,6 +81,40 @@ const apiMocks = vi.hoisted(() => ({
       precision: 1,
       recall: 0.25,
       criticalSuccessIndex: 0.25,
+      calibration: {
+        schemaVersion: 1,
+        status: "collecting",
+        safeToPromote: false,
+        minimumObservationCount: 24,
+        minimumWetEventCount: 20,
+        minimumRadarEventCount: 20,
+        minimumHitCount: 5,
+        minimumCriticalSuccessIndex: 0.2,
+        minimumCriticalSuccessIndexImprovement: 0.05,
+        observationCount: 3,
+        forecastQualityStatus: "collecting",
+        recommendedThresholdDbz: null,
+        recommendedSpatialRadiusPixels: null,
+        criticalSuccessIndexImprovement: null,
+        appliedThresholdDbz: 20,
+        appliedSpatialRadiusPixels: 1,
+        candidates: [5, 10, 15, 20].map((thresholdDbz) => ({
+          thresholdDbz,
+          spatialRadiusPixels: 1,
+          hits: 1,
+          misses: 3,
+          falseAlarms: thresholdDbz === 20 ? 0 : 2,
+          correctNegatives: 100,
+          wetEventCount: 4,
+          radarEventCount: thresholdDbz === 20 ? 1 : 3,
+          precision: thresholdDbz === 20 ? 1 : 0.33,
+          recall: 0.25,
+          criticalSuccessIndex: thresholdDbz === 20 ? 0.25 : 0.17,
+          falseAlarmRate: thresholdDbz === 20 ? 0 : 0.67,
+          missRate: 0.75,
+          eligible: false,
+        })),
+      },
     },
   },
   forecast: {
@@ -259,6 +294,10 @@ it("opens the precision observatory with honest dry-weather status", async () =>
   expect(screen.getByText("25%")).toBeInTheDocument();
   expect(screen.getByText("Målt regn overset")).toBeInTheDocument();
   expect(screen.getByText("75%")).toBeInTheDocument();
+  expect(screen.getByText("Tærskelkalibrering")).toBeInTheDocument();
+  expect(screen.getByText("Indsamler nyt datasæt")).toBeInTheDocument();
+  expect(screen.getByText("5 dBZ")).toBeInTheDocument();
+  expect(screen.getAllByText("20 dBZ").length).toBeGreaterThanOrEqual(2);
 });
 
 afterEach(() => {

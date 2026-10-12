@@ -93,13 +93,18 @@ def _advect(rgba: np.ndarray, flow: np.ndarray, steps: float) -> np.ndarray:
     )
 
 
-def _risk_bucket(alpha: np.ndarray) -> str:
+def _risk_bucket(alpha: np.ndarray, rain_threshold_dbz: int = 20) -> str:
     reduced = cv2.resize(alpha, (RISK_WIDTH, RISK_HEIGHT), interpolation=cv2.INTER_AREA)
     categories = np.zeros(reduced.shape, dtype=np.uint8)
-    # Processor alpha is monotonic in dBZ: these are approximately 0, 10 and 20 dBZ.
+    intermediate_threshold_dbz = min(10, max(1, rain_threshold_dbz - 5))
+    intermediate_threshold_alpha = round(
+        45 + (intermediate_threshold_dbz + 10) * (175 / 60)
+    )
+    rain_threshold_alpha = round(45 + (rain_threshold_dbz + 10) * (175 / 60))
+    # Processor alpha is monotonic in dBZ. Bucket 3 is the calibrated rain boundary.
     categories[reduced >= 74] = 1
-    categories[reduced >= 103] = 2
-    categories[reduced >= 133] = 3
+    categories[reduced >= intermediate_threshold_alpha] = 2
+    categories[reduced >= rain_threshold_alpha] = 3
     return base64.b64encode(categories.tobytes()).decode("ascii")
 
 
@@ -128,6 +133,8 @@ def generate_nowcast(
     source_frames: list[Frame],
     output_directory: Path,
     quality_by_lead: dict[int, dict[str, Any]] | None = None,
+    rain_threshold_dbz: int = 20,
+    rain_radius_pixels: int = 1,
 ) -> tuple[dict[str, Any], dict[str, Any], list[Path]]:
     if len(source_paths) < 2 or len(source_paths) != len(source_frames):
         raise ValueError("Nowcast requires at least two matching radar frames")
@@ -153,7 +160,7 @@ def generate_nowcast(
         {
             "leadMinutes": 0,
             "predictedAt": latest_prediction_time,
-            "intensity": _risk_bucket(latest[..., 3]),
+            "intensity": _risk_bucket(latest[..., 3], rain_threshold_dbz),
             "confidence": 1.0,
             "validationSamples": None,
             "verificationCsi": None,
@@ -234,7 +241,7 @@ def generate_nowcast(
                 "predictedAt": (latest_time + timedelta(minutes=lead_minutes))
                 .isoformat()
                 .replace("+00:00", "Z"),
-                "intensity": _risk_bucket(raw_prediction[..., 3]),
+                "intensity": _risk_bucket(raw_prediction[..., 3], rain_threshold_dbz),
                 "confidence": confidence,
                 "validationSamples": validation_samples,
                 "verificationCsi": verified_csi,
@@ -291,6 +298,8 @@ def generate_nowcast(
         "attribution": ATTRIBUTION,
         "method": METHOD,
         "algorithmVersion": ALGORITHM_VERSION,
+        "rainThresholdDbz": rain_threshold_dbz,
+        "rainRadiusPixels": rain_radius_pixels,
         "basedOnObservedAt": latest_frame.observedAt,
         "sourceFrameCount": len(source_frames),
         "frames": frame_entries,
@@ -305,9 +314,14 @@ def generate_nowcast(
         "width": RISK_WIDTH,
         "height": RISK_HEIGHT,
         "encoding": "uint8-base64",
-        "thresholdsDbz": [0, 10, 20],
+        "thresholdsDbz": [
+            0,
+            min(10, max(1, rain_threshold_dbz - 5)),
+            rain_threshold_dbz,
+        ],
         "alertPolicy": {
             "minimumIntensityBucket": 3,
+            "minimumReflectivityDbz": rain_threshold_dbz,
             "minimumValidationSamples": ALERT_MINIMUM_VALIDATION_SAMPLES,
             "minimumCriticalSuccessIndex": ALERT_MINIMUM_CSI,
             "minimumSkillOverPersistence": ALERT_MINIMUM_SKILL,
@@ -330,7 +344,8 @@ def generate_nowcast(
         "frameCount": len(point_frame_entries),
         "encoding": "pixel-major-uint8-dbz-plus-32",
         "dataKey": f"nowcast/point-risk-{int(latest_time.timestamp() // 300) % 2}.bin",
-        "neighborhoodRadiusPixels": 1,
+        "neighborhoodRadiusPixels": rain_radius_pixels,
+        "rainThresholdDbz": rain_threshold_dbz,
         "frames": point_frame_entries,
         "sha256": hashlib.sha256(point_grid_path.read_bytes()).hexdigest(),
     }
