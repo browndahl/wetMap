@@ -392,17 +392,79 @@ a {
   margin: 0.65rem 0 0;
   font-size: 0.7rem;
 }
+.rain-eta {
+  margin-top: 0.55rem;
+  padding: 0.55rem;
+  border: 1px solid oklch(1 0 0 / 9%);
+  border-radius: 0.65rem;
+  background: linear-gradient(
+    145deg,
+    oklch(0.76 0.13 205 / 9%),
+    oklch(0.14 0.025 235 / 28%)
+  );
+}
+.rain-eta.is-raining,
+.rain-eta.is-expected,
+.rain-eta.is-intermittent {
+  border-color: oklch(0.76 0.13 205 / 24%);
+}
+.rain-eta-label {
+  display: block;
+  color: var(--accent);
+  font-size: 0.5rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
 .rain-summary {
   align-items: baseline;
-  margin-top: 0.55rem;
+  margin-top: 0.25rem;
 }
 .rain-summary strong {
-  font-size: 0.78rem;
+  font-size: 0.84rem;
+  line-height: 1.2;
 }
 .rain-summary span {
   color: var(--text-2);
   font-size: 0.62rem;
   white-space: nowrap;
+}
+.rain-eta-window {
+  margin: 0.3rem 0 0;
+  color: var(--text-2);
+  font-size: 0.6rem;
+}
+.rain-eta-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+.rain-eta-meta span {
+  padding: 0.16rem 0.3rem;
+  border: 1px solid oklch(1 0 0 / 7%);
+  border-radius: 999px;
+  color: var(--text-2);
+  background: oklch(0.11 0.02 235 / 32%);
+  font-size: 0.48rem;
+  white-space: nowrap;
+}
+.rain-eta-details {
+  margin-top: 0.4rem;
+  color: var(--text-2);
+  font-size: 0.52rem;
+}
+.rain-eta-details summary {
+  width: fit-content;
+  color: var(--accent);
+  cursor: pointer;
+}
+.rain-eta-details p {
+  margin: 0.35rem 0 0.2rem;
+  line-height: 1.35;
+}
+.rain-eta-details time {
+  font-variant-numeric: tabular-nums;
 }
 .rain-chart {
   height: 4.4rem;

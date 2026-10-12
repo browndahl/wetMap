@@ -373,10 +373,15 @@ it("explains the next-hour rain estimate and handles blocked alerts", async () =
     </QueryClientProvider>,
   );
 
-  expect(await screen.findByText("Regn starter ca. 10.30")).toBeInTheDocument();
+  expect(
+    await screen.findByText("Regn forventes 10.30–10.45"),
+  ).toBeInTheDocument();
   expect(screen.getByText("Forventet 0.90 mm")).toBeInTheDocument();
+  expect(screen.getByText("Sikkerhed ikke opgjort")).toBeInTheDocument();
+  expect(screen.getByText("HARMONIE-model")).toBeInTheDocument();
+  expect(screen.getByText("45 min regn")).toBeInTheDocument();
   expect(screen.getByText(/interpoleret fra DMI/)).toBeInTheDocument();
-  expect(screen.getAllByText("Let")).toHaveLength(3);
+  expect(screen.getAllByText("Let")).toHaveLength(4);
   expect(
     screen.getByText((_, element) => element?.textContent === "0,20 mm"),
   ).toBeInTheDocument();
@@ -426,6 +431,8 @@ it("labels radar-backed intervals and weak echoes without claiming ground rain",
   expect(
     screen.getByText("Svagt radarekko · regn ved jorden er usikkert"),
   ).toBeInTheDocument();
+  expect(screen.getByText("Høj sikkerhed · 94%")).toBeInTheDocument();
+  expect(screen.getByText("Radar-nowcast")).toBeInTheDocument();
   expect(
     screen.getByText(/Nærmeste intervaller følger DMI-radar/),
   ).toBeInTheDocument();

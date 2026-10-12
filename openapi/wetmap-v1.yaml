@@ -369,6 +369,39 @@ components:
         confidence: { type: [number, "null"], minimum: 0, maximum: 1 }
         forecastMethod:
           { type: [string, "null"], enum: [optical-flow, persistence, null] }
+    RainEta:
+      type: object
+      required:
+        - status
+        - arrivalWindowStart
+        - arrivalWindowEnd
+        - departureWindowStart
+        - departureWindowEnd
+        - continuesBeyondHorizon
+        - durationMinutes
+        - totalPrecipitationMm
+        - peakIntensity
+        - confidence
+        - confidenceLevel
+        - source
+      properties:
+        status:
+          {
+            type: string,
+            enum: [dry, weak-echo, raining, expected, intermittent],
+          }
+        arrivalWindowStart: { type: [string, "null"], format: date-time }
+        arrivalWindowEnd: { type: [string, "null"], format: date-time }
+        departureWindowStart: { type: [string, "null"], format: date-time }
+        departureWindowEnd: { type: [string, "null"], format: date-time }
+        continuesBeyondHorizon: { type: boolean }
+        durationMinutes: { type: number, minimum: 0 }
+        totalPrecipitationMm: { type: number, minimum: 0 }
+        peakIntensity:
+          { type: string, enum: [none, trace, light, moderate, heavy] }
+        confidence: { type: [number, "null"], minimum: 0, maximum: 1 }
+        confidenceLevel: { type: string, enum: [unknown, low, medium, high] }
+        source: { type: string, enum: [radar-nowcast, harmonie, mixed] }
     RainNextHourResponse:
       type: object
       required:
@@ -381,6 +414,7 @@ components:
         - displayResolutionMinutes
         - sourceResolutionMinutes
         - isInterpolated
+        - rainEta
         - points
       properties:
         latitude: { type: number }
@@ -402,6 +436,7 @@ components:
         isInterpolated: { type: boolean, const: true }
         basedOnObservedAt: { type: string, format: date-time }
         radarBasedUntil: { type: string, format: date-time }
+        rainEta: { $ref: "#/components/schemas/RainEta" }
         points:
           type: array
           minItems: 1

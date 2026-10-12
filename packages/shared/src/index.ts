@@ -77,6 +77,14 @@ export interface ForecastResponse {
 
 export type RainIntensity = "none" | "trace" | "light" | "moderate" | "heavy";
 export type RainPointSource = "radar-nowcast" | "harmonie";
+export type RainEtaStatus =
+  | "dry"
+  | "weak-echo"
+  | "raining"
+  | "expected"
+  | "intermittent";
+export type RainEtaConfidenceLevel = "unknown" | "low" | "medium" | "high";
+export type RainEtaSource = "radar-nowcast" | "harmonie" | "mixed";
 
 export interface RainForecastPoint {
   startsAt: string;
@@ -87,6 +95,21 @@ export interface RainForecastPoint {
   reflectivityDbz?: number | null;
   confidence?: number | null;
   forecastMethod?: "optical-flow" | "persistence" | null;
+}
+
+export interface RainEta {
+  status: RainEtaStatus;
+  arrivalWindowStart: string | null;
+  arrivalWindowEnd: string | null;
+  departureWindowStart: string | null;
+  departureWindowEnd: string | null;
+  continuesBeyondHorizon: boolean;
+  durationMinutes: number;
+  totalPrecipitationMm: number;
+  peakIntensity: RainIntensity;
+  confidence: number | null;
+  confidenceLevel: RainEtaConfidenceLevel;
+  source: RainEtaSource;
 }
 
 export interface RainNextHourResponse {
@@ -101,6 +124,7 @@ export interface RainNextHourResponse {
   isInterpolated: true;
   basedOnObservedAt?: string;
   radarBasedUntil?: string;
+  rainEta?: RainEta;
   points: RainForecastPoint[];
 }
 

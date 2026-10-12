@@ -193,6 +193,14 @@ interface ForecastPayload {
 
 type RainIntensity = "none" | "trace" | "light" | "moderate" | "heavy";
 type RainPointSource = "radar-nowcast" | "harmonie";
+type RainEtaStatus =
+  | "dry"
+  | "weak-echo"
+  | "raining"
+  | "expected"
+  | "intermittent";
+type RainEtaConfidenceLevel = "unknown" | "low" | "medium" | "high";
+type RainEtaSource = "radar-nowcast" | "harmonie" | "mixed";
 
 interface RainForecastPoint {
   startsAt: string;
@@ -202,6 +210,21 @@ interface RainForecastPoint {
   source?: RainPointSource;
   reflectivityDbz?: number | null;
   confidence?: number | null;
+}
+
+interface RainEta {
+  status: RainEtaStatus;
+  arrivalWindowStart: string | null;
+  arrivalWindowEnd: string | null;
+  departureWindowStart: string | null;
+  departureWindowEnd: string | null;
+  continuesBeyondHorizon: boolean;
+  durationMinutes: number;
+  totalPrecipitationMm: number;
+  peakIntensity: RainIntensity;
+  confidence: number | null;
+  confidenceLevel: RainEtaConfidenceLevel;
+  source: RainEtaSource;
 }
 
 interface RainNextHourPayload {
@@ -216,6 +239,7 @@ interface RainNextHourPayload {
   isInterpolated: true;
   basedOnObservedAt?: string;
   radarBasedUntil?: string;
+  rainEta?: RainEta;
   points: RainForecastPoint[];
 }
 
@@ -1187,6 +1211,121 @@ function rainRateFromReflectivity(reflectivityDbz: number): number {
   return (reflectivity / 200) ** (1 / 1.6);
 }
 
+const wetIntensities = new Set<RainIntensity>(["light", "moderate", "heavy"]);
+
+export function buildRainEta(points: RainForecastPoint[]): RainEta {
+  const wet = points.map((point) => wetIntensities.has(point.intensity));
+  const firstWet = wet.indexOf(true);
+  const hasWeakEcho = points.some((point) => point.intensity === "trace");
+  let wetSegments = 0;
+  wet.forEach((isWet, index) => {
+    if (isWet && !wet[index - 1]) wetSegments += 1;
+  });
+  const firstDryAfterRain =
+    firstWet < 0
+      ? -1
+      : wet.findIndex((isWet, index) => index > firstWet && !isWet);
+  const status: RainEtaStatus =
+    firstWet < 0
+      ? hasWeakEcho
+        ? "weak-echo"
+        : "dry"
+      : wetSegments > 1
+        ? "intermittent"
+        : firstWet === 0
+          ? "raining"
+          : "expected";
+  const relevantPoints = points.filter((point) =>
+    firstWet >= 0
+      ? wetIntensities.has(point.intensity)
+      : hasWeakEcho
+        ? point.intensity === "trace"
+        : true,
+  );
+  const confidences = relevantPoints
+    .map((point) => point.confidence)
+    .filter(
+      (confidence): confidence is number =>
+        confidence !== null &&
+        confidence !== undefined &&
+        Number.isFinite(confidence),
+    );
+  const confidence = confidences.length
+    ? Math.round(
+        (confidences.reduce((sum, value) => sum + value, 0) /
+          confidences.length) *
+          100,
+      ) / 100
+    : null;
+  const confidenceLevel: RainEtaConfidenceLevel =
+    confidence === null
+      ? "unknown"
+      : confidence >= 0.8
+        ? "high"
+        : confidence >= 0.55
+          ? "medium"
+          : "low";
+  const sources = new Set(
+    relevantPoints.map((point) => point.source ?? "harmonie"),
+  );
+  const source: RainEtaSource =
+    sources.size > 1
+      ? "mixed"
+      : sources.has("radar-nowcast")
+        ? "radar-nowcast"
+        : "harmonie";
+  const intensityOrder: RainIntensity[] = [
+    "none",
+    "trace",
+    "light",
+    "moderate",
+    "heavy",
+  ];
+  const peakIntensity = points.reduce<RainIntensity>(
+    (peak, point) =>
+      intensityOrder.indexOf(point.intensity) > intensityOrder.indexOf(peak)
+        ? point.intensity
+        : peak,
+    "none",
+  );
+
+  return {
+    status,
+    arrivalWindowStart: firstWet > 0 ? points[firstWet].startsAt : null,
+    arrivalWindowEnd: firstWet > 0 ? points[firstWet].endsAt : null,
+    departureWindowStart:
+      firstDryAfterRain > 0 ? points[firstDryAfterRain].startsAt : null,
+    departureWindowEnd:
+      firstDryAfterRain > 0 ? points[firstDryAfterRain].endsAt : null,
+    continuesBeyondHorizon: firstWet >= 0 && firstDryAfterRain === -1,
+    durationMinutes: wet.reduce(
+      (minutes, isWet, index) =>
+        isWet
+          ? minutes +
+            Math.max(
+              0,
+              (Date.parse(points[index].endsAt) -
+                Date.parse(points[index].startsAt)) /
+                60_000,
+            )
+          : minutes,
+      0,
+    ),
+    totalPrecipitationMm:
+      Math.round(
+        points.reduce((sum, point) => sum + point.precipitationMm, 0) * 100,
+      ) / 100,
+    peakIntensity,
+    confidence,
+    confidenceLevel,
+    source,
+  };
+}
+
+function withRainEta(payload: RainNextHourPayload): RainNextHourPayload {
+  return { ...payload, rainEta: buildRainEta(payload.points) };
+}
+
 function combineRadarAndModel(
   model: RainNextHourPayload,
   radar: NonNullable<Awaited<ReturnType<typeof radarPointSamples>>>,
@@ -1574,7 +1713,7 @@ async function precipitation(
     longitude >= -180 &&
     longitude <= 180;
   const pointCache = (caches as unknown as { default: Cache }).default;
-  const pointCacheUrl = new URL("https://cache.wetmap/precipitation/point");
+  const pointCacheUrl = new URL("https://cache.wetmap/precipitation/point/v2");
   pointCacheUrl.search = new URLSearchParams({
     lat: latitude.toFixed(3),
     lon: longitude.toFixed(3),
@@ -1611,11 +1750,13 @@ async function precipitation(
     : Promise.resolve(null);
   const modelResponse = await modelPrecipitation(url, env, context);
   const radar = await radarPromise;
-  if (!modelResponse.ok || !radar) return modelResponse;
+  if (!modelResponse.ok) return modelResponse;
 
   try {
     const model = (await modelResponse.json()) as RainNextHourPayload;
-    const combined = combineRadarAndModel(model, radar);
+    const combined = withRainEta(
+      radar ? combineRadarAndModel(model, radar) : model,
+    );
     const headers = new Headers(modelResponse.headers);
     headers.set("Cache-Control", "public,max-age=60");
     headers.set("X-WetMap-Precipitation-Source", combined.source);
@@ -1624,7 +1765,8 @@ async function precipitation(
       status: modelResponse.status,
       headers,
     });
-    context.waitUntil(pointCache.put(pointCacheKey, response.clone()));
+    if (radar)
+      context.waitUntil(pointCache.put(pointCacheKey, response.clone()));
     return response;
   } catch (error) {
     console.error("precipitation.combine.failed", {

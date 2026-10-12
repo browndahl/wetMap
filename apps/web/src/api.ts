@@ -10,7 +10,7 @@ import type {
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 const framesBase = import.meta.env.VITE_FRAMES_BASE_URL ?? apiBase;
 const forecastApiVersion = "2";
-const precipitationApiVersion = "1";
+const precipitationApiVersion = "2";
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bell, BellRing, Droplets, LoaderCircle } from "lucide-react";
 import type {
+  RainEta,
   RainForecastPoint,
   RainIntensity,
   RainNextHourResponse,
@@ -38,35 +39,110 @@ const base64UrlToBytes = (value: string) => {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 
-function summary(points: RainForecastPoint[]): {
-  key:
-    | "rainDry"
-    | "rainWeakEcho"
-    | "rainStarts"
-    | "rainStops"
-    | "rainContinues"
-    | "rainIntermittent";
-  at?: string;
-} {
+function deriveRainEta(points: RainForecastPoint[]): RainEta {
   const hasWeakEcho = points.some((point) => point.intensity === "trace");
   const wet = points.map((point) =>
     ["light", "moderate", "heavy"].includes(point.intensity),
   );
   const firstWet = wet.indexOf(true);
-  if (firstWet === -1) return { key: hasWeakEcho ? "rainWeakEcho" : "rainDry" };
-  if (wet.every(Boolean)) return { key: "rainContinues" };
-
   const firstDryAfterRain = wet.findIndex(
     (isWet, index) => index > firstWet && !isWet,
   );
-  if (firstWet === 0 && firstDryAfterRain > 0)
-    return { key: "rainStops", at: points[firstDryAfterRain].startsAt };
-  if (
-    firstWet > 0 &&
-    (firstDryAfterRain === -1 || wet.slice(firstWet).every(Boolean))
-  )
-    return { key: "rainStarts", at: points[firstWet].startsAt };
-  return { key: "rainIntermittent" };
+  let wetSegments = 0;
+  wet.forEach((isWet, index) => {
+    if (isWet && !wet[index - 1]) wetSegments += 1;
+  });
+  const order: RainIntensity[] = [
+    "none",
+    "trace",
+    "light",
+    "moderate",
+    "heavy",
+  ];
+  const peakIntensity = points.reduce<RainIntensity>(
+    (peak, point) =>
+      order.indexOf(point.intensity) > order.indexOf(peak)
+        ? point.intensity
+        : peak,
+    "none",
+  );
+  const relevantPoints = points.filter((point) =>
+    firstWet >= 0
+      ? ["light", "moderate", "heavy"].includes(point.intensity)
+      : hasWeakEcho
+        ? point.intensity === "trace"
+        : true,
+  );
+  const confidences = relevantPoints
+    .map((point) => point.confidence)
+    .filter(
+      (confidence): confidence is number =>
+        confidence !== null &&
+        confidence !== undefined &&
+        Number.isFinite(confidence),
+    );
+  const confidence = confidences.length
+    ? Math.round(
+        (confidences.reduce((sum, value) => sum + value, 0) /
+          confidences.length) *
+          100,
+      ) / 100
+    : null;
+  const sources = new Set(
+    relevantPoints.map((point) => point.source ?? "harmonie"),
+  );
+  return {
+    status:
+      firstWet < 0
+        ? hasWeakEcho
+          ? "weak-echo"
+          : "dry"
+        : wetSegments > 1
+          ? "intermittent"
+          : firstWet === 0
+            ? "raining"
+            : "expected",
+    arrivalWindowStart: firstWet > 0 ? points[firstWet].startsAt : null,
+    arrivalWindowEnd: firstWet > 0 ? points[firstWet].endsAt : null,
+    departureWindowStart:
+      firstDryAfterRain > 0 ? points[firstDryAfterRain].startsAt : null,
+    departureWindowEnd:
+      firstDryAfterRain > 0 ? points[firstDryAfterRain].endsAt : null,
+    continuesBeyondHorizon: firstWet >= 0 && firstDryAfterRain === -1,
+    durationMinutes: wet.reduce(
+      (minutes, isWet, index) =>
+        isWet
+          ? minutes +
+            Math.max(
+              0,
+              (Date.parse(points[index].endsAt) -
+                Date.parse(points[index].startsAt)) /
+                60_000,
+            )
+          : minutes,
+      0,
+    ),
+    totalPrecipitationMm:
+      Math.round(
+        points.reduce((sum, point) => sum + point.precipitationMm, 0) * 100,
+      ) / 100,
+    peakIntensity,
+    confidence,
+    confidenceLevel:
+      confidence === null
+        ? "unknown"
+        : confidence >= 0.8
+          ? "high"
+          : confidence >= 0.55
+            ? "medium"
+            : "low",
+    source:
+      sources.size > 1
+        ? "mixed"
+        : sources.has("radar-nowcast")
+          ? "radar-nowcast"
+          : "harmonie",
+  };
 }
 
 const intensityKey = (intensity: RainIntensity) =>
@@ -98,10 +174,60 @@ export default function RainNextHour({
   const [alertBusy, setAlertBusy] = useState(false);
   const [alertError, setAlertError] = useState(false);
   const points = useMemo(() => data?.points ?? [], [data?.points]);
-  const rainSummary = useMemo(() => summary(points), [points]);
-  const total = points.reduce((sum, point) => sum + point.precipitationMm, 0);
+  const rainEta = useMemo(
+    () => data?.rainEta ?? deriveRainEta(points),
+    [data?.rainEta, points],
+  );
   const max = Math.max(...points.map((point) => point.precipitationMm), 0.1);
   const hasRadar = data?.source === "dmi-radar-nowcast-harmonie";
+  const formatWindow = (start: string | null, end: string | null) =>
+    start && end
+      ? `${formatTime(start, locale)}–${formatTime(end, locale)}`
+      : null;
+  const arrivalWindow = formatWindow(
+    rainEta.arrivalWindowStart,
+    rainEta.arrivalWindowEnd,
+  );
+  const departureWindow = formatWindow(
+    rainEta.departureWindowStart,
+    rainEta.departureWindowEnd,
+  );
+  const etaHeadline =
+    rainEta.status === "dry"
+      ? t("rainDry")
+      : rainEta.status === "weak-echo"
+        ? t("rainWeakEcho")
+        : rainEta.status === "raining"
+          ? t("rainEtaRaining")
+          : rainEta.status === "intermittent"
+            ? t("rainIntermittent")
+            : `${t("rainEtaExpected")} ${arrivalWindow ?? ""}`.trim();
+  const confidenceKey =
+    rainEta.confidenceLevel === "high"
+      ? "rainEtaConfidenceHigh"
+      : rainEta.confidenceLevel === "medium"
+        ? "rainEtaConfidenceMedium"
+        : rainEta.confidenceLevel === "low"
+          ? "rainEtaConfidenceLow"
+          : "rainEtaConfidenceUnknown";
+  const sourceKey =
+    rainEta.source === "radar-nowcast"
+      ? "rainEtaSourceRadar"
+      : rainEta.source === "mixed"
+        ? "rainEtaSourceMixed"
+        : "rainEtaSourceModel";
+  const etaWindowText =
+    rainEta.status === "intermittent"
+      ? arrivalWindow
+        ? `${t("rainEtaArrivalWindow")} ${arrivalWindow}`
+        : null
+      : rainEta.status === "raining" || rainEta.status === "expected"
+        ? departureWindow
+          ? `${t("rainEtaStopWindow")} ${departureWindow}`
+          : rainEta.continuesBeyondHorizon
+            ? t("rainEtaContinues")
+            : null
+        : null;
 
   useEffect(() => {
     let active = true;
@@ -216,15 +342,46 @@ export default function RainNextHour({
 
       {points.length > 0 && (
         <>
-          <div className="rain-summary">
-            <strong>
-              {t(rainSummary.key)}
-              {rainSummary.at ? ` ${formatTime(rainSummary.at, locale)}` : ""}
-            </strong>
-            <span>
-              {t("rainTotal")} {total.toFixed(total < 1 ? 2 : 1)} mm
-              {isFetching ? " · …" : ""}
-            </span>
+          <div className={`rain-eta is-${rainEta.status}`}>
+            <span className="rain-eta-label">{t("rainEtaLabel")}</span>
+            <div className="rain-summary">
+              <strong>{etaHeadline}</strong>
+              <span>
+                {t("rainTotal")}{" "}
+                {rainEta.totalPrecipitationMm.toFixed(
+                  rainEta.totalPrecipitationMm < 1 ? 2 : 1,
+                )}{" "}
+                mm{isFetching ? " · …" : ""}
+              </span>
+            </div>
+            {etaWindowText && (
+              <p className="rain-eta-window">{etaWindowText}</p>
+            )}
+            <div className="rain-eta-meta">
+              <span>{t(intensityKey(rainEta.peakIntensity))}</span>
+              {rainEta.durationMinutes > 0 && (
+                <span>
+                  {rainEta.durationMinutes} {t("rainEtaDuration")}
+                </span>
+              )}
+              <span>
+                {t(confidenceKey)}
+                {rainEta.confidence !== null
+                  ? ` · ${Math.round(rainEta.confidence * 100)}%`
+                  : ""}
+              </span>
+              <span>{t(sourceKey)}</span>
+            </div>
+            <details className="rain-eta-details">
+              <summary>{t("rainEtaWhy")}</summary>
+              <p>{t(hasRadar ? "rainRadarMethod" : "rainMethod")}</p>
+              {data && (
+                <time dateTime={data.basedOnObservedAt ?? data.fetchedAt}>
+                  {t("rainEtaUpdated")}{" "}
+                  {formatTime(data.basedOnObservedAt ?? data.fetchedAt, locale)}
+                </time>
+              )}
+            </details>
           </div>
           <div className="rain-chart" aria-label={t("rainNextHour")}>
             {points.map((point) => (
@@ -293,9 +450,6 @@ export default function RainNextHour({
               </div>
             ))}
           </div>
-          <p className="rain-method">
-            {t(hasRadar ? "rainRadarMethod" : "rainMethod")}
-          </p>
           <button
             type="button"
             className={`rain-alert ${alertsEnabled ? "is-active" : ""}`}

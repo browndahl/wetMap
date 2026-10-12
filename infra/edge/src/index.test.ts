@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import worker from "./index";
+import worker, { buildRainEta } from "./index";
 
 const futureTimes = [
   "2026-10-10T22:00",
@@ -576,6 +576,89 @@ describe("forecast edge endpoint", () => {
   });
 });
 
+describe("rain ETA calculation", () => {
+  const point = (
+    offsetMinutes: number,
+    intensity: "none" | "trace" | "light" | "moderate" | "heavy",
+    precipitationMm = 0,
+    confidence: number | null = null,
+    source: "radar-nowcast" | "harmonie" = "harmonie",
+  ) => ({
+    startsAt: new Date(
+      Date.parse("2026-10-10T22:00:00Z") + offsetMinutes * 60_000,
+    ).toISOString(),
+    endsAt: new Date(
+      Date.parse("2026-10-10T22:00:00Z") + (offsetMinutes + 15) * 60_000,
+    ).toISOString(),
+    precipitationMm,
+    intensity,
+    confidence,
+    source,
+  });
+
+  it("reports a dry hour without inventing confidence", () => {
+    const eta = buildRainEta([
+      point(0, "none"),
+      point(15, "none"),
+      point(30, "none"),
+      point(45, "none"),
+    ]);
+
+    expect(eta).toMatchObject({
+      status: "dry",
+      arrivalWindowStart: null,
+      durationMinutes: 0,
+      totalPrecipitationMm: 0,
+      confidence: null,
+      confidenceLevel: "unknown",
+    });
+  });
+
+  it("returns an honest arrival window and accumulated rain duration", () => {
+    const eta = buildRainEta([
+      point(0, "none"),
+      point(15, "light", 0.2, 0.72, "radar-nowcast"),
+      point(30, "moderate", 0.6, 0.64, "radar-nowcast"),
+      point(45, "moderate", 0.5, 0.58, "radar-nowcast"),
+    ]);
+
+    expect(eta).toMatchObject({
+      status: "expected",
+      arrivalWindowStart: "2026-10-10T22:15:00.000Z",
+      arrivalWindowEnd: "2026-10-10T22:30:00.000Z",
+      continuesBeyondHorizon: true,
+      durationMinutes: 45,
+      totalPrecipitationMm: 1.3,
+      confidenceLevel: "medium",
+      source: "radar-nowcast",
+    });
+  });
+
+  it("separates weak low-confidence echoes and intermittent showers", () => {
+    const weakEcho = buildRainEta([
+      point(0, "trace", 0.01, 0.32, "radar-nowcast"),
+      point(15, "none"),
+    ]);
+    const showers = buildRainEta([
+      point(0, "light", 0.2),
+      point(15, "none"),
+      point(30, "light", 0.2),
+      point(45, "none"),
+    ]);
+
+    expect(weakEcho).toMatchObject({
+      status: "weak-echo",
+      confidenceLevel: "low",
+      source: "radar-nowcast",
+    });
+    expect(showers).toMatchObject({
+      status: "intermittent",
+      durationMinutes: 30,
+      totalPrecipitationMm: 0.4,
+    });
+  });
+});
+
 describe("next-hour precipitation edge endpoint", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -605,6 +688,14 @@ describe("next-hour precipitation edge endpoint", () => {
     const body = (await response.json()) as {
       isInterpolated: boolean;
       sourceResolutionMinutes: number;
+      rainEta: {
+        status: string;
+        continuesBeyondHorizon: boolean;
+        totalPrecipitationMm: number;
+        peakIntensity: string;
+        confidenceLevel: string;
+        source: string;
+      };
       points: Array<{
         startsAt: string;
         endsAt: string;
@@ -628,6 +719,14 @@ describe("next-hour precipitation edge endpoint", () => {
       "light",
       "heavy",
     ]);
+    expect(body.rainEta).toMatchObject({
+      status: "raining",
+      continuesBeyondHorizon: true,
+      totalPrecipitationMm: 2.1,
+      peakIntensity: "heavy",
+      confidenceLevel: "unknown",
+      source: "harmonie",
+    });
     expect(upstream).toHaveBeenCalledOnce();
     const requestedUrl = String(upstream.mock.calls[0]?.[0]);
     expect(requestedUrl).toContain("dmi.test");
@@ -712,6 +811,14 @@ describe("next-hour precipitation edge endpoint", () => {
     const body = (await response.json()) as {
       source: string;
       basedOnObservedAt?: string;
+      rainEta: {
+        status: string;
+        departureWindowStart: string | null;
+        departureWindowEnd: string | null;
+        confidence: number | null;
+        confidenceLevel: string;
+        source: string;
+      };
       points: Array<{
         source?: string;
         intensity: string;
@@ -737,6 +844,14 @@ describe("next-hour precipitation edge endpoint", () => {
     expect(
       body.points.some((point) => point.forecastMethod === "persistence"),
     ).toBe(true);
+    expect(body.rainEta).toMatchObject({
+      status: "raining",
+      departureWindowStart: "2026-10-10T23:00:00.000Z",
+      departureWindowEnd: "2026-10-10T23:15:00.000Z",
+      confidenceLevel: "medium",
+      source: "radar-nowcast",
+    });
+    expect(body.rainEta.confidence).toBeGreaterThan(0.55);
 
     await Promise.all(waits);
     const cached = await worker.fetch(
