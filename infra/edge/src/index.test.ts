@@ -663,7 +663,7 @@ describe("next-hour precipitation edge endpoint", () => {
   });
 
   it("anchors near-term boxes to the same radar nowcast shown on the map", async () => {
-    const { env, context, r2 } = setup();
+    const { env, context, r2, waits } = setup();
     const frames = Array.from({ length: 13 }, (_, leadIndex) => ({
       leadMinutes: leadIndex * 5,
       predictedAt: new Date(
@@ -737,6 +737,17 @@ describe("next-hour precipitation edge endpoint", () => {
     expect(
       body.points.some((point) => point.forecastMethod === "persistence"),
     ).toBe(true);
+
+    await Promise.all(waits);
+    const cached = await worker.fetch(
+      new Request(
+        "https://api.test/api/v1/weather/precipitation?lat=56.16291&lon=10.20393",
+      ),
+      env,
+      context,
+    );
+    expect(cached.headers.get("X-WetMap-Point-Cache")).toBe("HIT");
+    expect(cached.headers.get("Server-Timing")).toContain("point_cache;dur=");
   });
 
   it("uses a still-relevant persistent estimate during an upstream outage", async () => {

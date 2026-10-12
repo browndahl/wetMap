@@ -38,6 +38,7 @@ interface RequestTelemetry {
   provider?: WeatherProvider;
   fallback?: "none" | "open-meteo" | "stale";
   cacheMs?: number;
+  pointCacheMs?: number;
   r2Ms?: number;
   dmiMs?: number;
   dmiOutcome?: string;
@@ -60,6 +61,7 @@ function dmiOutcome(error: unknown): string {
 function telemetryHeaders(telemetry: RequestTelemetry): HeadersInit {
   const timings = [
     ["cache", telemetry.cacheMs],
+    ["point_cache", telemetry.pointCacheMs],
     ["r2", telemetry.r2Ms],
     ["dmi", telemetry.dmiMs],
     ["openmeteo", telemetry.openMeteoMs],
@@ -267,7 +269,7 @@ function cors(origin: string, env: Env): HeadersInit {
     ? {
         "Access-Control-Allow-Origin": origin,
         "Access-Control-Expose-Headers":
-          "Server-Timing,X-WetMap-Provider,X-WetMap-Fallback,X-WetMap-DMI-Outcome,X-WetMap-Cache",
+          "Server-Timing,X-WetMap-Provider,X-WetMap-Fallback,X-WetMap-DMI-Outcome,X-WetMap-Cache,X-WetMap-Point-Cache",
         Vary: "Origin",
       }
     : {};
@@ -1558,6 +1560,7 @@ async function precipitation(
   env: Env,
   context: ExecutionContext,
 ): Promise<Response> {
+  const startedAt = performance.now();
   const latitude = Number(url.searchParams.get("lat"));
   const longitude = Number(url.searchParams.get("lon"));
   const coordinatesAreValid =
@@ -1567,6 +1570,32 @@ async function precipitation(
     Number.isFinite(longitude) &&
     longitude >= -180 &&
     longitude <= 180;
+  const pointCache = (caches as unknown as { default: Cache }).default;
+  const pointCacheUrl = new URL("https://cache.wetmap/precipitation/point");
+  pointCacheUrl.search = new URLSearchParams({
+    lat: latitude.toFixed(3),
+    lon: longitude.toFixed(3),
+  }).toString();
+  const pointCacheKey = new Request(pointCacheUrl);
+  if (coordinatesAreValid) {
+    const pointCacheStartedAt = performance.now();
+    const cachedPoint = await pointCache.match(pointCacheKey);
+    if (cachedPoint) {
+      const headers = new Headers(cachedPoint.headers);
+      headers.set("X-WetMap-Point-Cache", "HIT");
+      for (const [name, value] of Object.entries(
+        telemetryHeaders({
+          pointCacheMs: elapsed(pointCacheStartedAt),
+          totalMs: elapsed(startedAt),
+        }),
+      ))
+        headers.set(name, value);
+      return new Response(cachedPoint.body, {
+        status: cachedPoint.status,
+        headers,
+      });
+    }
+  }
   const radarPromise = coordinatesAreValid
     ? radarPointSamples(latitude, longitude, env).catch((error) => {
         console.error("precipitation.radar.failed", {
@@ -1585,15 +1614,15 @@ async function precipitation(
     const model = (await modelResponse.json()) as RainNextHourPayload;
     const combined = combineRadarAndModel(model, radar);
     const headers = new Headers(modelResponse.headers);
-    headers.set(
-      "Cache-Control",
-      "public,max-age=60,stale-while-revalidate=300",
-    );
+    headers.set("Cache-Control", "public,max-age=60");
     headers.set("X-WetMap-Precipitation-Source", combined.source);
-    return new Response(JSON.stringify(combined), {
+    headers.set("X-WetMap-Point-Cache", "MISS");
+    const response = new Response(JSON.stringify(combined), {
       status: modelResponse.status,
       headers,
     });
+    context.waitUntil(pointCache.put(pointCacheKey, response.clone()));
+    return response;
   } catch (error) {
     console.error("precipitation.combine.failed", {
       error,
