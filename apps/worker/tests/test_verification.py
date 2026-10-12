@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from wetmap_worker.nowcast import POINT_GRID_HEIGHT, POINT_GRID_WIDTH
+from wetmap_worker.nowcast import ALGORITHM_VERSION, POINT_GRID_HEIGHT, POINT_GRID_WIDTH
 from wetmap_worker.verification import (
     append_verification_history,
     public_verification_report,
@@ -149,3 +149,47 @@ def test_tracks_pending_forecasts_for_every_matching_horizon() -> None:
         },
     )
     assert len(updated["forecasts"]) == 3
+
+
+def test_keeps_algorithm_versions_in_separate_quality_cohorts(tmp_path: Path) -> None:
+    base = {
+        "verifiedAt": "2026-10-12T12:10:00Z",
+        "basedOnObservedAt": "2026-10-12T12:00:00Z",
+        "predictedAt": "2026-10-12T12:10:00Z",
+        "observedAt": "2026-10-12T12:10:00Z",
+        "leadMinutes": 10,
+        "thresholdDbz": 20,
+        "validPixels": 100,
+        "hits": 8,
+        "misses": 2,
+        "falseAlarms": 2,
+        "correctNegatives": 88,
+        "precision": 0.8,
+        "recall": 0.8,
+        "criticalSuccessIndex": 0.6667,
+        "dbzMeanAbsoluteError": 3.0,
+        "persistenceCriticalSuccessIndex": 0.5,
+        "criticalSuccessIndexSkill": 0.1667,
+        "forecastMethod": "optical-flow",
+        "thresholdScores": [],
+    }
+    history_path = tmp_path / "history.json"
+    history_path.write_text(json.dumps({"results": [base]}), encoding="utf-8")
+    current = {
+        **base,
+        "verifiedAt": "2026-10-12T12:15:00Z",
+        "basedOnObservedAt": "2026-10-12T12:05:00Z",
+        "predictedAt": "2026-10-12T12:15:00Z",
+        "observedAt": "2026-10-12T12:15:00Z",
+        "algorithmVersion": ALGORITHM_VERSION,
+    }
+
+    report = append_verification_history(history_path, current)
+    public = public_verification_report(report)
+
+    assert report["algorithmVersion"] == ALGORITHM_VERSION
+    assert report["sampleCount"] == 1
+    assert report["totalSampleCount"] == 2
+    assert len(report["byAlgorithmVersion"]) == 2
+    assert public["returnedResultCount"] == 1
+    assert public["results"][0]["algorithmVersion"] == ALGORITHM_VERSION

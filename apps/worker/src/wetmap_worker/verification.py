@@ -10,9 +10,10 @@ from typing import Any, Iterable
 import numpy as np
 from PIL import Image
 
-from .nowcast import _parse_time, _reflectivity_grid
+from .nowcast import ALGORITHM_VERSION, _parse_time, _reflectivity_grid
 
 SIGNIFICANT_ECHO_DBZ = 20
+LEGACY_ALGORITHM_VERSION = "legacy-unversioned"
 VERIFICATION_THRESHOLDS_DBZ = (10, 20, 35)
 FORECAST_MATCH_TOLERANCE_SECONDS = 180
 FORECAST_RETENTION_MINUTES = 65
@@ -154,6 +155,9 @@ def verify_previous_nowcast(
         "observedAt": observed_at,
         "leadMinutes": candidate["leadMinutes"],
         "forecastMethod": candidate.get("forecastMethod", "optical-flow"),
+        "algorithmVersion": metadata.get(
+            "algorithmVersion", LEGACY_ALGORITHM_VERSION
+        ),
         **{key: value for key, value in primary.items() if key != "thresholdDbz"},
         "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
         "thresholdScores": threshold_scores,
@@ -204,8 +208,12 @@ def _aggregate_scores(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> dict[str, Any]:
-    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+def _algorithm_version(entry: dict[str, Any]) -> str:
+    value = entry.get("algorithmVersion")
+    return str(value) if value else LEGACY_ALGORITHM_VERSION
+
+
+def _cohort_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
     primary_scored = [
         entry for entry in history if entry.get("criticalSuccessIndex") is not None
     ]
@@ -229,12 +237,7 @@ def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> d
         by_lead[int(entry["leadMinutes"])].append(entry)
         for threshold_score in entry.get("thresholdScores", []):
             by_threshold[int(threshold_score["thresholdDbz"])].append(threshold_score)
-    result_slice = history[-recent_limit:] if recent_limit is not None else history
     return {
-        "schemaVersion": 2,
-        "generatedAt": history[-1]["verifiedAt"] if history else now,
-        "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
-        "thresholdsDbz": list(VERIFICATION_THRESHOLDS_DBZ),
         "sampleCount": len(history),
         "meanCriticalSuccessIndex": mean_csi,
         "meanCriticalSuccessIndexSkill": (
@@ -275,6 +278,37 @@ def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> d
             {"thresholdDbz": threshold, **_aggregate_scores(entries)}
             for threshold, entries in sorted(by_threshold.items())
         ],
+    }
+
+
+def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    cohorts: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for entry in history:
+        cohorts[_algorithm_version(entry)].append(entry)
+
+    active_version = (
+        _algorithm_version(history[-1]) if history else ALGORITHM_VERSION
+    )
+    active_history = cohorts.get(active_version, [])
+    active_summary = _cohort_summary(active_history)
+    result_slice = history[-recent_limit:] if recent_limit is not None else history
+    return {
+        "schemaVersion": 3,
+        "generatedAt": history[-1]["verifiedAt"] if history else now,
+        "algorithmVersion": active_version,
+        "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
+        "thresholdsDbz": list(VERIFICATION_THRESHOLDS_DBZ),
+        "totalSampleCount": len(history),
+        **active_summary,
+        "byAlgorithmVersion": [
+            {
+                "algorithmVersion": version,
+                "latestVerifiedAt": entries[-1]["verifiedAt"],
+                **_cohort_summary(entries),
+            }
+            for version, entries in sorted(cohorts.items())
+        ],
         "results": result_slice,
     }
 
@@ -292,12 +326,22 @@ def append_verification_history(
             history = []
     incoming = result if isinstance(result, list) else [result]
     incoming_keys = {
-        (entry["basedOnObservedAt"], entry["observedAt"]) for entry in incoming
+        (
+            entry["basedOnObservedAt"],
+            entry["observedAt"],
+            _algorithm_version(entry),
+        )
+        for entry in incoming
     }
     history = [
         entry
         for entry in history
-        if (entry.get("basedOnObservedAt"), entry.get("observedAt")) not in incoming_keys
+        if (
+            entry.get("basedOnObservedAt"),
+            entry.get("observedAt"),
+            _algorithm_version(entry),
+        )
+        not in incoming_keys
     ]
     history.extend(incoming)
     history.sort(key=lambda entry: (entry["observedAt"], entry["leadMinutes"]))
@@ -312,7 +356,13 @@ def public_verification_report(
     report["generatedAt"] = datetime.now(timezone.utc).isoformat().replace(
         "+00:00", "Z"
     )
-    report["results"] = full_history.get("results", [])[-recent_results:]
+    active_version = full_history.get("algorithmVersion", ALGORITHM_VERSION)
+    active_results = [
+        entry
+        for entry in full_history.get("results", [])
+        if _algorithm_version(entry) == active_version
+    ]
+    report["results"] = active_results[-recent_results:]
     report["returnedResultCount"] = len(report["results"])
     return report
 

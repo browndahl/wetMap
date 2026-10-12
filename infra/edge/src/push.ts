@@ -38,6 +38,11 @@ interface RiskManifest {
     leadMinutes: number;
     predictedAt: string;
     intensity: string;
+    confidence?: number;
+    validationSamples?: number | null;
+    verificationCsi?: number | null;
+    skillOverPersistence?: number | null;
+    alertEligible?: boolean;
   }>;
 }
 
@@ -45,6 +50,8 @@ const prefix = "push/subscriptions/";
 const scanStateKey = "push/scan-state.json";
 const subscriptionsPerInvocation = 40;
 const maximumRiskAgeMs = 30 * 60_000;
+// Bucket 3 begins at 20 dBZ, the same boundary the 15-minute cards use for rain.
+const minimumAlertIntensity = 3;
 
 const validBase64Url = (value: unknown, minimumLength: number) =>
   typeof value === "string" &&
@@ -236,7 +243,7 @@ export function riskAtLocation(
   const index = y * risk.width + x;
   for (const frame of risk.frames) {
     const intensity = decodeBase64(frame.intensity)[index] ?? 0;
-    if (intensity > 0)
+    if (frame.alertEligible === true && intensity >= minimumAlertIntensity)
       return {
         leadMinutes: frame.leadMinutes,
         predictedAt: frame.predictedAt,
@@ -282,8 +289,8 @@ function notificationPayload(
   ).format(new Date(hit.predictedAt));
   const intensity =
     subscription.locale === "da"
-      ? ["", "let", "moderat", "kraftig"][hit.intensity]
-      : ["", "light", "moderate", "heavy"][hit.intensity];
+      ? ["", "mulig", "meget svag", "let"][hit.intensity]
+      : ["", "possible", "very light", "light"][hit.intensity];
   return JSON.stringify({
     title: subscription.locale === "da" ? "Regn på vej" : "Rain on the way",
     body:

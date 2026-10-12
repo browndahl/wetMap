@@ -546,16 +546,19 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
   if (!object)
     return Response.json(
       {
-        schemaVersion: 2,
+        schemaVersion: 3,
         generatedAt: new Date(0).toISOString(),
+        algorithmVersion: "adaptive-optical-flow-persistence-v1",
         thresholdDbz: 20,
         thresholdsDbz: [10, 20, 35],
         sampleCount: 0,
+        totalSampleCount: 0,
         returnedResultCount: 0,
         meanCriticalSuccessIndex: null,
         meanCriticalSuccessIndexSkill: null,
         byLeadMinutes: [],
         byThresholdDbz: [],
+        byAlgorithmVersion: [],
         results: [],
       },
       { headers: jsonHeaders },

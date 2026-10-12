@@ -15,6 +15,7 @@ from PIL import Image
 from .model import ATTRIBUTION, Frame
 
 METHOD = "adaptive-optical-flow-persistence"
+ALGORITHM_VERSION = "adaptive-optical-flow-persistence-v1"
 LEAD_MINUTES = tuple(range(5, 61, 5))
 RISK_WIDTH = 128
 RISK_HEIGHT = 96
@@ -23,6 +24,10 @@ POINT_GRID_HEIGHT = 512
 VERIFICATION_GRID_WIDTH = 256
 VERIFICATION_GRID_HEIGHT = 171
 VERIFICATION_RING_SLOTS = 16
+ALERT_MINIMUM_VALIDATION_SAMPLES = 12
+ALERT_MINIMUM_CSI = 0.2
+ALERT_MINIMUM_SKILL = 0.0
+ALERT_MINIMUM_CONFIDENCE = 0.55
 
 
 def _parse_time(value: str) -> datetime:
@@ -149,6 +154,11 @@ def generate_nowcast(
             "leadMinutes": 0,
             "predictedAt": latest_prediction_time,
             "intensity": _risk_bucket(latest[..., 3]),
+            "confidence": 1.0,
+            "validationSamples": None,
+            "verificationCsi": None,
+            "skillOverPersistence": None,
+            "alertEligible": True,
         }
     ]
     point_frames = [_reflectivity_grid(latest[..., 3])]
@@ -206,6 +216,14 @@ def generate_nowcast(
         else:
             confidence = heuristic_confidence
         confidence = round(min(0.95, max(0.2, confidence)), 2)
+        alert_eligible = (
+            validation_samples >= ALERT_MINIMUM_VALIDATION_SAMPLES
+            and isinstance(verified_csi, (int, float))
+            and verified_csi >= ALERT_MINIMUM_CSI
+            and isinstance(skill, (int, float))
+            and skill >= ALERT_MINIMUM_SKILL
+            and confidence >= ALERT_MINIMUM_CONFIDENCE
+        )
         risk_entries.append(
             {
                 "leadMinutes": lead_minutes,
@@ -213,6 +231,11 @@ def generate_nowcast(
                 .isoformat()
                 .replace("+00:00", "Z"),
                 "intensity": _risk_bucket(raw_prediction[..., 3]),
+                "confidence": confidence,
+                "validationSamples": validation_samples,
+                "verificationCsi": verified_csi,
+                "skillOverPersistence": skill,
+                "alertEligible": alert_eligible,
             }
         )
         point_frames.append(_reflectivity_grid(raw_prediction[..., 3]))
@@ -263,6 +286,7 @@ def generate_nowcast(
         "generatedAt": generated_at,
         "attribution": ATTRIBUTION,
         "method": METHOD,
+        "algorithmVersion": ALGORITHM_VERSION,
         "basedOnObservedAt": latest_frame.observedAt,
         "sourceFrameCount": len(source_frames),
         "frames": frame_entries,
@@ -272,11 +296,19 @@ def generate_nowcast(
         "generatedAt": generated_at,
         "basedOnObservedAt": latest_frame.observedAt,
         "method": METHOD,
+        "algorithmVersion": ALGORITHM_VERSION,
         "bounds": latest_frame.bounds,
         "width": RISK_WIDTH,
         "height": RISK_HEIGHT,
         "encoding": "uint8-base64",
         "thresholdsDbz": [0, 10, 20],
+        "alertPolicy": {
+            "minimumIntensityBucket": 3,
+            "minimumValidationSamples": ALERT_MINIMUM_VALIDATION_SAMPLES,
+            "minimumCriticalSuccessIndex": ALERT_MINIMUM_CSI,
+            "minimumSkillOverPersistence": ALERT_MINIMUM_SKILL,
+            "minimumConfidence": ALERT_MINIMUM_CONFIDENCE,
+        },
         "frames": risk_entries,
     }
     point_cube = np.stack(point_frames, axis=-1)
@@ -287,6 +319,7 @@ def generate_nowcast(
         "generatedAt": generated_at,
         "basedOnObservedAt": latest_frame.observedAt,
         "method": METHOD,
+        "algorithmVersion": ALGORITHM_VERSION,
         "bounds": latest_frame.bounds,
         "width": POINT_GRID_WIDTH,
         "height": POINT_GRID_HEIGHT,
@@ -312,6 +345,7 @@ def generate_nowcast(
         "generatedAt": generated_at,
         "basedOnObservedAt": latest_frame.observedAt,
         "method": METHOD,
+        "algorithmVersion": ALGORITHM_VERSION,
         "bounds": latest_frame.bounds,
         "width": VERIFICATION_GRID_WIDTH,
         "height": VERIFICATION_GRID_HEIGHT,

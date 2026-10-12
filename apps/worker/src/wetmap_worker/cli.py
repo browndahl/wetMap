@@ -193,6 +193,16 @@ def run(output: Path, limit: int, upload: bool) -> None:
                                     source_paths[-1],
                                     source_frames[-1].observedAt,
                                     source_frames[-1].bounds,
+                                    radar_frames=list(
+                                        zip(
+                                            source_paths,
+                                            (
+                                                frame.observedAt
+                                                for frame in source_frames
+                                            ),
+                                            strict=True,
+                                        )
+                                    ),
                                 )
                                 gauge_history = append_gauge_history(
                                     gauge_history_path,

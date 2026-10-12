@@ -7,6 +7,7 @@ from PIL import Image
 
 from wetmap_worker.model import Frame
 from wetmap_worker.nowcast import (
+    ALGORITHM_VERSION,
     LEAD_MINUTES,
     POINT_GRID_HEIGHT,
     POINT_GRID_WIDTH,
@@ -44,6 +45,7 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     manifest, risk, outputs = generate_nowcast(paths, frames, tmp_path / "nowcast")
 
     assert manifest["method"] == "adaptive-optical-flow-persistence"
+    assert manifest["algorithmVersion"] == ALGORITHM_VERSION
     assert manifest["basedOnObservedAt"] == frames[-1].observedAt
     assert [frame["leadMinutes"] for frame in manifest["frames"]] == list(LEAD_MINUTES)
     assert len(outputs) == len(LEAD_MINUTES)
@@ -55,6 +57,8 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     assert len(decoded) == RISK_WIDTH * RISK_HEIGHT
     assert max(decoded) >= 2
     assert risk["frames"][0]["leadMinutes"] == 0
+    assert risk["frames"][0]["alertEligible"] is True
+    assert risk["frames"][1]["alertEligible"] is False
     point_metadata = json.loads((tmp_path / "nowcast/point-risk.json").read_text())
     point_grid = (tmp_path / "nowcast/point-risk.bin").read_bytes()
     assert point_metadata["frameCount"] == len(LEAD_MINUTES) + 1
@@ -109,6 +113,8 @@ def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Pa
 
     assert manifest["frames"][0]["forecastMethod"] == "persistence"
     assert manifest["frames"][1]["forecastMethod"] == "optical-flow"
+    assert manifest["frames"][0]["skillOverPersistence"] == -0.08
+    assert manifest["frames"][0]["confidence"] >= 0.55
     with np.load(tmp_path / "adaptive/verification-cube.npz") as archive:
         cube = archive["cube"]
         assert np.array_equal(cube[..., 0], cube[..., 1])

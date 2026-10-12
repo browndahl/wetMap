@@ -281,6 +281,7 @@ components:
         - generatedAt
         - attribution
         - method
+        - algorithmVersion
         - basedOnObservedAt
         - sourceFrameCount
         - frames
@@ -301,6 +302,8 @@ components:
                 dense-optical-flow-extrapolation,
               ],
           }
+        algorithmVersion:
+          { type: string, const: adaptive-optical-flow-persistence-v1 }
         basedOnObservedAt: { type: string, format: date-time }
         sourceFrameCount: { type: integer, minimum: 0, maximum: 3 }
         frames:
@@ -409,20 +412,23 @@ components:
       required:
         - schemaVersion
         - generatedAt
+        - algorithmVersion
         - thresholdDbz
         - sampleCount
         - meanCriticalSuccessIndex
         - meanCriticalSuccessIndexSkill
         - results
       properties:
-        schemaVersion: { type: integer, const: 2 }
+        schemaVersion: { type: integer, const: 3 }
         generatedAt: { type: string, format: date-time }
+        algorithmVersion: { type: string }
         latestVerifiedAt: { type: [string, "null"], format: date-time }
         thresholdDbz: { type: number, const: 20 }
         thresholdsDbz:
           type: array
           items: { type: number, enum: [10, 20, 35] }
         sampleCount: { type: integer, minimum: 0 }
+        totalSampleCount: { type: integer, minimum: 0 }
         returnedResultCount: { type: integer, minimum: 0, maximum: 288 }
         meanCriticalSuccessIndex:
           { type: [number, "null"], minimum: 0, maximum: 1 }
@@ -462,6 +468,15 @@ components:
                 required: [thresholdDbz]
                 properties:
                   thresholdDbz: { type: number, enum: [10, 20, 35] }
+        byAlgorithmVersion:
+          type: array
+          items:
+            type: object
+            required: [algorithmVersion, latestVerifiedAt, sampleCount]
+            properties:
+              algorithmVersion: { type: string }
+              latestVerifiedAt: { type: string, format: date-time }
+              sampleCount: { type: integer, minimum: 0 }
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
         results:
           type: array
@@ -474,6 +489,7 @@ components:
               - predictedAt
               - observedAt
               - leadMinutes
+              - algorithmVersion
               - thresholdDbz
               - validPixels
               - hits
@@ -492,6 +508,7 @@ components:
               predictedAt: { type: string, format: date-time }
               observedAt: { type: string, format: date-time }
               leadMinutes: { type: integer, minimum: 5, maximum: 60 }
+              algorithmVersion: { type: string }
               thresholdDbz: { type: number, const: 20 }
               validPixels: { type: integer, minimum: 0 }
               hits: { type: integer, minimum: 0 }
@@ -577,6 +594,7 @@ components:
         - schemaVersion
         - generatedAt
         - source
+        - comparisonVersion
         - parameterId
         - radarThresholdDbz
         - gaugeThresholdMm10m
@@ -591,12 +609,16 @@ components:
         - criticalSuccessIndex
         - results
       properties:
-        schemaVersion: { type: integer, const: 1 }
+        schemaVersion: { type: integer, const: 2 }
         generatedAt: { type: string, format: date-time }
         source: { type: string, const: dmi-metobs-raw }
+        comparisonVersion: { type: string, const: 10m-window-3px-v1 }
         parameterId: { type: string, const: precip_past10min }
         radarThresholdDbz: { type: number, const: 20 }
         gaugeThresholdMm10m: { type: number, const: 0.1 }
+        temporalWindowMinutes: { type: integer, const: 10 }
+        spatialRadiusPixels: { type: integer, const: 3 }
+        totalObservationCount: { type: integer, minimum: 0 }
         observationCount: { type: integer, minimum: 0 }
         stationComparisonCount: { type: integer, minimum: 0 }
         hits: { type: integer, minimum: 0 }
@@ -606,6 +628,17 @@ components:
         precision: { type: [number, "null"], minimum: 0, maximum: 1 }
         recall: { type: [number, "null"], minimum: 0, maximum: 1 }
         criticalSuccessIndex: { type: [number, "null"], minimum: 0, maximum: 1 }
+        byRadarThresholdDbz:
+          type: array
+          maxItems: 4
+          items: { type: object }
+        bySpatialRadiusPixels:
+          type: array
+          maxItems: 3
+          items: { type: object }
+        byComparisonVersion:
+          type: array
+          items: { type: object }
         note: { type: string }
         returnedResultCount: { type: integer, minimum: 0, maximum: 24 }
         results:

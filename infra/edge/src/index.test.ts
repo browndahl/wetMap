@@ -215,7 +215,7 @@ describe("radar nowcast edge endpoint", () => {
     };
 
     expect(response.status).toBe(200);
-    expect(body.schemaVersion).toBe(2);
+    expect(body.schemaVersion).toBe(3);
     expect(body.thresholdsDbz).toEqual([10, 20, 35]);
     expect(body.byLeadMinutes).toEqual([]);
   });

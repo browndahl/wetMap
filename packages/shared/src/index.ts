@@ -51,6 +51,7 @@ export interface NowcastManifest {
   method:
     | "adaptive-optical-flow-persistence"
     | "dense-optical-flow-extrapolation";
+  algorithmVersion?: string;
   basedOnObservedAt: string;
   sourceFrameCount: number;
   frames: NowcastFrame[];
