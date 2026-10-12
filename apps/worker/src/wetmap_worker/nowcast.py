@@ -163,9 +163,7 @@ def generate_nowcast(
     ]
     point_frames = [_reflectivity_grid(latest[..., 3])]
     verification_frames = [
-        _reflectivity_grid(
-            latest[..., 3], VERIFICATION_GRID_WIDTH, VERIFICATION_GRID_HEIGHT
-        )
+        _reflectivity_grid(latest[..., 3], VERIFICATION_GRID_WIDTH, VERIFICATION_GRID_HEIGHT)
     ]
     point_frame_entries: list[dict[str, Any]] = [
         {
@@ -178,17 +176,20 @@ def generate_nowcast(
     for lead_minutes in LEAD_MINUTES:
         optical_flow_prediction = _advect(latest, flow, lead_minutes)
         quality = (quality_by_lead or {}).get(lead_minutes, {})
-        validation_samples = int(
+        operational_status = quality.get("operationalStatus")
+        raw_validation_samples = int(
             quality.get("opticalFlowSampleCount", quality.get("sampleCount", 0)) or 0
         )
-        skill = quality.get(
+        validation_samples = int(quality.get("operationalSampleCount", raw_validation_samples) or 0)
+        raw_skill = quality.get(
             "opticalFlowMeanCriticalSuccessIndexSkill",
             quality.get("meanCriticalSuccessIndexSkill"),
         )
+        skill = quality.get("operationalMeanCriticalSuccessIndexSkill", raw_skill)
         use_persistence = (
-            validation_samples >= 12
-            and isinstance(skill, (int, float))
-            and skill <= -0.02
+            raw_validation_samples >= 12
+            and isinstance(raw_skill, (int, float))
+            and raw_skill <= -0.02
         )
         raw_prediction = latest.copy() if use_persistence else optical_flow_prediction
         forecast_method = "persistence" if use_persistence else "optical-flow"
@@ -206,7 +207,9 @@ def generate_nowcast(
                 "opticalFlowCriticalSuccessIndex",
                 quality.get("criticalSuccessIndex"),
             )
-        if validation_samples >= 6 and isinstance(verified_csi, (int, float)):
+        verified_csi = quality.get("operationalCriticalSuccessIndex", verified_csi)
+        evidence_ready = operational_status in (None, "verified", "degraded")
+        if evidence_ready and validation_samples >= 6 and isinstance(verified_csi, (int, float)):
             empirical_confidence = min(0.95, max(0.2, 0.2 + 0.75 * verified_csi))
             empirical_weight = min(0.8, validation_samples / 60)
             confidence = (
@@ -217,7 +220,8 @@ def generate_nowcast(
             confidence = heuristic_confidence
         confidence = round(min(0.95, max(0.2, confidence)), 2)
         alert_eligible = (
-            validation_samples >= ALERT_MINIMUM_VALIDATION_SAMPLES
+            operational_status in (None, "verified")
+            and validation_samples >= ALERT_MINIMUM_VALIDATION_SAMPLES
             and isinstance(verified_csi, (int, float))
             and verified_csi >= ALERT_MINIMUM_CSI
             and isinstance(skill, (int, float))

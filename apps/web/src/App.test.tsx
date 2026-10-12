@@ -28,6 +28,60 @@ const apiMocks = vi.hoisted(() => ({
     sourceFrameCount: 3,
     frames: [] as Array<Record<string, unknown>>,
   },
+  quality: {
+    schemaVersion: 4,
+    generatedAt: "2026-10-12T12:30:00Z",
+    latestVerifiedAt: "2026-10-12T12:29:00Z",
+    algorithmVersion: "adaptive-optical-flow-persistence-v1",
+    thresholdDbz: 20,
+    sampleCount: 48,
+    totalSampleCount: 48,
+    meanCriticalSuccessIndex: null,
+    meanCriticalSuccessIndexSkill: null,
+    observatory: {
+      schemaVersion: 1,
+      overallStatus: "awaiting-rain",
+      targetHorizonMinutes: [15, 30, 45, 60],
+      qualityGate: {
+        minimumSamples: 12,
+        minimumEventPixels: 100,
+        minimumCriticalSuccessIndex: 0.2,
+        minimumSkillOverPersistence: 0,
+      },
+      verifiedHorizonCount: 0,
+      horizons: [15, 30, 45, 60].map((targetLeadMinutes) => ({
+        targetLeadMinutes,
+        windowStartMinutes: targetLeadMinutes - 5,
+        windowEndMinutes: targetLeadMinutes === 60 ? 60 : targetLeadMinutes + 5,
+        status: "awaiting-rain",
+        meetsQualityGate: false,
+        sampleCount: 12,
+        eventPixelCount: 0,
+        validPixels: 12_000,
+        hits: 0,
+        misses: 0,
+        falseAlarms: 0,
+        precision: null,
+        recall: null,
+        falseAlarmRate: null,
+        missRate: null,
+        criticalSuccessIndex: null,
+        meanDbzMeanAbsoluteError: 0,
+        meanCriticalSuccessIndexSkill: null,
+        meanPersistenceCriticalSuccessIndex: null,
+      })),
+    },
+    groundGauge: {
+      observationCount: 12,
+      stationComparisonCount: 1260,
+      hits: 0,
+      misses: 0,
+      falseAlarms: 0,
+      precision: null,
+      recall: null,
+      criticalSuccessIndex: null,
+    },
+  },
   forecast: {
     latitude: 56.16,
     longitude: 10.2,
@@ -79,6 +133,7 @@ vi.mock("./components/WeatherMap", () => ({
 vi.mock("./api", () => ({
   getRadarManifest: async () => apiMocks.manifest,
   getRadarNowcast: async () => apiMocks.nowcast,
+  getPrecisionObservatory: async () => apiMocks.quality,
   getForecast: async () => apiMocks.forecast,
   getRainNextHour: async () => apiMocks.rain,
   getPushConfig: apiMocks.getPushConfig,
@@ -177,6 +232,29 @@ it("labels future optical-flow frames as nowcasts with confidence", async () => 
     screen.getByText("Estimeret sikkerhed 88% · Optisk flow"),
   ).toBeInTheDocument();
   expect(screen.getByText(/optisk flow/)).toBeInTheDocument();
+});
+
+it("opens the precision observatory with honest dry-weather status", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Åbn Precision Observatory" }),
+  );
+
+  expect(
+    screen.getByRole("heading", { name: "Precision Observatory" }),
+  ).toBeInTheDocument();
+  expect(screen.getAllByText("Afventer regnhændelser")).toHaveLength(5);
+  expect(screen.getByText("+15 min")).toBeInTheDocument();
+  expect(screen.getAllByText("Falske varsler")).toHaveLength(4);
+  expect(screen.getByText("1.260 stationssammenligninger")).toBeInTheDocument();
 });
 
 afterEach(() => {

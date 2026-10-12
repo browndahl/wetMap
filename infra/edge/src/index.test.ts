@@ -212,12 +212,72 @@ describe("radar nowcast edge endpoint", () => {
       schemaVersion: number;
       thresholdsDbz: number[];
       byLeadMinutes: unknown[];
+      observatory: {
+        overallStatus: string;
+        targetHorizonMinutes: number[];
+        horizons: Array<{ status: string }>;
+      };
     };
 
     expect(response.status).toBe(200);
-    expect(body.schemaVersion).toBe(3);
+    expect(body.schemaVersion).toBe(4);
     expect(body.thresholdsDbz).toEqual([10, 20, 35]);
     expect(body.byLeadMinutes).toEqual([]);
+    expect(body.observatory.overallStatus).toBe("collecting");
+    expect(body.observatory.targetHorizonMinutes).toEqual([15, 30, 45, 60]);
+    expect(body.observatory.horizons).toHaveLength(4);
+  });
+
+  it("serves a compact precision observatory without raw verification history", async () => {
+    const { env, context, r2 } = setup();
+    r2.values.set(
+      "nowcast/verification.json",
+      JSON.stringify({
+        schemaVersion: 4,
+        generatedAt: "2026-10-12T12:30:00Z",
+        latestVerifiedAt: "2026-10-12T12:29:00Z",
+        algorithmVersion: "adaptive-optical-flow-persistence-v1",
+        thresholdDbz: 20,
+        sampleCount: 48,
+        totalSampleCount: 48,
+        observatory: {
+          schemaVersion: 1,
+          overallStatus: "awaiting-rain",
+          targetHorizonMinutes: [15, 30, 45, 60],
+          verifiedHorizonCount: 0,
+          horizons: [],
+        },
+        groundGauge: {
+          observationCount: 12,
+          stationComparisonCount: 1260,
+          hits: 0,
+          misses: 0,
+          falseAlarms: 0,
+          precision: null,
+          recall: null,
+          criticalSuccessIndex: null,
+          results: [{ large: "history-is-not-forwarded" }],
+        },
+        results: [{ large: "history-is-not-forwarded" }],
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://api.test/api/v1/radar/nowcast/observatory"),
+      env,
+      context,
+    );
+    const body = (await response.json()) as {
+      observatory: { overallStatus: string };
+      groundGauge: { stationComparisonCount: number; results?: unknown[] };
+      results?: unknown[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.observatory.overallStatus).toBe("awaiting-rain");
+    expect(body.groundGauge.stationComparisonCount).toBe(1260);
+    expect(body.groundGauge.results).toBeUndefined();
+    expect(body.results).toBeUndefined();
   });
 });
 

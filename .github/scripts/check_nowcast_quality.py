@@ -29,3 +29,20 @@ if report.get("schemaVersion", 1) >= 2 and report["sampleCount"] >= 150:
         raise SystemExit(
             f"Multi-horizon verification is incomplete; missing {sorted(required - leads)}"
         )
+
+if report.get("schemaVersion", 1) >= 4:
+    observatory = report.get("observatory") or {}
+    targets = {
+        int(horizon["targetLeadMinutes"]) for horizon in observatory.get("horizons", [])
+    }
+    required_targets = {15, 30, 45, 60}
+    if targets != required_targets:
+        raise SystemExit(
+            "Precision Observatory is incomplete; expected horizons "
+            f"{sorted(required_targets)}, got {sorted(targets)}"
+        )
+    print(
+        "Precision Observatory status "
+        f"{observatory.get('overallStatus', 'unknown')} with "
+        f"{observatory.get('verifiedHorizonCount', 0)}/4 verified horizons"
+    )

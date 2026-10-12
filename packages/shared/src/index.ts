@@ -57,6 +57,88 @@ export interface NowcastManifest {
   frames: NowcastFrame[];
 }
 
+export type PrecisionStatus =
+  | "collecting"
+  | "awaiting-rain"
+  | "verified"
+  | "degraded";
+
+export interface VerificationSummary {
+  sampleCount: number;
+  validPixels: number;
+  hits: number;
+  misses: number;
+  falseAlarms: number;
+  precision: number | null;
+  recall: number | null;
+  criticalSuccessIndex: number | null;
+  meanDbzMeanAbsoluteError: number | null;
+  meanCriticalSuccessIndexSkill: number | null;
+  meanPersistenceCriticalSuccessIndex?: number | null;
+}
+
+export interface PrecisionHorizon extends VerificationSummary {
+  targetLeadMinutes: 15 | 30 | 45 | 60;
+  windowStartMinutes: number;
+  windowEndMinutes: number;
+  status: PrecisionStatus;
+  meetsQualityGate: boolean;
+  eventPixelCount: number;
+  falseAlarmRate: number | null;
+  missRate: number | null;
+}
+
+export interface PrecisionObservatory {
+  schemaVersion: 1;
+  overallStatus: PrecisionStatus;
+  targetHorizonMinutes: Array<15 | 30 | 45 | 60>;
+  qualityGate: {
+    minimumSamples: number;
+    minimumEventPixels: number;
+    minimumCriticalSuccessIndex: number;
+    minimumSkillOverPersistence: number;
+  };
+  verifiedHorizonCount: number;
+  horizons: PrecisionHorizon[];
+}
+
+export interface GroundGaugeQuality {
+  observationCount: number;
+  stationComparisonCount: number;
+  hits: number;
+  misses: number;
+  falseAlarms: number;
+  precision: number | null;
+  recall: number | null;
+  criticalSuccessIndex: number | null;
+}
+
+export interface NowcastQualityResponse {
+  schemaVersion: number;
+  generatedAt: string;
+  latestVerifiedAt?: string | null;
+  algorithmVersion: string;
+  thresholdDbz: number;
+  sampleCount: number;
+  totalSampleCount: number;
+  meanCriticalSuccessIndex: number | null;
+  meanCriticalSuccessIndexSkill: number | null;
+  observatory?: PrecisionObservatory;
+  groundGauge?: GroundGaugeQuality;
+}
+
+export interface PrecisionObservatoryResponse {
+  schemaVersion: number;
+  generatedAt: string;
+  latestVerifiedAt: string | null;
+  algorithmVersion: string;
+  thresholdDbz: number;
+  sampleCount: number;
+  totalSampleCount: number;
+  observatory?: PrecisionObservatory;
+  groundGauge?: GroundGaugeQuality;
+}
+
 export interface ForecastPoint {
   step: string;
   temperatureC: number | null;

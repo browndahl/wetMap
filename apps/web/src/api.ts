@@ -3,6 +3,7 @@ import type {
   LocationResult,
   LocationSearchResponse,
   NowcastManifest,
+  PrecisionObservatoryResponse,
   RadarManifest,
   RainNextHourResponse,
 } from "@wetmap/shared";
@@ -45,6 +46,12 @@ export const getRadarManifest = (signal?: AbortSignal) =>
 
 export const getRadarNowcast = (signal?: AbortSignal) =>
   getJson<NowcastManifest>(`${framesBase}/api/v1/radar/nowcast`, signal);
+
+export const getPrecisionObservatory = (signal?: AbortSignal) =>
+  getJson<PrecisionObservatoryResponse>(
+    `${framesBase}/api/v1/radar/nowcast/observatory`,
+    signal,
+  );
 
 export const getForecast = (
   latitude: number,

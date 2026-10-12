@@ -28,6 +28,7 @@ import {
 import { translate } from "./i18n";
 import { useWeatherStore } from "./store";
 import LocationSearch from "./components/LocationSearch";
+import PrecisionObservatory from "./components/PrecisionObservatory";
 import RainNextHour from "./components/RainNextHour";
 
 const WeatherMap = lazy(() => import("./components/WeatherMap"));
@@ -275,6 +276,7 @@ export default function App() {
       </header>
 
       <LocationSearch />
+      <PrecisionObservatory locale={state.locale} />
 
       <section
         id="weather-panel"

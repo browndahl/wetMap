@@ -10,13 +10,27 @@ from typing import Any, Iterable
 import numpy as np
 from PIL import Image
 
-from .nowcast import ALGORITHM_VERSION, _parse_time, _reflectivity_grid
+from .nowcast import (
+    ALERT_MINIMUM_CSI,
+    ALERT_MINIMUM_SKILL,
+    ALERT_MINIMUM_VALIDATION_SAMPLES,
+    ALGORITHM_VERSION,
+    _parse_time,
+    _reflectivity_grid,
+)
 
 SIGNIFICANT_ECHO_DBZ = 20
 LEGACY_ALGORITHM_VERSION = "legacy-unversioned"
 VERIFICATION_THRESHOLDS_DBZ = (10, 20, 35)
 FORECAST_MATCH_TOLERANCE_SECONDS = 180
 FORECAST_RETENTION_MINUTES = 65
+OBSERVATORY_MINIMUM_EVENT_PIXELS = 100
+OBSERVATORY_HORIZON_WINDOWS = (
+    (15, 10, 20),
+    (30, 25, 35),
+    (45, 40, 50),
+    (60, 55, 60),
+)
 
 
 def _ratio(numerator: int, denominator: int) -> float | None:
@@ -58,9 +72,7 @@ def _categorical_scores(
     }
 
 
-def verification_candidates(
-    state: dict[str, Any], observed_at: str
-) -> list[dict[str, Any]]:
+def verification_candidates(state: dict[str, Any], observed_at: str) -> list[dict[str, Any]]:
     """Return archived forecasts with an exact lead frame for this observation."""
     observed_time = _parse_time(observed_at)
     candidates: list[dict[str, Any]] = []
@@ -71,9 +83,7 @@ def verification_candidates(
             continue
         if any(
             frame.get("leadMinutes", 0) > 0
-            and abs(
-                (_parse_time(frame["predictedAt"]) - observed_time).total_seconds()
-            )
+            and abs((_parse_time(frame["predictedAt"]) - observed_time).total_seconds())
             <= FORECAST_MATCH_TOLERANCE_SECONDS
             for frame in forecast.get("frames", [])
         ):
@@ -96,17 +106,10 @@ def verify_previous_nowcast(
     observed_time = _parse_time(observed_at)
     candidate_index, candidate = min(
         enumerate(frames),
-        key=lambda item: abs(
-            (_parse_time(item[1]["predictedAt"]) - observed_time).total_seconds()
-        ),
+        key=lambda item: abs((_parse_time(item[1]["predictedAt"]) - observed_time).total_seconds()),
     )
-    offset_seconds = abs(
-        (_parse_time(candidate["predictedAt"]) - observed_time).total_seconds()
-    )
-    if (
-        offset_seconds > FORECAST_MATCH_TOLERANCE_SECONDS
-        or candidate.get("leadMinutes", 0) <= 0
-    ):
+    offset_seconds = abs((_parse_time(candidate["predictedAt"]) - observed_time).total_seconds())
+    if offset_seconds > FORECAST_MATCH_TOLERANCE_SECONDS or candidate.get("leadMinutes", 0) <= 0:
         return None
 
     width = int(metadata["width"])
@@ -155,9 +158,7 @@ def verify_previous_nowcast(
         "observedAt": observed_at,
         "leadMinutes": candidate["leadMinutes"],
         "forecastMethod": candidate.get("forecastMethod", "optical-flow"),
-        "algorithmVersion": metadata.get(
-            "algorithmVersion", LEGACY_ALGORITHM_VERSION
-        ),
+        "algorithmVersion": metadata.get("algorithmVersion", LEGACY_ALGORITHM_VERSION),
         **{key: value for key, value in primary.items() if key != "thresholdDbz"},
         "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
         "thresholdScores": threshold_scores,
@@ -197,13 +198,9 @@ def _aggregate_scores(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "meanDbzMeanAbsoluteError": (
             round(sum(mae_entries) / len(mae_entries), 2) if mae_entries else None
         ),
-        "meanCriticalSuccessIndexSkill": (
-            round(sum(skills) / len(skills), 4) if skills else None
-        ),
+        "meanCriticalSuccessIndexSkill": (round(sum(skills) / len(skills), 4) if skills else None),
         "meanPersistenceCriticalSuccessIndex": (
-            round(sum(persistence_csi) / len(persistence_csi), 4)
-            if persistence_csi
-            else None
+            round(sum(persistence_csi) / len(persistence_csi), 4) if persistence_csi else None
         ),
     }
 
@@ -214,9 +211,7 @@ def _algorithm_version(entry: dict[str, Any]) -> str:
 
 
 def _cohort_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
-    primary_scored = [
-        entry for entry in history if entry.get("criticalSuccessIndex") is not None
-    ]
+    primary_scored = [entry for entry in history if entry.get("criticalSuccessIndex") is not None]
     mean_csi = (
         round(
             sum(float(entry["criticalSuccessIndex"]) for entry in primary_scored)
@@ -240,9 +235,7 @@ def _cohort_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "sampleCount": len(history),
         "meanCriticalSuccessIndex": mean_csi,
-        "meanCriticalSuccessIndexSkill": (
-            round(sum(skills) / len(skills), 4) if skills else None
-        ),
+        "meanCriticalSuccessIndexSkill": (round(sum(skills) / len(skills), 4) if skills else None),
         "byLeadMinutes": [
             {
                 "leadMinutes": lead,
@@ -259,13 +252,11 @@ def _cohort_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
                                 [
                                     entry
                                     for entry in entries
-                                    if entry.get("forecastMethod", "optical-flow")
-                                    == method
+                                    if entry.get("forecastMethod", "optical-flow") == method
                                 ],
                             )
                             for method in {
-                                entry.get("forecastMethod", "optical-flow")
-                                for entry in entries
+                                entry.get("forecastMethod", "optical-flow") for entry in entries
                             }
                         ),
                         key=lambda item: item[0],
@@ -281,20 +272,93 @@ def _cohort_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _observatory_horizon(
+    history: list[dict[str, Any]],
+    target_lead_minutes: int,
+    window_start_minutes: int,
+    window_end_minutes: int,
+) -> dict[str, Any]:
+    entries = [
+        entry
+        for entry in history
+        if window_start_minutes <= int(entry.get("leadMinutes", 0)) <= window_end_minutes
+    ]
+    summary = _aggregate_scores(entries)
+    event_pixel_count = summary["hits"] + summary["misses"] + summary["falseAlarms"]
+    has_enough_samples = summary["sampleCount"] >= ALERT_MINIMUM_VALIDATION_SAMPLES
+    has_enough_events = event_pixel_count >= OBSERVATORY_MINIMUM_EVENT_PIXELS
+    csi = summary["criticalSuccessIndex"]
+    skill = summary["meanCriticalSuccessIndexSkill"]
+    meets_quality_gate = bool(
+        has_enough_samples
+        and has_enough_events
+        and isinstance(csi, (int, float))
+        and csi >= ALERT_MINIMUM_CSI
+        and isinstance(skill, (int, float))
+        and skill >= ALERT_MINIMUM_SKILL
+    )
+    if not has_enough_samples:
+        status = "collecting"
+    elif not has_enough_events:
+        status = "awaiting-rain"
+    elif meets_quality_gate:
+        status = "verified"
+    else:
+        status = "degraded"
+    return {
+        "targetLeadMinutes": target_lead_minutes,
+        "windowStartMinutes": window_start_minutes,
+        "windowEndMinutes": window_end_minutes,
+        "status": status,
+        "meetsQualityGate": meets_quality_gate,
+        "eventPixelCount": event_pixel_count,
+        "falseAlarmRate": _ratio(summary["falseAlarms"], summary["hits"] + summary["falseAlarms"]),
+        "missRate": _ratio(summary["misses"], summary["hits"] + summary["misses"]),
+        **summary,
+    }
+
+
+def _observatory_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
+    horizons = [
+        _observatory_horizon(history, target, start, end)
+        for target, start, end in OBSERVATORY_HORIZON_WINDOWS
+    ]
+    statuses = {horizon["status"] for horizon in horizons}
+    if "degraded" in statuses:
+        overall_status = "degraded"
+    elif "collecting" in statuses:
+        overall_status = "collecting"
+    elif "awaiting-rain" in statuses:
+        overall_status = "awaiting-rain"
+    else:
+        overall_status = "verified"
+    return {
+        "schemaVersion": 1,
+        "overallStatus": overall_status,
+        "targetHorizonMinutes": [target for target, _start, _end in OBSERVATORY_HORIZON_WINDOWS],
+        "qualityGate": {
+            "minimumSamples": ALERT_MINIMUM_VALIDATION_SAMPLES,
+            "minimumEventPixels": OBSERVATORY_MINIMUM_EVENT_PIXELS,
+            "minimumCriticalSuccessIndex": ALERT_MINIMUM_CSI,
+            "minimumSkillOverPersistence": ALERT_MINIMUM_SKILL,
+        },
+        "verifiedHorizonCount": sum(horizon["status"] == "verified" for horizon in horizons),
+        "horizons": horizons,
+    }
+
+
 def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     cohorts: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for entry in history:
         cohorts[_algorithm_version(entry)].append(entry)
 
-    active_version = (
-        _algorithm_version(history[-1]) if history else ALGORITHM_VERSION
-    )
+    active_version = _algorithm_version(history[-1]) if history else ALGORITHM_VERSION
     active_history = cohorts.get(active_version, [])
     active_summary = _cohort_summary(active_history)
     result_slice = history[-recent_limit:] if recent_limit is not None else history
     return {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "generatedAt": history[-1]["verifiedAt"] if history else now,
         "algorithmVersion": active_version,
         "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
@@ -309,6 +373,7 @@ def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> d
             }
             for version, entries in sorted(cohorts.items())
         ],
+        "observatory": _observatory_summary(active_history),
         "results": result_slice,
     }
 
@@ -353,9 +418,7 @@ def public_verification_report(
 ) -> dict[str, Any]:
     report = dict(full_history)
     report["latestVerifiedAt"] = full_history.get("generatedAt")
-    report["generatedAt"] = datetime.now(timezone.utc).isoformat().replace(
-        "+00:00", "Z"
-    )
+    report["generatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     active_version = full_history.get("algorithmVersion", ALGORITHM_VERSION)
     active_results = [
         entry
@@ -373,26 +436,32 @@ def quality_by_lead(history: dict[str, Any] | None) -> dict[int, dict[str, Any]]
     profiles: dict[int, dict[str, Any]] = {}
     for entry in history.get("byLeadMinutes", []):
         profile = dict(entry)
-        methods = {
-            method["forecastMethod"]: method
-            for method in entry.get("byForecastMethod", [])
-        }
+        methods = {method["forecastMethod"]: method for method in entry.get("byForecastMethod", [])}
         optical = methods.get("optical-flow")
         persistence = methods.get("persistence")
         if optical:
             profile["opticalFlowSampleCount"] = optical["sampleCount"]
-            profile["opticalFlowCriticalSuccessIndex"] = optical[
-                "criticalSuccessIndex"
-            ]
+            profile["opticalFlowCriticalSuccessIndex"] = optical["criticalSuccessIndex"]
             profile["opticalFlowMeanCriticalSuccessIndexSkill"] = optical[
                 "meanCriticalSuccessIndexSkill"
             ]
         if persistence:
             profile["persistenceSampleCount"] = persistence["sampleCount"]
-            profile["persistenceCriticalSuccessIndex"] = persistence[
-                "criticalSuccessIndex"
-            ]
+            profile["persistenceCriticalSuccessIndex"] = persistence["criticalSuccessIndex"]
         profiles[int(entry["leadMinutes"])] = profile
+    for horizon in history.get("observatory", {}).get("horizons", []):
+        for lead_minutes in range(
+            int(horizon["windowStartMinutes"]),
+            int(horizon["windowEndMinutes"]) + 1,
+            5,
+        ):
+            profile = profiles.setdefault(lead_minutes, {})
+            profile["operationalSampleCount"] = horizon["sampleCount"]
+            profile["operationalCriticalSuccessIndex"] = horizon["criticalSuccessIndex"]
+            profile["operationalMeanCriticalSuccessIndexSkill"] = horizon[
+                "meanCriticalSuccessIndexSkill"
+            ]
+            profile["operationalStatus"] = horizon["status"]
     return profiles
 
 

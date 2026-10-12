@@ -47,6 +47,19 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/NowcastQuality" }
         "304": { description: Not modified }
+  /api/v1/radar/nowcast/observatory:
+    get:
+      operationId: getPrecisionObservatory
+      summary: Returns the compact operational precision dashboard
+      description: Groups verification into honest +15, +30, +45 and +60 minute windows, distinguishes dry-weather collection from rain-event evidence, and omits raw verification history.
+      responses:
+        "200":
+          description: Current operational precision assessment
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/PrecisionObservatoryResponse" }
+        "304": { description: Not modified }
   /api/v1/push/config:
     get:
       operationId: getPushConfig
@@ -452,9 +465,10 @@ components:
         - sampleCount
         - meanCriticalSuccessIndex
         - meanCriticalSuccessIndexSkill
+        - observatory
         - results
       properties:
-        schemaVersion: { type: integer, const: 3 }
+        schemaVersion: { type: integer, const: 4 }
         generatedAt: { type: string, format: date-time }
         algorithmVersion: { type: string }
         latestVerifiedAt: { type: [string, "null"], format: date-time }
@@ -512,6 +526,7 @@ components:
               algorithmVersion: { type: string }
               latestVerifiedAt: { type: string, format: date-time }
               sampleCount: { type: integer, minimum: 0 }
+        observatory: { $ref: "#/components/schemas/PrecisionObservatory" }
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
         results:
           type: array
@@ -566,6 +581,94 @@ components:
                 maxItems: 3
                 items:
                   { $ref: "#/components/schemas/VerificationThresholdScore" }
+    PrecisionObservatoryResponse:
+      type: object
+      required:
+        - schemaVersion
+        - generatedAt
+        - latestVerifiedAt
+        - algorithmVersion
+        - thresholdDbz
+        - sampleCount
+        - totalSampleCount
+        - observatory
+      properties:
+        schemaVersion: { type: integer, minimum: 4 }
+        generatedAt: { type: string, format: date-time }
+        latestVerifiedAt: { type: [string, "null"], format: date-time }
+        algorithmVersion: { type: string }
+        thresholdDbz: { type: number, const: 20 }
+        sampleCount: { type: integer, minimum: 0 }
+        totalSampleCount: { type: integer, minimum: 0 }
+        observatory: { $ref: "#/components/schemas/PrecisionObservatory" }
+        groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
+    PrecisionObservatory:
+      type: object
+      required:
+        - schemaVersion
+        - overallStatus
+        - targetHorizonMinutes
+        - qualityGate
+        - verifiedHorizonCount
+        - horizons
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        overallStatus:
+          {
+            type: string,
+            enum: [collecting, awaiting-rain, verified, degraded],
+          }
+        targetHorizonMinutes:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { type: integer, enum: [15, 30, 45, 60] }
+        qualityGate:
+          type: object
+          required:
+            - minimumSamples
+            - minimumEventPixels
+            - minimumCriticalSuccessIndex
+            - minimumSkillOverPersistence
+          properties:
+            minimumSamples: { type: integer, minimum: 1 }
+            minimumEventPixels: { type: integer, minimum: 1 }
+            minimumCriticalSuccessIndex:
+              { type: number, minimum: 0, maximum: 1 }
+            minimumSkillOverPersistence:
+              { type: number, minimum: -1, maximum: 1 }
+        verifiedHorizonCount: { type: integer, minimum: 0, maximum: 4 }
+        horizons:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { $ref: "#/components/schemas/PrecisionHorizon" }
+    PrecisionHorizon:
+      allOf:
+        - $ref: "#/components/schemas/VerificationSummary"
+        - type: object
+          required:
+            - targetLeadMinutes
+            - windowStartMinutes
+            - windowEndMinutes
+            - status
+            - meetsQualityGate
+            - eventPixelCount
+            - falseAlarmRate
+            - missRate
+          properties:
+            targetLeadMinutes: { type: integer, enum: [15, 30, 45, 60] }
+            windowStartMinutes: { type: integer, minimum: 5, maximum: 60 }
+            windowEndMinutes: { type: integer, minimum: 5, maximum: 60 }
+            status:
+              {
+                type: string,
+                enum: [collecting, awaiting-rain, verified, degraded],
+              }
+            meetsQualityGate: { type: boolean }
+            eventPixelCount: { type: integer, minimum: 0 }
+            falseAlarmRate: { type: [number, "null"], minimum: 0, maximum: 1 }
+            missRate: { type: [number, "null"], minimum: 0, maximum: 1 }
     VerificationSummary:
       type: object
       required:

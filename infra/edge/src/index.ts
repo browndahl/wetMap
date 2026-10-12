@@ -563,6 +563,47 @@ async function nowcast(request: Request, env: Env): Promise<Response> {
   return new Response(object.body, { headers });
 }
 
+function emptyPrecisionObservatory() {
+  return {
+    schemaVersion: 1,
+    overallStatus: "collecting",
+    targetHorizonMinutes: [15, 30, 45, 60],
+    qualityGate: {
+      minimumSamples: 12,
+      minimumEventPixels: 100,
+      minimumCriticalSuccessIndex: 0.2,
+      minimumSkillOverPersistence: 0,
+    },
+    verifiedHorizonCount: 0,
+    horizons: [
+      [15, 10, 20],
+      [30, 25, 35],
+      [45, 40, 50],
+      [60, 55, 60],
+    ].map(([targetLeadMinutes, windowStartMinutes, windowEndMinutes]) => ({
+      targetLeadMinutes,
+      windowStartMinutes,
+      windowEndMinutes,
+      status: "collecting",
+      meetsQualityGate: false,
+      sampleCount: 0,
+      eventPixelCount: 0,
+      validPixels: 0,
+      hits: 0,
+      misses: 0,
+      falseAlarms: 0,
+      precision: null,
+      recall: null,
+      falseAlarmRate: null,
+      missRate: null,
+      criticalSuccessIndex: null,
+      meanDbzMeanAbsoluteError: null,
+      meanCriticalSuccessIndexSkill: null,
+      meanPersistenceCriticalSuccessIndex: null,
+    })),
+  };
+}
+
 async function nowcastQuality(request: Request, env: Env): Promise<Response> {
   const object = await env.RADAR.get("nowcast/verification.json", {
     onlyIf: request.headers,
@@ -570,7 +611,7 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
   if (!object)
     return Response.json(
       {
-        schemaVersion: 3,
+        schemaVersion: 4,
         generatedAt: new Date(0).toISOString(),
         algorithmVersion: "adaptive-optical-flow-persistence-v1",
         thresholdDbz: 20,
@@ -583,6 +624,7 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
         byLeadMinutes: [],
         byThresholdDbz: [],
         byAlgorithmVersion: [],
+        observatory: emptyPrecisionObservatory(),
         results: [],
       },
       { headers: jsonHeaders },
@@ -594,6 +636,62 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
   headers.set("Cache-Control", "public,max-age=300,stale-while-revalidate=900");
   headers.set("X-DMI-Attribution", attributionHeader);
   return new Response(object.body, { headers });
+}
+
+async function precisionObservatory(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const qualityResponse = await nowcastQuality(request, env);
+  if (qualityResponse.status === 304 || !qualityResponse.ok)
+    return qualityResponse;
+  const report = (await qualityResponse.json()) as {
+    schemaVersion: number;
+    generatedAt: string;
+    latestVerifiedAt?: string | null;
+    algorithmVersion: string;
+    thresholdDbz: number;
+    sampleCount: number;
+    totalSampleCount: number;
+    observatory?: unknown;
+    groundGauge?: {
+      observationCount: number;
+      stationComparisonCount: number;
+      hits: number;
+      misses: number;
+      falseAlarms: number;
+      precision: number | null;
+      recall: number | null;
+      criticalSuccessIndex: number | null;
+    };
+  };
+  const headers = new Headers(qualityResponse.headers);
+  headers.delete("Content-Length");
+  return Response.json(
+    {
+      schemaVersion: report.schemaVersion,
+      generatedAt: report.generatedAt,
+      latestVerifiedAt: report.latestVerifiedAt ?? null,
+      algorithmVersion: report.algorithmVersion,
+      thresholdDbz: report.thresholdDbz,
+      sampleCount: report.sampleCount,
+      totalSampleCount: report.totalSampleCount,
+      observatory: report.observatory ?? emptyPrecisionObservatory(),
+      groundGauge: report.groundGauge
+        ? {
+            observationCount: report.groundGauge.observationCount,
+            stationComparisonCount: report.groundGauge.stationComparisonCount,
+            hits: report.groundGauge.hits,
+            misses: report.groundGauge.misses,
+            falseAlarms: report.groundGauge.falseAlarms,
+            precision: report.groundGauge.precision,
+            recall: report.groundGauge.recall,
+            criticalSuccessIndex: report.groundGauge.criticalSuccessIndex,
+          }
+        : undefined,
+    },
+    { headers },
+  );
 }
 
 async function frame(
@@ -1819,6 +1917,8 @@ export default {
       response = await nowcast(request, env);
     else if (url.pathname === "/api/v1/radar/nowcast/quality")
       response = await nowcastQuality(request, env);
+    else if (url.pathname === "/api/v1/radar/nowcast/observatory")
+      response = await precisionObservatory(request, env);
     else if (url.pathname === "/api/v1/weather/forecast")
       response = await forecast(url, env, context);
     else if (url.pathname === "/api/v1/weather/precipitation")

@@ -115,9 +115,79 @@ def test_groups_multiple_forecast_horizons_and_keeps_public_payload_bounded(
     public = public_verification_report(history, recent_results=1)
     assert public["sampleCount"] == 2
     assert public["returnedResultCount"] == 1
+    assert public["schemaVersion"] == 4
+    assert public["observatory"]["targetHorizonMinutes"] == [15, 30, 45, 60]
+    assert public["observatory"]["horizons"][0]["sampleCount"] == 1
     profile = quality_by_lead(history)[15]
     assert profile["opticalFlowSampleCount"] == 1
     assert profile["opticalFlowMeanCriticalSuccessIndexSkill"] == 0.125
+    assert profile["operationalSampleCount"] == 1
+    assert profile["operationalStatus"] == "collecting"
+
+
+def test_observatory_uses_horizon_windows_and_requires_rain_evidence(
+    tmp_path: Path,
+) -> None:
+    base = {
+        "verifiedAt": "2026-10-12T12:31:00Z",
+        "basedOnObservedAt": "2026-10-12T12:00:00Z",
+        "predictedAt": "2026-10-12T12:30:00Z",
+        "observedAt": "2026-10-12T12:30:00Z",
+        "thresholdDbz": 20,
+        "validPixels": 1000,
+        "hits": 0,
+        "misses": 0,
+        "falseAlarms": 0,
+        "correctNegatives": 1000,
+        "precision": None,
+        "recall": None,
+        "criticalSuccessIndex": None,
+        "dbzMeanAbsoluteError": 0.0,
+        "persistenceCriticalSuccessIndex": None,
+        "criticalSuccessIndexSkill": None,
+        "forecastMethod": "optical-flow",
+        "algorithmVersion": ALGORITHM_VERSION,
+        "thresholdScores": [],
+    }
+    dry_results = [
+        {**base, "leadMinutes": lead}
+        for lead in (10, 20, 25, 35, 40, 50, 55, 60)
+        for _sample in range(6)
+    ]
+
+    dry_report = append_verification_history(tmp_path / "dry-history.json", dry_results)
+
+    assert dry_report["observatory"]["overallStatus"] == "awaiting-rain"
+    assert all(
+        horizon["status"] == "awaiting-rain" for horizon in dry_report["observatory"]["horizons"]
+    )
+    assert dry_report["observatory"]["horizons"][0]["sampleCount"] == 12
+
+    wet_base = {
+        **base,
+        "hits": 80,
+        "misses": 10,
+        "falseAlarms": 10,
+        "correctNegatives": 900,
+        "precision": 0.8889,
+        "recall": 0.8889,
+        "criticalSuccessIndex": 0.8,
+        "persistenceCriticalSuccessIndex": 0.6,
+        "criticalSuccessIndexSkill": 0.2,
+        "dbzMeanAbsoluteError": 2.0,
+    }
+    wet_results = [
+        {**wet_base, "leadMinutes": lead}
+        for lead in (10, 20, 25, 35, 40, 50, 55, 60)
+        for _sample in range(6)
+    ]
+    wet_report = append_verification_history(tmp_path / "wet-history.json", wet_results)
+
+    assert wet_report["observatory"]["overallStatus"] == "verified"
+    assert wet_report["observatory"]["verifiedHorizonCount"] == 4
+    assert all(horizon["meetsQualityGate"] for horizon in wet_report["observatory"]["horizons"])
+    assert wet_report["observatory"]["horizons"][0]["falseAlarmRate"] == 0.1111
+    assert wet_report["observatory"]["horizons"][0]["missRate"] == 0.1111
 
 
 def test_tracks_pending_forecasts_for_every_matching_horizon() -> None:

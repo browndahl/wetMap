@@ -1,0 +1,199 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Activity,
+  CheckCircle2,
+  CloudRain,
+  ShieldAlert,
+  X,
+} from "lucide-react";
+import type { PrecisionStatus } from "@wetmap/shared";
+import { getPrecisionObservatory } from "../api";
+import { translate } from "../i18n";
+
+interface Props {
+  locale: "da" | "en";
+}
+
+const formatTime = (value: string, locale: "da" | "en") =>
+  new Intl.DateTimeFormat(locale === "da" ? "da-DK" : "en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Copenhagen",
+  }).format(new Date(value));
+
+const percentage = (value: number | null) =>
+  value === null ? "–" : `${Math.round(value * 100)}%`;
+
+const statusMessageKey = (status: PrecisionStatus) =>
+  status === "verified"
+    ? ("precisionVerified" as const)
+    : status === "awaiting-rain"
+      ? ("precisionAwaitingRain" as const)
+      : status === "degraded"
+        ? ("precisionDegraded" as const)
+        : ("precisionCollecting" as const);
+
+export default function PrecisionObservatory({ locale }: Props) {
+  const [open, setOpen] = useState(false);
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+  const quality = useQuery({
+    queryKey: ["nowcast-quality"],
+    queryFn: ({ signal }) => getPrecisionObservatory(signal),
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: true,
+    retry: 2,
+  });
+  const observatory = quality.data?.observatory;
+  const status: PrecisionStatus = observatory?.overallStatus ?? "collecting";
+  const StatusIcon =
+    status === "verified"
+      ? CheckCircle2
+      : status === "degraded"
+        ? ShieldAlert
+        : Activity;
+  const statusClass = quality.isError ? "is-degraded" : `is-${status}`;
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`quality-trigger glass ${statusClass}`}
+        aria-label={t("precisionOpen")}
+        aria-expanded={open}
+        aria-controls="precision-observatory"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <StatusIcon size={15} aria-hidden="true" />
+        <span>{t("precisionShort")}</span>
+        <i aria-hidden="true" />
+      </button>
+
+      {open && (
+        <aside
+          id="precision-observatory"
+          className="quality-panel glass"
+          aria-labelledby="precision-title"
+        >
+          <header className="quality-header">
+            <div>
+              <span className="eyebrow">
+                <Activity size={14} aria-hidden="true" /> {t("precisionLive")}
+              </span>
+              <h2 id="precision-title">Precision Observatory</h2>
+            </div>
+            <button
+              type="button"
+              aria-label={t("precisionClose")}
+              onClick={() => setOpen(false)}
+            >
+              <X size={17} aria-hidden="true" />
+            </button>
+          </header>
+
+          {quality.isLoading && (
+            <p className="quality-message" role="status">
+              {t("precisionLoading")}
+            </p>
+          )}
+          {quality.isError && (
+            <p className="quality-message is-error">
+              {t("precisionUnavailable")}
+            </p>
+          )}
+
+          {quality.data && (
+            <>
+              <div className={`quality-overview ${statusClass}`}>
+                <StatusIcon size={18} aria-hidden="true" />
+                <div>
+                  <strong>{t(statusMessageKey(status))}</strong>
+                  <span>
+                    {quality.data.sampleCount} {t("precisionVerifications")} ·{" "}
+                    {observatory?.verifiedHorizonCount ?? 0}/4{" "}
+                    {t("precisionHorizonsVerified")}
+                  </span>
+                </div>
+              </div>
+
+              <p className="quality-explanation">
+                {t(
+                  status === "awaiting-rain"
+                    ? "precisionAwaitingRainDetail"
+                    : status === "collecting"
+                      ? "precisionCollectingDetail"
+                      : status === "degraded"
+                        ? "precisionDegradedDetail"
+                        : "precisionVerifiedDetail",
+                )}
+              </p>
+
+              <div className="quality-horizons">
+                {(observatory?.horizons ?? []).map((horizon) => (
+                  <article
+                    className={`quality-horizon is-${horizon.status}`}
+                    key={horizon.targetLeadMinutes}
+                  >
+                    <header>
+                      <strong>+{horizon.targetLeadMinutes} min</strong>
+                      <span>
+                        +{horizon.windowStartMinutes}–{horizon.windowEndMinutes}
+                      </span>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>{t("precisionCsi")}</dt>
+                        <dd>{percentage(horizon.criticalSuccessIndex)}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("precisionFalseAlarms")}</dt>
+                        <dd>{percentage(horizon.falseAlarmRate)}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("precisionMisses")}</dt>
+                        <dd>{percentage(horizon.missRate)}</dd>
+                      </div>
+                    </dl>
+                    <p>
+                      {horizon.sampleCount} {t("precisionSamples")} ·{" "}
+                      {horizon.eventPixelCount.toLocaleString(
+                        locale === "da" ? "da-DK" : "en-GB",
+                      )}{" "}
+                      {t("precisionRainPixels")}
+                    </p>
+                    <em>{t(statusMessageKey(horizon.status))}</em>
+                  </article>
+                ))}
+              </div>
+
+              {!observatory && (
+                <p className="quality-message">{t("precisionWarmingUp")}</p>
+              )}
+
+              <div className="quality-ground">
+                <CloudRain size={15} aria-hidden="true" />
+                <span>
+                  <strong>{t("precisionGroundCheck")}</strong>
+                  {quality.data.groundGauge
+                    ? `${quality.data.groundGauge.stationComparisonCount.toLocaleString(
+                        locale === "da" ? "da-DK" : "en-GB",
+                      )} ${t("precisionStationComparisons")}`
+                    : t("precisionGroundPending")}
+                </span>
+              </div>
+
+              <footer className="quality-footer">
+                <span>
+                  {t("precisionUpdated")}{" "}
+                  {formatTime(quality.data.generatedAt, locale)}
+                </span>
+                <span>20 dBZ · {quality.data.algorithmVersion}</span>
+              </footer>
+            </>
+          )}
+        </aside>
+      )}
+    </>
+  );
+}

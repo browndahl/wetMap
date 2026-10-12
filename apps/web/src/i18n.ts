@@ -102,6 +102,37 @@ const messages = {
     intensityLight: "Let",
     intensityModerate: "Moderat",
     intensityHeavy: "Kraftig",
+    precisionOpen: "Åbn Precision Observatory",
+    precisionClose: "Luk Precision Observatory",
+    precisionShort: "Præcision",
+    precisionLive: "Live kvalitetskontrol",
+    precisionLoading: "Henter verificeringsdata…",
+    precisionUnavailable: "Kvalitetsdata kunne ikke hentes.",
+    precisionVerified: "Dokumenteret kvalitet",
+    precisionAwaitingRain: "Afventer regnhændelser",
+    precisionDegraded: "Kræver opmærksomhed",
+    precisionCollecting: "Indsamler data",
+    precisionVerifications: "verifikationer",
+    precisionHorizonsVerified: "horisonter godkendt",
+    precisionAwaitingRainDetail:
+      "Systemet er aktivt, men tørvejr kan ikke dokumentere regnpræcision. Resultaterne godkendes først efter tilstrækkelige regnhændelser.",
+    precisionCollectingDetail:
+      "Der indsamles stadig nok uafhængige målinger til en stabil vurdering.",
+    precisionDegradedDetail:
+      "Mindst én prognosehorisont ligger under kvalitetsgrænsen. Varsler begrænses automatisk.",
+    precisionVerifiedDetail:
+      "Alle fire prognosehorisonter har tilstrækkelige regndata og består kvalitetsgrænsen.",
+    precisionCsi: "Samlet score",
+    precisionFalseAlarms: "Falske varsler",
+    precisionMisses: "Overset regn",
+    precisionSamples: "målinger",
+    precisionRainPixels: "regnpixels",
+    precisionWarmingUp:
+      "Det nye observatorium initialiseres ved næste radaropdatering.",
+    precisionGroundCheck: "Kontrol mod regnmålere",
+    precisionStationComparisons: "stationssammenligninger",
+    precisionGroundPending: "Afventer stationsdata",
+    precisionUpdated: "Verificeret",
   },
   en: {
     radar: "Radar",
@@ -206,6 +237,37 @@ const messages = {
     intensityLight: "Light",
     intensityModerate: "Moderate",
     intensityHeavy: "Heavy",
+    precisionOpen: "Open Precision Observatory",
+    precisionClose: "Close Precision Observatory",
+    precisionShort: "Precision",
+    precisionLive: "Live quality control",
+    precisionLoading: "Loading verification data…",
+    precisionUnavailable: "Quality data could not be loaded.",
+    precisionVerified: "Verified quality",
+    precisionAwaitingRain: "Awaiting rain events",
+    precisionDegraded: "Needs attention",
+    precisionCollecting: "Collecting data",
+    precisionVerifications: "verifications",
+    precisionHorizonsVerified: "horizons verified",
+    precisionAwaitingRainDetail:
+      "The system is active, but dry weather cannot document rain accuracy. Results are verified only after enough rain events.",
+    precisionCollectingDetail:
+      "The system is still collecting enough independent measurements for a stable assessment.",
+    precisionDegradedDetail:
+      "At least one forecast horizon is below the quality gate. Alerts are restricted automatically.",
+    precisionVerifiedDetail:
+      "All four forecast horizons have enough rain evidence and pass the quality gate.",
+    precisionCsi: "Overall score",
+    precisionFalseAlarms: "False alerts",
+    precisionMisses: "Missed rain",
+    precisionSamples: "samples",
+    precisionRainPixels: "rain pixels",
+    precisionWarmingUp:
+      "The new observatory will initialize on the next radar update.",
+    precisionGroundCheck: "Ground-gauge check",
+    precisionStationComparisons: "station comparisons",
+    precisionGroundPending: "Awaiting station data",
+    precisionUpdated: "Verified",
   },
 } as const;
 

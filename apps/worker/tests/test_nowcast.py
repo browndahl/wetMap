@@ -68,9 +68,7 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     verification_metadata = json.loads(
         (tmp_path / "nowcast/verification-forecast.json").read_text()
     )
-    assert verification_metadata["dataKey"].startswith(
-        "nowcast/verification-cubes/cube-"
-    )
+    assert verification_metadata["dataKey"].startswith("nowcast/verification-cubes/cube-")
     with np.load(tmp_path / "nowcast/verification-cube.npz") as archive:
         assert archive["cube"].shape[-1] == len(LEAD_MINUTES) + 1
 
@@ -93,7 +91,7 @@ def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Pa
         for index, path in enumerate(paths)
     ]
 
-    manifest, _, outputs = generate_nowcast(
+    manifest, risk, outputs = generate_nowcast(
         paths,
         frames,
         tmp_path / "adaptive",
@@ -107,6 +105,10 @@ def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Pa
                 "sampleCount": 20,
                 "criticalSuccessIndex": 0.6,
                 "meanCriticalSuccessIndexSkill": 0.12,
+                "operationalSampleCount": 20,
+                "operationalCriticalSuccessIndex": 0.6,
+                "operationalMeanCriticalSuccessIndexSkill": 0.12,
+                "operationalStatus": "awaiting-rain",
             },
         },
     )
@@ -115,6 +117,7 @@ def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Pa
     assert manifest["frames"][1]["forecastMethod"] == "optical-flow"
     assert manifest["frames"][0]["skillOverPersistence"] == -0.08
     assert manifest["frames"][0]["confidence"] >= 0.55
+    assert risk["frames"][2]["alertEligible"] is False
     with np.load(tmp_path / "adaptive/verification-cube.npz") as archive:
         cube = archive["cube"]
         assert np.array_equal(cube[..., 0], cube[..., 1])
