@@ -339,6 +339,7 @@ describe("forecast edge endpoint", () => {
     expect(body.points[0].step).toBe("2026-10-10T22:00:00.000Z");
     expect(response.headers.get("X-WetMap-Provider")).toBe("dmi-edr");
     expect(response.headers.get("X-WetMap-Fallback")).toBe("none");
+    expect(response.headers.get("X-WetMap-DMI-Outcome")).toBe("success");
     expect(response.headers.get("Server-Timing")).toContain("dmi;dur=");
     expect(upstream).toHaveBeenCalledTimes(1);
     expect(r2.values.has("forecast/v3/56.16/10.20.json")).toBe(true);
@@ -449,6 +450,7 @@ describe("forecast edge endpoint", () => {
     expect(body.source).toBe("open-meteo-dmi");
     expect(body.points[0].temperatureC).toBe(11);
     expect(response.headers.get("X-WetMap-Fallback")).toBe("open-meteo");
+    expect(response.headers.get("X-WetMap-DMI-Outcome")).toBe("http-503");
     expect(upstream).toHaveBeenCalledTimes(2);
   });
 
@@ -477,6 +479,7 @@ describe("forecast edge endpoint", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("X-WetMap-Provider")).toBe("open-meteo-dmi");
     expect(response.headers.get("X-WetMap-Fallback")).toBe("open-meteo");
+    expect(response.headers.get("X-WetMap-DMI-Outcome")).toBe("pending");
     expect(upstream).toHaveBeenCalledTimes(2);
 
     await vi.advanceTimersByTimeAsync(3_500);
@@ -491,6 +494,7 @@ describe("forecast edge endpoint", () => {
     expect(refreshed.headers.get("X-WetMap-Cache")).toBe("HIT");
     expect(refreshed.headers.get("X-WetMap-Provider")).toBe("dmi-edr");
     expect(refreshed.headers.get("X-WetMap-Fallback")).toBe("none");
+    expect(refreshed.headers.get("X-WetMap-DMI-Outcome")).toBe("success");
   });
 
   it("returns a persistent last-known-good forecast while refreshing in the background", async () => {
@@ -654,6 +658,7 @@ describe("next-hour precipitation edge endpoint", () => {
     expect(response.status).toBe(200);
     expect(body.source).toBe("open-meteo-dmi");
     expect(response.headers.get("X-WetMap-Fallback")).toBe("open-meteo");
+    expect(response.headers.get("X-WetMap-DMI-Outcome")).toBe("http-503");
     expect(upstream).toHaveBeenCalledTimes(2);
   });
 

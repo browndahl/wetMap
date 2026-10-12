@@ -40,12 +40,21 @@ interface RequestTelemetry {
   cacheMs?: number;
   r2Ms?: number;
   dmiMs?: number;
+  dmiOutcome?: string;
   openMeteoMs?: number;
   totalMs?: number;
 }
 
 function elapsed(startedAt: number): number {
   return Math.round((performance.now() - startedAt) * 10) / 10;
+}
+
+function dmiOutcome(error: unknown): string {
+  if (error instanceof DOMException && error.name === "TimeoutError")
+    return "timeout";
+  const message = error instanceof Error ? error.message : String(error);
+  const httpStatus = /DMI EDR returned (\d{3})/.exec(message)?.[1];
+  return httpStatus ? `http-${httpStatus}` : "error";
 }
 
 function telemetryHeaders(telemetry: RequestTelemetry): HeadersInit {
@@ -63,6 +72,9 @@ function telemetryHeaders(telemetry: RequestTelemetry): HeadersInit {
     ...(timings ? { "Server-Timing": timings } : {}),
     ...(telemetry.provider ? { "X-WetMap-Provider": telemetry.provider } : {}),
     ...(telemetry.fallback ? { "X-WetMap-Fallback": telemetry.fallback } : {}),
+    ...(telemetry.dmiOutcome
+      ? { "X-WetMap-DMI-Outcome": telemetry.dmiOutcome }
+      : {}),
     "Timing-Allow-Origin": "*",
   };
 }
@@ -81,10 +93,12 @@ async function dmiPrimaryWithFallback<T>(
   const dmiPromise = dmi()
     .then((payload) => {
       telemetry.dmiMs = elapsed(dmiStartedAt);
+      telemetry.dmiOutcome = "success";
       return { payload, provider: "dmi-edr" as const };
     })
     .catch((error: unknown) => {
       telemetry.dmiMs = elapsed(dmiStartedAt);
+      telemetry.dmiOutcome = dmiOutcome(error);
       throw error;
     })
     .finally(() => {
@@ -123,7 +137,10 @@ async function dmiPrimaryWithFallback<T>(
     selected.provider === "open-meteo-dmi" && !dmiSettled
       ? dmiPromise.then((result) => result.payload)
       : undefined;
-  if (telemetry.dmiMs === undefined) telemetry.dmiMs = elapsed(dmiStartedAt);
+  if (telemetry.dmiMs === undefined) {
+    telemetry.dmiMs = elapsed(dmiStartedAt);
+    telemetry.dmiOutcome = "pending";
+  }
   return { payload: selected.payload, telemetry, backgroundDmi };
 }
 
@@ -250,7 +267,7 @@ function cors(origin: string, env: Env): HeadersInit {
     ? {
         "Access-Control-Allow-Origin": origin,
         "Access-Control-Expose-Headers":
-          "Server-Timing,X-WetMap-Provider,X-WetMap-Fallback,X-WetMap-Cache",
+          "Server-Timing,X-WetMap-Provider,X-WetMap-Fallback,X-WetMap-DMI-Outcome,X-WetMap-Cache",
         Vary: "Origin",
       }
     : {};
@@ -875,6 +892,7 @@ async function refreshForecast(
             provider: "dmi-edr",
             fallback: "none",
             dmiMs: telemetry.dmiMs,
+            dmiOutcome: "success",
             totalMs: elapsed(startedAt),
           };
           const dmiResponse = new Response(dmiBody, {
@@ -1392,6 +1410,7 @@ async function refreshPrecipitation(
             provider: "dmi-edr",
             fallback: "none",
             dmiMs: telemetry.dmiMs,
+            dmiOutcome: "success",
             totalMs: elapsed(startedAt),
           };
           const dmiResponse = new Response(dmiBody, {
