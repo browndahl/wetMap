@@ -290,6 +290,7 @@ def append_gauge_history(
         misses = sum(entry["misses"] for entry in entries)
         false_alarms = sum(entry["falseAlarms"] for entry in entries)
         correct_negatives = sum(entry["correctNegatives"] for entry in entries)
+        trace_stations = sum(int(entry.get("traceStationCount", 0)) for entry in entries)
         return {
             "observationCount": len(entries),
             "stationComparisonCount": hits
@@ -300,6 +301,7 @@ def append_gauge_history(
             "misses": misses,
             "falseAlarms": false_alarms,
             "correctNegatives": correct_negatives,
+            "traceStationCount": trace_stations,
             "precision": _ratio(hits, hits + false_alarms),
             "recall": _ratio(hits, hits + misses),
             "criticalSuccessIndex": _ratio(hits, hits + misses + false_alarms),

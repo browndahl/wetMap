@@ -625,6 +625,7 @@ components:
         misses: { type: integer, minimum: 0 }
         falseAlarms: { type: integer, minimum: 0 }
         correctNegatives: { type: integer, minimum: 0 }
+        traceStationCount: { type: integer, minimum: 0 }
         precision: { type: [number, "null"], minimum: 0, maximum: 1 }
         recall: { type: [number, "null"], minimum: 0, maximum: 1 }
         criticalSuccessIndex: { type: [number, "null"], minimum: 0, maximum: 1 }

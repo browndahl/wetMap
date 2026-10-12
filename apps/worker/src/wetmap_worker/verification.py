@@ -368,7 +368,7 @@ def public_verification_report(
 
 
 def quality_by_lead(history: dict[str, Any] | None) -> dict[int, dict[str, Any]]:
-    if not history:
+    if not history or history.get("algorithmVersion") != ALGORITHM_VERSION:
         return {}
     profiles: dict[int, dict[str, Any]] = {}
     for entry in history.get("byLeadMinutes", []):

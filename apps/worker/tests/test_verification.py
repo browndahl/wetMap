@@ -101,6 +101,7 @@ def test_groups_multiple_forecast_horizons_and_keeps_public_payload_bounded(
         "persistenceCriticalSuccessIndex": 0.5,
         "criticalSuccessIndexSkill": 0.125,
         "forecastMethod": "optical-flow",
+        "algorithmVersion": ALGORITHM_VERSION,
         "thresholdScores": [],
     }
     results = [
@@ -193,3 +194,26 @@ def test_keeps_algorithm_versions_in_separate_quality_cohorts(tmp_path: Path) ->
     assert len(report["byAlgorithmVersion"]) == 2
     assert public["returnedResultCount"] == 1
     assert public["results"][0]["algorithmVersion"] == ALGORITHM_VERSION
+
+
+def test_does_not_calibrate_current_forecasts_from_legacy_results(tmp_path: Path) -> None:
+    legacy = {
+        "verifiedAt": "2026-10-12T12:10:00Z",
+        "basedOnObservedAt": "2026-10-12T12:00:00Z",
+        "predictedAt": "2026-10-12T12:10:00Z",
+        "observedAt": "2026-10-12T12:10:00Z",
+        "leadMinutes": 10,
+        "validPixels": 100,
+        "hits": 8,
+        "misses": 2,
+        "falseAlarms": 2,
+        "criticalSuccessIndex": 0.6667,
+        "criticalSuccessIndexSkill": 0.1667,
+        "forecastMethod": "optical-flow",
+        "thresholdScores": [],
+    }
+
+    report = append_verification_history(tmp_path / "history.json", legacy)
+
+    assert report["algorithmVersion"] == "legacy-unversioned"
+    assert quality_by_lead(report) == {}
