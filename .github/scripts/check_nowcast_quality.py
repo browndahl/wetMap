@@ -91,3 +91,38 @@ if consistency:
         f"{consistency['locationCount']} locations and "
         f"{consistency['frameCount']} frames"
     )
+
+for candidate in report.get("shadowCandidates", []):
+    if candidate.get("candidateId") != "trajectory-recency-flow-v1":
+        raise SystemExit(f"Unknown shadow nowcast candidate {candidate.get('candidateId')}")
+    lead_entries = candidate.get("byLeadMinutes", [])
+    candidate_leads = {int(entry["leadMinutes"]) for entry in lead_entries}
+    if not candidate_leads.issubset({45, 50, 55, 60}):
+        raise SystemExit(f"Shadow candidate has invalid leads {sorted(candidate_leads)}")
+    for entry in lead_entries:
+        if entry.get("status") not in {
+            "collecting",
+            "awaiting-rain",
+            "promotable",
+            "held-back",
+        }:
+            raise SystemExit("Shadow candidate has an invalid promotion status")
+        if not entry.get("safeToPromote"):
+            continue
+        if int(entry.get("sampleCount", 0)) < 48:
+            raise SystemExit("Shadow candidate promoted without 48 paired samples")
+        if int(entry.get("eventPixelCount", 0)) < 1000:
+            raise SystemExit("Shadow candidate promoted without enough rain evidence")
+        if float(entry.get("criticalSuccessIndex", -1)) < 0.2:
+            raise SystemExit("Shadow candidate promoted below the CSI floor")
+        if float(entry.get("criticalSuccessIndexImprovement", -1)) < 0.02:
+            raise SystemExit("Shadow candidate promoted without enough CSI improvement")
+        if float(entry.get("meanCriticalSuccessIndexSkill", -1)) < 0:
+            raise SystemExit("Shadow candidate promoted below persistence skill")
+        if float(entry.get("falseAlarmRateIncrease", 1)) > 0.02:
+            raise SystemExit("Shadow candidate promoted with too many additional false alarms")
+    print(
+        "Shadow nowcast candidate measured at leads "
+        f"{sorted(candidate_leads)}; promoted "
+        f"{candidate.get('safeToPromoteLeadMinutes', [])}"
+    )

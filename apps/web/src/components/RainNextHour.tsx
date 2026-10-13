@@ -416,7 +416,10 @@ export default function RainNextHour({
                               ? ` · ${t(
                                   point.forecastMethod === "persistence"
                                     ? "nowcastPersistence"
-                                    : "nowcastOpticalFlow",
+                                    : point.forecastMethod ===
+                                        "trajectory-optical-flow"
+                                      ? "nowcastTrajectory"
+                                      : "nowcastOpticalFlow",
                                 )}`
                               : ""
                           }`

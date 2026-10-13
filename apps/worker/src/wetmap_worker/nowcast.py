@@ -17,6 +17,11 @@ from .model import ATTRIBUTION, Frame
 
 METHOD = "adaptive-optical-flow-persistence"
 ALGORITHM_VERSION = "adaptive-optical-flow-persistence-v1"
+SHADOW_CANDIDATE_ID = "trajectory-recency-flow-v1"
+SHADOW_CANDIDATE_METHOD = "trajectory-optical-flow"
+SHADOW_CANDIDATE_CUBE_KEY = "trajectoryRecency"
+SHADOW_BASELINE_CUBE_KEY = "baselineOpticalFlow"
+SHADOW_MINIMUM_LEAD_MINUTES = 45
 LEAD_MINUTES = tuple(range(5, 61, 5))
 RISK_WIDTH = 128
 RISK_HEIGHT = 96
@@ -29,6 +34,10 @@ ALERT_MINIMUM_VALIDATION_SAMPLES = 12
 ALERT_MINIMUM_CSI = 0.2
 ALERT_MINIMUM_SKILL = 0.0
 ALERT_MINIMUM_CONFIDENCE = 0.55
+SHADOW_PROMOTION_MINIMUM_SAMPLES = 48
+SHADOW_PROMOTION_MINIMUM_EVENT_PIXELS = 1_000
+SHADOW_PROMOTION_MINIMUM_CSI_IMPROVEMENT = 0.02
+SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE = 0.02
 
 
 def _parse_time(value: str) -> datetime:
@@ -40,7 +49,12 @@ def _radar_signal(rgba: np.ndarray) -> np.ndarray:
     return cv2.GaussianBlur(rgba[..., 3], (5, 5), 0)
 
 
-def _dense_motion(images: list[np.ndarray], intervals_minutes: list[float]) -> np.ndarray:
+def _dense_motion(
+    images: list[np.ndarray],
+    intervals_minutes: list[float],
+    *,
+    recency_weighted: bool = False,
+) -> np.ndarray:
     height, width = images[-1].shape[:2]
     scale = min(1.0, 700 / max(height, width))
     signals = [
@@ -69,7 +83,11 @@ def _dense_motion(images: list[np.ndarray], intervals_minutes: list[float]) -> n
             signals[:-1], signals[1:], intervals_minutes, strict=True
         )
     ]
-    flow = np.mean(flows_per_minute, axis=0)
+    if recency_weighted:
+        weights = np.arange(1, len(flows_per_minute) + 1, dtype=np.float32)
+        flow = np.average(np.stack(flows_per_minute), axis=0, weights=weights)
+    else:
+        flow = np.mean(flows_per_minute, axis=0)
     if scale != 1:
         flow = cv2.resize(flow, (width, height), interpolation=cv2.INTER_LINEAR) / scale
     flow[..., 0] = cv2.GaussianBlur(flow[..., 0], (21, 21), 0)
@@ -91,6 +109,60 @@ def _advect(rgba: np.ndarray, flow: np.ndarray, steps: float) -> np.ndarray:
         interpolation=cv2.INTER_LINEAR,
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=(0, 0, 0, 0),
+    )
+
+
+def _advect_trajectory(rgba: np.ndarray, flow: np.ndarray, steps: float) -> np.ndarray:
+    """Backtrace through a spatially varying flow field with a midpoint step."""
+    height, width = rgba.shape[:2]
+    x, y = np.meshgrid(
+        np.arange(width, dtype=np.float32),
+        np.arange(height, dtype=np.float32),
+    )
+    midpoint_x = x - flow[..., 0] * steps * 0.5
+    midpoint_y = y - flow[..., 1] * steps * 0.5
+    midpoint_flow_x = cv2.remap(
+        flow[..., 0],
+        midpoint_x,
+        midpoint_y,
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+    midpoint_flow_y = cv2.remap(
+        flow[..., 1],
+        midpoint_x,
+        midpoint_y,
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+    return cv2.remap(
+        rgba,
+        x - midpoint_flow_x * steps,
+        y - midpoint_flow_y * steps,
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0, 0),
+    )
+
+
+def _promoted_shadow_candidate(quality: dict[str, Any], lead_minutes: int) -> bool:
+    if lead_minutes < SHADOW_MINIMUM_LEAD_MINUTES:
+        return False
+    return any(
+        candidate.get("candidateId") == SHADOW_CANDIDATE_ID
+        and candidate.get("safeToPromote") is True
+        for candidate in quality.get("shadowCandidates", [])
+    )
+
+
+def _shadow_candidate_quality(quality: dict[str, Any]) -> dict[str, Any]:
+    return next(
+        (
+            candidate
+            for candidate in quality.get("shadowCandidates", [])
+            if candidate.get("candidateId") == SHADOW_CANDIDATE_ID
+        ),
+        {},
     )
 
 
@@ -152,6 +224,7 @@ def generate_nowcast(
         for previous, current in zip(observation_times[:-1], observation_times[1:], strict=True)
     ]
     flow = _dense_motion(images, intervals_minutes)
+    trajectory_flow = _dense_motion(images, intervals_minutes, recency_weighted=True)
     generated_at = datetime.now(latest_time.tzinfo).isoformat().replace("+00:00", "Z")
     output_directory.mkdir(parents=True, exist_ok=True)
 
@@ -173,6 +246,8 @@ def generate_nowcast(
     verification_frames = [
         _reflectivity_grid(latest[..., 3], VERIFICATION_GRID_WIDTH, VERIFICATION_GRID_HEIGHT)
     ]
+    trajectory_verification_frames = [verification_frames[0]]
+    baseline_verification_frames = [verification_frames[0]]
     point_frame_entries: list[dict[str, Any]] = [
         {
             "leadMinutes": 0,
@@ -183,7 +258,14 @@ def generate_nowcast(
     output_paths: list[Path] = []
     for lead_minutes in LEAD_MINUTES:
         optical_flow_prediction = _advect(latest, flow, lead_minutes)
+        trajectory_prediction = (
+            _advect_trajectory(latest, trajectory_flow, lead_minutes)
+            if lead_minutes >= SHADOW_MINIMUM_LEAD_MINUTES
+            else optical_flow_prediction
+        )
         quality = (quality_by_lead or {}).get(lead_minutes, {})
+        candidate_quality = _shadow_candidate_quality(quality)
+        use_shadow_candidate = _promoted_shadow_candidate(quality, lead_minutes)
         operational_status = quality.get("operationalStatus")
         raw_validation_samples = int(
             quality.get("opticalFlowSampleCount", quality.get("sampleCount", 0)) or 0
@@ -199,10 +281,21 @@ def generate_nowcast(
             and isinstance(raw_skill, (int, float))
             and raw_skill <= -0.02
         )
-        raw_prediction = latest.copy() if use_persistence else optical_flow_prediction
-        forecast_method = "persistence" if use_persistence else "optical-flow"
+        if use_shadow_candidate:
+            raw_prediction = trajectory_prediction
+            forecast_method = SHADOW_CANDIDATE_METHOD
+            validation_samples = int(candidate_quality.get("sampleCount", 0) or 0)
+            skill = candidate_quality.get("meanCriticalSuccessIndexSkill")
+        elif use_persistence:
+            raw_prediction = latest.copy()
+            forecast_method = "persistence"
+        else:
+            raw_prediction = optical_flow_prediction
+            forecast_method = "optical-flow"
         heuristic_confidence = max(0.25, math.exp(-lead_minutes / 75))
-        if use_persistence:
+        if use_shadow_candidate:
+            verified_csi = candidate_quality.get("criticalSuccessIndex")
+        elif use_persistence:
             verified_csi = quality.get(
                 "persistenceCriticalSuccessIndex",
                 quality.get(
@@ -215,8 +308,10 @@ def generate_nowcast(
                 "opticalFlowCriticalSuccessIndex",
                 quality.get("criticalSuccessIndex"),
             )
-        verified_csi = quality.get("operationalCriticalSuccessIndex", verified_csi)
-        evidence_ready = operational_status in (None, "verified", "degraded")
+        if not use_shadow_candidate:
+            verified_csi = quality.get("operationalCriticalSuccessIndex", verified_csi)
+        effective_operational_status = "verified" if use_shadow_candidate else operational_status
+        evidence_ready = effective_operational_status in (None, "verified", "degraded")
         if evidence_ready and validation_samples >= 6 and isinstance(verified_csi, (int, float)):
             empirical_confidence = min(0.95, max(0.2, 0.2 + 0.75 * verified_csi))
             empirical_weight = min(0.8, validation_samples / 60)
@@ -228,7 +323,7 @@ def generate_nowcast(
             confidence = heuristic_confidence
         confidence = round(min(0.95, max(0.2, confidence)), 2)
         alert_eligible = (
-            operational_status in (None, "verified")
+            effective_operational_status in (None, "verified")
             and validation_samples >= ALERT_MINIMUM_VALIDATION_SAMPLES
             and isinstance(verified_csi, (int, float))
             and verified_csi >= ALERT_MINIMUM_CSI
@@ -254,6 +349,20 @@ def generate_nowcast(
         verification_frames.append(
             _reflectivity_grid(
                 raw_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        baseline_verification_frames.append(
+            _reflectivity_grid(
+                optical_flow_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        trajectory_verification_frames.append(
+            _reflectivity_grid(
+                trajectory_prediction[..., 3],
                 VERIFICATION_GRID_WIDTH,
                 VERIFICATION_GRID_HEIGHT,
             )
@@ -371,10 +480,18 @@ def generate_nowcast(
     np.savez_compressed(
         verification_cube_path,
         cube=np.stack(verification_frames, axis=-1),
+        **{
+            SHADOW_BASELINE_CUBE_KEY: np.stack(
+                baseline_verification_frames, axis=-1
+            ),
+            SHADOW_CANDIDATE_CUBE_KEY: np.stack(
+                trajectory_verification_frames, axis=-1
+            )
+        },
     )
     verification_slot = int(latest_time.timestamp() // 300) % VERIFICATION_RING_SLOTS
     verification_forecast = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": generated_at,
         "basedOnObservedAt": latest_frame.observedAt,
         "method": METHOD,
@@ -386,6 +503,20 @@ def generate_nowcast(
         "encoding": "npz-pixel-major-uint8-dbz-plus-32",
         "dataKey": f"nowcast/verification-cubes/cube-{verification_slot:02d}.npz",
         "frames": point_frame_entries,
+        "shadowCandidates": [
+            {
+                "candidateId": SHADOW_CANDIDATE_ID,
+                "forecastMethod": SHADOW_CANDIDATE_METHOD,
+                "cubeKey": SHADOW_CANDIDATE_CUBE_KEY,
+                "baselineCubeKey": SHADOW_BASELINE_CUBE_KEY,
+                "minimumLeadMinutes": SHADOW_MINIMUM_LEAD_MINUTES,
+                "frames": [
+                    {**frame, "cubeFrameIndex": index}
+                    for index, frame in enumerate(point_frame_entries)
+                    if int(frame["leadMinutes"]) >= SHADOW_MINIMUM_LEAD_MINUTES
+                ],
+            }
+        ],
         "sha256": hashlib.sha256(verification_cube_path.read_bytes()).hexdigest(),
     }
     (output_directory / "verification-forecast.json").write_text(

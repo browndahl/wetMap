@@ -212,6 +212,7 @@ describe("radar nowcast edge endpoint", () => {
       schemaVersion: number;
       thresholdsDbz: number[];
       byLeadMinutes: unknown[];
+      shadowCandidates: unknown[];
       observatory: {
         overallStatus: string;
         targetHorizonMinutes: number[];
@@ -223,6 +224,7 @@ describe("radar nowcast edge endpoint", () => {
     expect(body.schemaVersion).toBe(5);
     expect(body.thresholdsDbz).toEqual([5, 10, 15, 20, 35]);
     expect(body.byLeadMinutes).toEqual([]);
+    expect(body.shadowCandidates).toEqual([]);
     expect(body.observatory.overallStatus).toBe("collecting");
     expect(body.observatory.targetHorizonMinutes).toEqual([15, 30, 45, 60]);
     expect(body.observatory.horizons).toHaveLength(4);
@@ -248,6 +250,14 @@ describe("radar nowcast edge endpoint", () => {
           verifiedHorizonCount: 0,
           horizons: [],
         },
+        shadowCandidates: [
+          {
+            candidateId: "trajectory-recency-flow-v1",
+            forecastMethod: "trajectory-optical-flow",
+            safeToPromoteLeadMinutes: [],
+            byLeadMinutes: [],
+          },
+        ],
         groundGauge: {
           observationCount: 12,
           stationComparisonCount: 1260,
@@ -295,6 +305,7 @@ describe("radar nowcast edge endpoint", () => {
         status: string;
         comparisonCount: number;
       };
+      shadowCandidates: Array<{ candidateId: string }>;
       results?: unknown[];
     };
 
@@ -305,6 +316,9 @@ describe("radar nowcast edge endpoint", () => {
     expect(body.groundGauge.calibration.appliedThresholdDbz).toBe(20);
     expect(body.geographicConsistency.status).toBe("verified");
     expect(body.geographicConsistency.comparisonCount).toBe(260);
+    expect(body.shadowCandidates[0].candidateId).toBe(
+      "trajectory-recency-flow-v1",
+    );
     expect(body.groundGauge.results).toBeUndefined();
     expect(body.results).toBeUndefined();
   });

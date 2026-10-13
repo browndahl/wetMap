@@ -281,7 +281,11 @@ components:
         product: { type: string, const: DBZH_NOWCAST }
         unit: { type: string, const: dBZ }
         confidence: { type: number, minimum: 0, maximum: 1 }
-        forecastMethod: { type: string, enum: [optical-flow, persistence] }
+        forecastMethod:
+          {
+            type: string,
+            enum: [optical-flow, persistence, trajectory-optical-flow],
+          }
         validationSamples: { type: integer, minimum: 0 }
         verificationCsi: { type: [number, "null"], minimum: 0, maximum: 1 }
         skillOverPersistence:
@@ -381,7 +385,10 @@ components:
         reflectivityDbz: { type: [number, "null"] }
         confidence: { type: [number, "null"], minimum: 0, maximum: 1 }
         forecastMethod:
-          { type: [string, "null"], enum: [optical-flow, persistence, null] }
+          {
+            type: [string, "null"],
+            enum: [optical-flow, persistence, trajectory-optical-flow, null],
+          }
     RainEta:
       type: object
       required:
@@ -495,7 +502,7 @@ components:
                   leadMinutes: { type: integer, minimum: 5, maximum: 60 }
                   byForecastMethod:
                     type: array
-                    maxItems: 2
+                    maxItems: 3
                     items:
                       allOf:
                         - $ref: "#/components/schemas/VerificationSummary"
@@ -505,7 +512,12 @@ components:
                             forecastMethod:
                               {
                                 type: string,
-                                enum: [optical-flow, persistence],
+                                enum:
+                                  [
+                                    optical-flow,
+                                    persistence,
+                                    trajectory-optical-flow,
+                                  ],
                               }
         byThresholdDbz:
           type: array
@@ -531,6 +543,9 @@ components:
           type: array
           maxItems: 4
           items: { $ref: "#/components/schemas/PrecisionObservatory" }
+        shadowCandidates:
+          type: array
+          items: { $ref: "#/components/schemas/ShadowCandidateQuality" }
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
         geographicConsistency:
           { $ref: "#/components/schemas/GeographicConsistencyQuality" }
@@ -581,7 +596,10 @@ components:
                 { type: [number, "null"], minimum: -1, maximum: 1 }
               dbzMeanAbsoluteError: { type: number, minimum: 0 }
               forecastMethod:
-                { type: string, enum: [optical-flow, persistence] }
+                {
+                  type: string,
+                  enum: [optical-flow, persistence, trajectory-optical-flow],
+                }
               thresholdScores:
                 type: array
                 maxItems: 5
@@ -607,9 +625,85 @@ components:
         sampleCount: { type: integer, minimum: 0 }
         totalSampleCount: { type: integer, minimum: 0 }
         observatory: { $ref: "#/components/schemas/PrecisionObservatory" }
+        shadowCandidates:
+          type: array
+          items: { $ref: "#/components/schemas/ShadowCandidateQuality" }
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
         geographicConsistency:
           { $ref: "#/components/schemas/GeographicConsistencyQuality" }
+    ShadowCandidateQuality:
+      type: object
+      required:
+        - candidateId
+        - forecastMethod
+        - minimumLeadMinutes
+        - promotionGate
+        - safeToPromoteLeadMinutes
+        - byLeadMinutes
+      properties:
+        candidateId: { type: string, const: trajectory-recency-flow-v1 }
+        forecastMethod: { type: string, const: trajectory-optical-flow }
+        minimumLeadMinutes: { type: integer, const: 45 }
+        promotionGate:
+          type: object
+          required:
+            - minimumSamples
+            - minimumEventPixels
+            - minimumCriticalSuccessIndex
+            - minimumCriticalSuccessIndexImprovement
+            - minimumSkillOverPersistence
+            - maximumFalseAlarmRateIncrease
+          properties:
+            minimumSamples: { type: integer, minimum: 1 }
+            minimumEventPixels: { type: integer, minimum: 1 }
+            minimumCriticalSuccessIndex:
+              { type: number, minimum: 0, maximum: 1 }
+            minimumCriticalSuccessIndexImprovement:
+              { type: number, minimum: 0, maximum: 1 }
+            minimumSkillOverPersistence:
+              { type: number, minimum: -1, maximum: 1 }
+            maximumFalseAlarmRateIncrease:
+              { type: number, minimum: -1, maximum: 1 }
+        safeToPromoteLeadMinutes:
+          type: array
+          maxItems: 4
+          items: { type: integer, enum: [45, 50, 55, 60] }
+        byLeadMinutes:
+          type: array
+          maxItems: 4
+          items: { $ref: "#/components/schemas/ShadowCandidateLeadQuality" }
+    ShadowCandidateLeadQuality:
+      allOf:
+        - $ref: "#/components/schemas/VerificationSummary"
+        - type: object
+          required:
+            - leadMinutes
+            - status
+            - safeToPromote
+            - eventPixelCount
+            - falseAlarmRate
+            - baselineFalseAlarmRate
+            - falseAlarmRateIncrease
+            - baselineCriticalSuccessIndex
+            - criticalSuccessIndexImprovement
+          properties:
+            leadMinutes: { type: integer, enum: [45, 50, 55, 60] }
+            status:
+              {
+                type: string,
+                enum: [collecting, awaiting-rain, promotable, held-back],
+              }
+            safeToPromote: { type: boolean }
+            eventPixelCount: { type: integer, minimum: 0 }
+            falseAlarmRate: { type: [number, "null"], minimum: 0, maximum: 1 }
+            baselineFalseAlarmRate:
+              { type: [number, "null"], minimum: 0, maximum: 1 }
+            falseAlarmRateIncrease:
+              { type: [number, "null"], minimum: -1, maximum: 1 }
+            baselineCriticalSuccessIndex:
+              { type: [number, "null"], minimum: 0, maximum: 1 }
+            criticalSuccessIndexImprovement:
+              { type: [number, "null"], minimum: -1, maximum: 1 }
     GeographicConsistencyQuality:
       type: object
       required:

@@ -4,11 +4,12 @@ import {
   Activity,
   CheckCircle2,
   CloudRain,
+  FlaskConical,
   MapPinned,
   ShieldAlert,
   X,
 } from "lucide-react";
-import type { PrecisionStatus } from "@wetmap/shared";
+import type { PrecisionStatus, ShadowCandidateStatus } from "@wetmap/shared";
 import { getPrecisionObservatory } from "../api";
 import { translate } from "../i18n";
 
@@ -35,6 +36,15 @@ const statusMessageKey = (status: PrecisionStatus) =>
         ? ("precisionDegraded" as const)
         : ("precisionCollecting" as const);
 
+const shadowStatusMessageKey = (status: ShadowCandidateStatus) =>
+  status === "promotable"
+    ? ("precisionShadowPromotable" as const)
+    : status === "held-back"
+      ? ("precisionShadowHeldBack" as const)
+      : status === "awaiting-rain"
+        ? ("precisionShadowAwaitingRain" as const)
+        : ("precisionShadowCollecting" as const);
+
 export default function PrecisionObservatory({ locale }: Props) {
   const [open, setOpen] = useState(false);
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
@@ -50,6 +60,9 @@ export default function PrecisionObservatory({ locale }: Props) {
   const groundGauge = quality.data?.groundGauge;
   const calibration = groundGauge?.calibration;
   const geographicConsistency = quality.data?.geographicConsistency;
+  const shadowCandidate = quality.data?.shadowCandidates?.find(
+    (candidate) => candidate.candidateId === "trajectory-recency-flow-v1",
+  );
   const groundGaugeEvents = groundGauge
     ? groundGauge.hits + groundGauge.misses
     : 0;
@@ -215,6 +228,56 @@ export default function PrecisionObservatory({ locale }: Props) {
                       {t("precisionValueMismatches")}
                     </small>
                   </div>
+                </section>
+              )}
+
+              {shadowCandidate && (
+                <section className="quality-shadow">
+                  <header>
+                    <span>
+                      <FlaskConical size={15} aria-hidden="true" />
+                      <strong>{t("precisionShadowTitle")}</strong>
+                    </span>
+                    <em>{t("precisionShadowLive")}</em>
+                  </header>
+                  <p>{t("precisionShadowDetail")}</p>
+                  <div>
+                    {shadowCandidate.byLeadMinutes.map((lead) => (
+                      <article
+                        className={`is-${lead.status}`}
+                        key={lead.leadMinutes}
+                      >
+                        <header>
+                          <strong>+{lead.leadMinutes} min</strong>
+                          <span>{t(shadowStatusMessageKey(lead.status))}</span>
+                        </header>
+                        <dl>
+                          <div>
+                            <dt>{t("precisionImprovement")}</dt>
+                            <dd>
+                              {lead.criticalSuccessIndexImprovement === null
+                                ? "–"
+                                : `${lead.criticalSuccessIndexImprovement >= 0 ? "+" : ""}${Math.round(lead.criticalSuccessIndexImprovement * 100)} pp`}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>{t("precisionFalseAlarmChange")}</dt>
+                            <dd>
+                              {lead.falseAlarmRateIncrease === null
+                                ? "–"
+                                : `${lead.falseAlarmRateIncrease >= 0 ? "+" : ""}${Math.round(lead.falseAlarmRateIncrease * 100)} pp`}
+                            </dd>
+                          </div>
+                        </dl>
+                        <small>
+                          {lead.sampleCount}/
+                          {shadowCandidate.promotionGate.minimumSamples}{" "}
+                          {t("precisionSamples")}
+                        </small>
+                      </article>
+                    ))}
+                  </div>
+                  <small>{t("precisionShadowSafety")}</small>
                 </section>
               )}
 

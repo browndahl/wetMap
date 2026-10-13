@@ -626,6 +626,7 @@ async function nowcastQuality(request: Request, env: Env): Promise<Response> {
         byLeadMinutes: [],
         byThresholdDbz: [],
         byAlgorithmVersion: [],
+        shadowCandidates: [],
         observatory: emptyPrecisionObservatory(),
         results: [],
       },
@@ -656,6 +657,7 @@ async function precisionObservatory(
     sampleCount: number;
     totalSampleCount: number;
     observatory?: unknown;
+    shadowCandidates?: unknown;
     groundGauge?: {
       observationCount: number;
       stationComparisonCount: number;
@@ -681,6 +683,7 @@ async function precisionObservatory(
       sampleCount: report.sampleCount,
       totalSampleCount: report.totalSampleCount,
       observatory: report.observatory ?? emptyPrecisionObservatory(),
+      shadowCandidates: report.shadowCandidates ?? [],
       groundGauge: report.groundGauge
         ? {
             observationCount: report.groundGauge.observationCount,

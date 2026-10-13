@@ -427,7 +427,10 @@ export default function App() {
                           ? ` · ${t(
                               activeFrame.forecastMethod === "persistence"
                                 ? "nowcastPersistence"
-                                : "nowcastOpticalFlow",
+                                : activeFrame.forecastMethod ===
+                                    "trajectory-optical-flow"
+                                  ? "nowcastTrajectory"
+                                  : "nowcastOpticalFlow",
                             )}`
                           : ""}
                       </span>

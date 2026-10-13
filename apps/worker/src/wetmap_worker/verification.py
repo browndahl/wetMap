@@ -15,6 +15,11 @@ from .nowcast import (
     ALERT_MINIMUM_SKILL,
     ALERT_MINIMUM_VALIDATION_SAMPLES,
     ALGORITHM_VERSION,
+    SHADOW_MINIMUM_LEAD_MINUTES,
+    SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE,
+    SHADOW_PROMOTION_MINIMUM_CSI_IMPROVEMENT,
+    SHADOW_PROMOTION_MINIMUM_EVENT_PIXELS,
+    SHADOW_PROMOTION_MINIMUM_SAMPLES,
     _parse_time,
     _reflectivity_grid,
 )
@@ -118,9 +123,15 @@ def verify_previous_nowcast(
     cube_bytes = cube_path.read_bytes()
     if metadata.get("sha256") and hashlib.sha256(cube_bytes).hexdigest() != metadata["sha256"]:
         raise ValueError("Archived verification cube checksum mismatch")
+    shadow_cubes: dict[str, np.ndarray] = {}
     if metadata.get("encoding") == "npz-pixel-major-uint8-dbz-plus-32":
         with np.load(cube_path, allow_pickle=False) as archive:
             cube = archive["cube"]
+            for shadow_candidate in metadata.get("shadowCandidates", []):
+                for key_name in ("cubeKey", "baselineCubeKey"):
+                    cube_key = str(shadow_candidate.get(key_name, ""))
+                    if cube_key and cube_key in archive:
+                        shadow_cubes[cube_key] = archive[cube_key]
     else:
         cube = np.frombuffer(cube_bytes, dtype=np.uint8)
         if cube.size != width * height * frame_count:
@@ -151,7 +162,71 @@ def verify_previous_nowcast(
     primary = next(
         score for score in threshold_scores if score["thresholdDbz"] == SIGNIFICANT_ECHO_DBZ
     )
-    return {
+    shadow_candidate_scores: list[dict[str, Any]] = []
+    for shadow_candidate in metadata.get("shadowCandidates", []):
+        shadow_frame = next(
+            (
+                frame
+                for frame in shadow_candidate.get("frames", [])
+                if int(frame.get("leadMinutes", 0)) > 0
+                and abs((_parse_time(frame["predictedAt"]) - observed_time).total_seconds())
+                <= FORECAST_MATCH_TOLERANCE_SECONDS
+            ),
+            None,
+        )
+        candidate_cube = shadow_cubes.get(str(shadow_candidate.get("cubeKey", "")))
+        baseline_cube = shadow_cubes.get(
+            str(shadow_candidate.get("baselineCubeKey", "")), cube
+        )
+        if shadow_frame is None or candidate_cube is None:
+            continue
+        if candidate_cube.shape != (height, width, frame_count) or candidate_cube.dtype != np.uint8:
+            raise ValueError("Archived shadow verification cube has an unexpected shape or type")
+        if baseline_cube.shape != (height, width, frame_count) or baseline_cube.dtype != np.uint8:
+            raise ValueError("Archived shadow baseline cube has an unexpected shape or type")
+        shadow_index = int(shadow_frame.get("cubeFrameIndex", candidate_index))
+        if shadow_index < 0 or shadow_index >= frame_count:
+            raise ValueError("Archived shadow verification frame index is out of range")
+        shadow_threshold_scores: list[dict[str, Any]] = []
+        for threshold in VERIFICATION_THRESHOLDS_DBZ:
+            shadow_score = _categorical_scores(candidate_cube[..., shadow_index], actual, threshold)
+            persistence_score = _categorical_scores(persistence, actual, threshold)
+            baseline_score = _categorical_scores(
+                baseline_cube[..., shadow_index], actual, threshold
+            )
+            shadow_csi = shadow_score["criticalSuccessIndex"]
+            persistence_csi = persistence_score["criticalSuccessIndex"]
+            baseline_csi = baseline_score["criticalSuccessIndex"]
+            shadow_score["persistenceCriticalSuccessIndex"] = persistence_csi
+            shadow_score["criticalSuccessIndexSkill"] = (
+                round(shadow_csi - persistence_csi, 4)
+                if shadow_csi is not None and persistence_csi is not None
+                else None
+            )
+            shadow_score["baselineCriticalSuccessIndex"] = baseline_csi
+            shadow_score["criticalSuccessIndexImprovement"] = (
+                round(shadow_csi - baseline_csi, 4)
+                if shadow_csi is not None and baseline_csi is not None
+                else None
+            )
+            shadow_score["baselineScore"] = baseline_score
+            shadow_threshold_scores.append(shadow_score)
+        shadow_primary = next(
+            score
+            for score in shadow_threshold_scores
+            if score["thresholdDbz"] == SIGNIFICANT_ECHO_DBZ
+        )
+        shadow_candidate_scores.append(
+            {
+                "candidateId": shadow_candidate["candidateId"],
+                "forecastMethod": shadow_candidate["forecastMethod"],
+                "leadMinutes": int(shadow_frame["leadMinutes"]),
+                **{key: value for key, value in shadow_primary.items() if key != "thresholdDbz"},
+                "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
+                "thresholdScores": shadow_threshold_scores,
+            }
+        )
+    result = {
         "verifiedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "basedOnObservedAt": metadata["basedOnObservedAt"],
         "predictedAt": candidate["predictedAt"],
@@ -163,6 +238,9 @@ def verify_previous_nowcast(
         "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
         "thresholdScores": threshold_scores,
     }
+    if shadow_candidate_scores:
+        result["shadowCandidateScores"] = shadow_candidate_scores
+    return result
 
 
 def _aggregate_scores(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
@@ -208,6 +286,116 @@ def _aggregate_scores(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
 def _algorithm_version(entry: dict[str, Any]) -> str:
     value = entry.get("algorithmVersion")
     return str(value) if value else LEGACY_ALGORITHM_VERSION
+
+
+def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, int], list[tuple[dict[str, Any], dict[str, Any]]]] = (
+        defaultdict(list)
+    )
+    for operational_entry in history:
+        for candidate_entry in operational_entry.get("shadowCandidateScores", []):
+            key = (
+                str(candidate_entry["candidateId"]),
+                str(candidate_entry["forecastMethod"]),
+                int(candidate_entry["leadMinutes"]),
+            )
+            grouped[key].append((candidate_entry, operational_entry))
+
+    candidates: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for (candidate_id, forecast_method, lead_minutes), pairs in sorted(grouped.items()):
+        candidate_summary = _aggregate_scores(candidate for candidate, _operational in pairs)
+        operational_summary = _aggregate_scores(
+            candidate.get("baselineScore", operational)
+            for candidate, operational in pairs
+        )
+        candidate_csi = candidate_summary["criticalSuccessIndex"]
+        operational_csi = operational_summary["criticalSuccessIndex"]
+        csi_improvement = (
+            round(candidate_csi - operational_csi, 4)
+            if isinstance(candidate_csi, (int, float))
+            and isinstance(operational_csi, (int, float))
+            else None
+        )
+        event_pixel_count = (
+            candidate_summary["hits"]
+            + candidate_summary["misses"]
+            + candidate_summary["falseAlarms"]
+        )
+        false_alarm_rate = _ratio(
+            candidate_summary["falseAlarms"],
+            candidate_summary["hits"] + candidate_summary["falseAlarms"],
+        )
+        baseline_false_alarm_rate = _ratio(
+            operational_summary["falseAlarms"],
+            operational_summary["hits"] + operational_summary["falseAlarms"],
+        )
+        false_alarm_rate_increase = (
+            round(false_alarm_rate - baseline_false_alarm_rate, 4)
+            if false_alarm_rate is not None and baseline_false_alarm_rate is not None
+            else None
+        )
+        enough_samples = candidate_summary["sampleCount"] >= SHADOW_PROMOTION_MINIMUM_SAMPLES
+        enough_events = event_pixel_count >= SHADOW_PROMOTION_MINIMUM_EVENT_PIXELS
+        skill = candidate_summary["meanCriticalSuccessIndexSkill"]
+        meets_quality_gate = bool(
+            enough_samples
+            and enough_events
+            and isinstance(candidate_csi, (int, float))
+            and candidate_csi >= ALERT_MINIMUM_CSI
+            and isinstance(csi_improvement, (int, float))
+            and csi_improvement >= SHADOW_PROMOTION_MINIMUM_CSI_IMPROVEMENT
+            and isinstance(skill, (int, float))
+            and skill >= ALERT_MINIMUM_SKILL
+            and isinstance(false_alarm_rate_increase, (int, float))
+            and false_alarm_rate_increase <= SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE
+        )
+        if not enough_samples:
+            status = "collecting"
+        elif not enough_events:
+            status = "awaiting-rain"
+        elif meets_quality_gate:
+            status = "promotable"
+        else:
+            status = "held-back"
+        candidates[(candidate_id, forecast_method)].append(
+            {
+                "leadMinutes": lead_minutes,
+                "status": status,
+                "safeToPromote": meets_quality_gate,
+                "eventPixelCount": event_pixel_count,
+                "falseAlarmRate": false_alarm_rate,
+                "baselineFalseAlarmRate": baseline_false_alarm_rate,
+                "falseAlarmRateIncrease": false_alarm_rate_increase,
+                "baselineCriticalSuccessIndex": operational_csi,
+                "criticalSuccessIndexImprovement": csi_improvement,
+                **candidate_summary,
+            }
+        )
+
+    return [
+        {
+            "candidateId": candidate_id,
+            "forecastMethod": forecast_method,
+            "minimumLeadMinutes": SHADOW_MINIMUM_LEAD_MINUTES,
+            "promotionGate": {
+                "minimumSamples": SHADOW_PROMOTION_MINIMUM_SAMPLES,
+                "minimumEventPixels": SHADOW_PROMOTION_MINIMUM_EVENT_PIXELS,
+                "minimumCriticalSuccessIndex": ALERT_MINIMUM_CSI,
+                "minimumCriticalSuccessIndexImprovement": (
+                    SHADOW_PROMOTION_MINIMUM_CSI_IMPROVEMENT
+                ),
+                "minimumSkillOverPersistence": ALERT_MINIMUM_SKILL,
+                "maximumFalseAlarmRateIncrease": (
+                    SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE
+                ),
+            },
+            "safeToPromoteLeadMinutes": [
+                entry["leadMinutes"] for entry in leads if entry["safeToPromote"]
+            ],
+            "byLeadMinutes": leads,
+        }
+        for (candidate_id, forecast_method), leads in sorted(candidates.items())
+    ]
 
 
 def _cohort_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
@@ -269,6 +457,7 @@ def _cohort_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
             {"thresholdDbz": threshold, **_aggregate_scores(entries)}
             for threshold, entries in sorted(by_threshold.items())
         ],
+        "shadowCandidates": _shadow_candidate_summaries(history),
     }
 
 
@@ -441,7 +630,10 @@ def public_verification_report(
         for entry in full_history.get("results", [])
         if _algorithm_version(entry) == active_version
     ]
-    report["results"] = active_results[-recent_results:]
+    report["results"] = [
+        {key: value for key, value in entry.items() if key != "shadowCandidateScores"}
+        for entry in active_results[-recent_results:]
+    ]
     report["returnedResultCount"] = len(report["results"])
     return report
 
@@ -489,6 +681,17 @@ def quality_by_lead(
                 "meanCriticalSuccessIndexSkill"
             ]
             profile["operationalStatus"] = horizon["status"]
+    for candidate in history.get("shadowCandidates", []):
+        for lead_quality in candidate.get("byLeadMinutes", []):
+            lead_minutes = int(lead_quality["leadMinutes"])
+            profile = profiles.setdefault(lead_minutes, {})
+            profile.setdefault("shadowCandidates", []).append(
+                {
+                    "candidateId": candidate["candidateId"],
+                    "forecastMethod": candidate["forecastMethod"],
+                    **lead_quality,
+                }
+            )
     return profiles
 
 

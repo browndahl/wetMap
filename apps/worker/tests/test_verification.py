@@ -4,7 +4,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from wetmap_worker.nowcast import ALGORITHM_VERSION, POINT_GRID_HEIGHT, POINT_GRID_WIDTH
+from wetmap_worker.nowcast import (
+    ALGORITHM_VERSION,
+    POINT_GRID_HEIGHT,
+    POINT_GRID_WIDTH,
+    SHADOW_CANDIDATE_ID,
+    SHADOW_CANDIDATE_METHOD,
+)
 from wetmap_worker.verification import (
     append_verification_history,
     public_verification_report,
@@ -317,3 +323,161 @@ def test_does_not_calibrate_current_forecasts_from_legacy_results(tmp_path: Path
 
     assert report["algorithmVersion"] == "legacy-unversioned"
     assert quality_by_lead(report) == {}
+
+
+def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) -> None:
+    observed = np.zeros((6, 8, 4), dtype=np.uint8)
+    observed[..., 3] = 1
+    observed[2:4, 3:6, 3] = 198
+    observed_path = tmp_path / "observed.webp"
+    Image.fromarray(observed).save(observed_path, "WEBP", lossless=True)
+
+    actual = np.full((6, 8), 14, dtype=np.uint8)
+    actual[2:4, 3:6] = 52
+    operational_cube = np.stack([np.full_like(actual, 14), actual], axis=-1)
+    baseline_cube = np.stack(
+        [np.full_like(actual, 14), np.full_like(actual, 14)], axis=-1
+    )
+    candidate_cube = np.stack([np.full_like(actual, 14), actual], axis=-1)
+    cube_path = tmp_path / "verification-cube.npz"
+    np.savez_compressed(
+        cube_path,
+        cube=operational_cube,
+        baselineOpticalFlow=baseline_cube,
+        trajectoryRecency=candidate_cube,
+    )
+    metadata = {
+        "schemaVersion": 2,
+        "basedOnObservedAt": "2026-10-11T11:15:00Z",
+        "algorithmVersion": ALGORITHM_VERSION,
+        "width": 8,
+        "height": 6,
+        "frameCount": 2,
+        "encoding": "npz-pixel-major-uint8-dbz-plus-32",
+        "frames": [
+            {"leadMinutes": 0, "predictedAt": "2026-10-11T11:15:00Z"},
+            {
+                "leadMinutes": 45,
+                "predictedAt": "2026-10-11T12:00:00Z",
+                "forecastMethod": "optical-flow",
+            },
+        ],
+        "shadowCandidates": [
+            {
+                "candidateId": SHADOW_CANDIDATE_ID,
+                "forecastMethod": SHADOW_CANDIDATE_METHOD,
+                "cubeKey": "trajectoryRecency",
+                "baselineCubeKey": "baselineOpticalFlow",
+                "frames": [
+                    {
+                        "leadMinutes": 45,
+                        "predictedAt": "2026-10-11T12:00:00Z",
+                        "cubeFrameIndex": 1,
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = verify_previous_nowcast(
+        metadata, cube_path, observed_path, "2026-10-11T12:00:00Z"
+    )
+
+    assert result is not None
+    candidate = result["shadowCandidateScores"][0]
+    assert candidate["candidateId"] == SHADOW_CANDIDATE_ID
+    assert candidate["criticalSuccessIndex"] == result["criticalSuccessIndex"]
+    assert candidate["criticalSuccessIndexImprovement"] > 0
+    assert candidate["baselineScore"]["criticalSuccessIndex"] < result["criticalSuccessIndex"]
+    assert candidate["leadMinutes"] == 45
+
+
+def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path) -> None:
+    operational = {
+        "validPixels": 1000,
+        "hits": 50,
+        "misses": 30,
+        "falseAlarms": 20,
+        "correctNegatives": 900,
+        "precision": 0.7143,
+        "recall": 0.625,
+        "criticalSuccessIndex": 0.5,
+        "dbzMeanAbsoluteError": 4.0,
+        "persistenceCriticalSuccessIndex": 0.4,
+        "criticalSuccessIndexSkill": 0.1,
+    }
+    candidate = {
+        "candidateId": SHADOW_CANDIDATE_ID,
+        "forecastMethod": SHADOW_CANDIDATE_METHOD,
+        "leadMinutes": 60,
+        "validPixels": 1000,
+        "hits": 70,
+        "misses": 10,
+        "falseAlarms": 10,
+        "correctNegatives": 910,
+        "precision": 0.875,
+        "recall": 0.875,
+        "criticalSuccessIndex": 0.7778,
+        "dbzMeanAbsoluteError": 3.0,
+        "persistenceCriticalSuccessIndex": 0.4,
+        "criticalSuccessIndexSkill": 0.3778,
+        "operationalCriticalSuccessIndex": 0.5,
+        "criticalSuccessIndexImprovement": 0.2778,
+        "thresholdDbz": 20,
+        "thresholdScores": [],
+    }
+    results = [
+        {
+            "verifiedAt": "2026-10-12T13:01:00Z",
+            "basedOnObservedAt": f"2026-10-12T{index // 12:02d}:{(index % 12) * 5:02d}:00Z",
+            "predictedAt": "2026-10-12T13:00:00Z",
+            "observedAt": f"2026-10-12T{(index // 12) + 1:02d}:{(index % 12) * 5:02d}:00Z",
+            "leadMinutes": 60,
+            "forecastMethod": "optical-flow",
+            "algorithmVersion": ALGORITHM_VERSION,
+            "thresholdDbz": 20,
+            "thresholdScores": [],
+            "shadowCandidateScores": [candidate],
+            **operational,
+        }
+        for index in range(48)
+    ]
+
+    report = append_verification_history(tmp_path / "shadow-history.json", results)
+
+    shadow = report["shadowCandidates"][0]
+    lead = shadow["byLeadMinutes"][0]
+    assert lead["sampleCount"] == 48
+    assert lead["eventPixelCount"] >= 1000
+    assert lead["criticalSuccessIndexImprovement"] > 0.02
+    assert lead["falseAlarmRateIncrease"] < 0
+    assert lead["status"] == "promotable"
+    assert lead["safeToPromote"] is True
+    assert shadow["safeToPromoteLeadMinutes"] == [60]
+    profile_candidate = quality_by_lead(report)[60]["shadowCandidates"][0]
+    assert profile_candidate["safeToPromote"] is True
+    public = public_verification_report(report)
+    assert public["shadowCandidates"][0]["safeToPromoteLeadMinutes"] == [60]
+    assert "shadowCandidateScores" not in public["results"][0]
+
+    noisy_candidate = {
+        **candidate,
+        "hits": 100,
+        "misses": 0,
+        "falseAlarms": 50,
+        "correctNegatives": 850,
+        "precision": 0.6667,
+        "recall": 1.0,
+        "criticalSuccessIndex": 0.6667,
+        "criticalSuccessIndexSkill": 0.2667,
+        "criticalSuccessIndexImprovement": 0.1667,
+    }
+    noisy_results = [
+        {**entry, "shadowCandidateScores": [noisy_candidate]} for entry in results
+    ]
+    noisy_report = append_verification_history(tmp_path / "noisy-shadow.json", noisy_results)
+    noisy_lead = noisy_report["shadowCandidates"][0]["byLeadMinutes"][0]
+    assert noisy_lead["criticalSuccessIndexImprovement"] > 0.02
+    assert noisy_lead["falseAlarmRateIncrease"] > 0.02
+    assert noisy_lead["status"] == "held-back"
+    assert noisy_lead["safeToPromote"] is False

@@ -13,6 +13,10 @@ from wetmap_worker.nowcast import (
     POINT_GRID_WIDTH,
     RISK_HEIGHT,
     RISK_WIDTH,
+    SHADOW_BASELINE_CUBE_KEY,
+    SHADOW_CANDIDATE_CUBE_KEY,
+    SHADOW_CANDIDATE_ID,
+    SHADOW_CANDIDATE_METHOD,
     generate_nowcast,
 )
 
@@ -91,9 +95,17 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     verification_metadata = json.loads(
         (tmp_path / "nowcast/verification-forecast.json").read_text()
     )
+    assert verification_metadata["schemaVersion"] == 2
     assert verification_metadata["dataKey"].startswith("nowcast/verification-cubes/cube-")
+    shadow = verification_metadata["shadowCandidates"][0]
+    assert shadow["candidateId"] == SHADOW_CANDIDATE_ID
+    assert shadow["forecastMethod"] == SHADOW_CANDIDATE_METHOD
+    assert shadow["baselineCubeKey"] == SHADOW_BASELINE_CUBE_KEY
+    assert [frame["leadMinutes"] for frame in shadow["frames"]] == [45, 50, 55, 60]
     with np.load(tmp_path / "nowcast/verification-cube.npz") as archive:
         assert archive["cube"].shape[-1] == len(LEAD_MINUTES) + 1
+        assert archive[SHADOW_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[SHADOW_BASELINE_CUBE_KEY].shape == archive["cube"].shape
 
 
 def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Path) -> None:
@@ -148,3 +160,53 @@ def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Pa
     # Confidence remains metadata and no longer weakens the forecast's dBZ signal.
     first_alpha = np.asarray(Image.open(outputs[0]).convert("RGBA"))[..., 3]
     assert int(first_alpha.max()) == 133
+
+
+def test_promotes_only_a_verified_shadow_candidate_at_its_exact_long_horizon(
+    tmp_path: Path,
+) -> None:
+    paths = [tmp_path / f"source-{index}.webp" for index in range(3)]
+    for path, x in zip(paths, [24, 28, 32], strict=True):
+        _frame(path, x)
+    frames = [
+        Frame(
+            id=f"frame-{index}",
+            observedAt=f"2026-10-11T12:{index * 5:02d}:00Z",
+            fetchedAt="2026-10-11T12:11:00Z",
+            url=f"/frames/{path.name}",
+            bounds=[7, 54, 13, 58],
+            product="DBZH",
+            unit="dBZ",
+            sha256=str(index),
+        )
+        for index, path in enumerate(paths)
+    ]
+    candidate_quality = {
+        "candidateId": SHADOW_CANDIDATE_ID,
+        "forecastMethod": SHADOW_CANDIDATE_METHOD,
+        "sampleCount": 48,
+        "criticalSuccessIndex": 0.48,
+        "meanCriticalSuccessIndexSkill": 0.11,
+        "safeToPromote": True,
+    }
+
+    manifest, risk, _outputs = generate_nowcast(
+        paths,
+        frames,
+        tmp_path / "promoted",
+        {
+            40: {"shadowCandidates": [candidate_quality]},
+            45: {
+                "operationalStatus": "degraded",
+                "operationalCriticalSuccessIndex": 0.3,
+                "shadowCandidates": [candidate_quality],
+            },
+        },
+    )
+
+    by_lead = {frame["leadMinutes"]: frame for frame in manifest["frames"]}
+    assert by_lead[40]["forecastMethod"] == "optical-flow"
+    assert by_lead[45]["forecastMethod"] == SHADOW_CANDIDATE_METHOD
+    assert by_lead[45]["verificationCsi"] == 0.48
+    assert by_lead[45]["validationSamples"] == 48
+    assert risk["frames"][9]["alertEligible"] is True

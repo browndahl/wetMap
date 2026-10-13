@@ -10,6 +10,7 @@ const messages = {
     nowcastConfidence: "Estimeret sikkerhed",
     nowcastOpticalFlow: "Optisk flow",
     nowcastPersistence: "Stabilitetsmodel",
+    nowcastTrajectory: "Banemodel",
     nowcastNote:
       "Nowcast bruger verificeret optisk flow og skifter automatisk til en stabilitetsmodel, hvis den er mere præcis. Usikkerheden vokser frem mod +60 min.",
     noData: "Venter på radardata",
@@ -137,6 +138,18 @@ const messages = {
     precisionMapPointComparisons: "kort/punkt-sammenligninger",
     precisionRainMismatches: "uoverensstemmelser i regnstatus",
     precisionValueMismatches: "uoverensstemmelser i dBZ",
+    precisionShadowTitle: "Langtids-nowcast eksperiment",
+    precisionShadowLive: "Måles live",
+    precisionShadowDetail:
+      "En ny bevægelsesmodel testes parallelt ved +45–60 min uden at påvirke den aktive prognose.",
+    precisionShadowCollecting: "Indsamler par",
+    precisionShadowAwaitingRain: "Afventer regn",
+    precisionShadowPromotable: "Klar til aktivering",
+    precisionShadowHeldBack: "Tilbageholdt",
+    precisionImprovement: "CSI-forbedring",
+    precisionFalseAlarmChange: "Falske alarmer",
+    precisionShadowSafety:
+      "Aktiveres kun automatisk ved dokumenteret forbedring uden en uacceptabel stigning i falske alarmer.",
     precisionGroundCheck: "Kontrol mod regnmålere",
     precisionStationComparisons: "stationssammenligninger",
     precisionGroundPending: "Afventer stationsdata",
@@ -169,6 +182,7 @@ const messages = {
     nowcastConfidence: "Estimated confidence",
     nowcastOpticalFlow: "Optical flow",
     nowcastPersistence: "Persistence model",
+    nowcastTrajectory: "Trajectory model",
     nowcastNote:
       "The nowcast uses verified optical flow and automatically switches to persistence when it is more accurate. Uncertainty increases towards +60 min.",
     noData: "Waiting for radar data",
@@ -296,6 +310,18 @@ const messages = {
     precisionMapPointComparisons: "map/point comparisons",
     precisionRainMismatches: "rain-status mismatches",
     precisionValueMismatches: "dBZ mismatches",
+    precisionShadowTitle: "Long-range nowcast experiment",
+    precisionShadowLive: "Measured live",
+    precisionShadowDetail:
+      "A new motion model is tested in parallel at +45–60 min without affecting the active forecast.",
+    precisionShadowCollecting: "Collecting pairs",
+    precisionShadowAwaitingRain: "Awaiting rain",
+    precisionShadowPromotable: "Ready to activate",
+    precisionShadowHeldBack: "Held back",
+    precisionImprovement: "CSI improvement",
+    precisionFalseAlarmChange: "False alarms",
+    precisionShadowSafety:
+      "It activates automatically only after a documented improvement without an unacceptable increase in false alarms.",
     precisionGroundCheck: "Ground-gauge check",
     precisionStationComparisons: "station comparisons",
     precisionGroundPending: "Awaiting station data",

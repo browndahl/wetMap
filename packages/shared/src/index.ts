@@ -37,7 +37,7 @@ export interface NowcastFrame {
   product: "DBZH_NOWCAST";
   unit: "dBZ";
   confidence: number;
-  forecastMethod?: "optical-flow" | "persistence";
+  forecastMethod?: "optical-flow" | "persistence" | "trajectory-optical-flow";
   validationSamples?: number;
   verificationCsi?: number | null;
   skillOverPersistence?: number | null;
@@ -103,6 +103,40 @@ export interface PrecisionObservatory {
   };
   verifiedHorizonCount: number;
   horizons: PrecisionHorizon[];
+}
+
+export type ShadowCandidateStatus =
+  | "collecting"
+  | "awaiting-rain"
+  | "promotable"
+  | "held-back";
+
+export interface ShadowCandidateLeadQuality extends VerificationSummary {
+  leadMinutes: number;
+  status: ShadowCandidateStatus;
+  safeToPromote: boolean;
+  eventPixelCount: number;
+  falseAlarmRate: number | null;
+  baselineFalseAlarmRate: number | null;
+  falseAlarmRateIncrease: number | null;
+  baselineCriticalSuccessIndex: number | null;
+  criticalSuccessIndexImprovement: number | null;
+}
+
+export interface ShadowCandidateQuality {
+  candidateId: string;
+  forecastMethod: string;
+  minimumLeadMinutes: number;
+  promotionGate: {
+    minimumSamples: number;
+    minimumEventPixels: number;
+    minimumCriticalSuccessIndex: number;
+    minimumCriticalSuccessIndexImprovement: number;
+    minimumSkillOverPersistence: number;
+    maximumFalseAlarmRateIncrease: number;
+  };
+  safeToPromoteLeadMinutes: number[];
+  byLeadMinutes: ShadowCandidateLeadQuality[];
 }
 
 export interface GroundGaugeQuality {
@@ -195,6 +229,7 @@ export interface NowcastQualityResponse {
   meanCriticalSuccessIndex: number | null;
   meanCriticalSuccessIndexSkill: number | null;
   observatory?: PrecisionObservatory;
+  shadowCandidates?: ShadowCandidateQuality[];
   groundGauge?: GroundGaugeQuality;
   geographicConsistency?: GeographicConsistencyQuality;
 }
@@ -208,6 +243,7 @@ export interface PrecisionObservatoryResponse {
   sampleCount: number;
   totalSampleCount: number;
   observatory?: PrecisionObservatory;
+  shadowCandidates?: ShadowCandidateQuality[];
   groundGauge?: GroundGaugeQuality;
   geographicConsistency?: GeographicConsistencyQuality;
 }
@@ -249,7 +285,11 @@ export interface RainForecastPoint {
   source?: RainPointSource;
   reflectivityDbz?: number | null;
   confidence?: number | null;
-  forecastMethod?: "optical-flow" | "persistence" | null;
+  forecastMethod?:
+    | "optical-flow"
+    | "persistence"
+    | "trajectory-optical-flow"
+    | null;
 }
 
 export interface RainEta {
