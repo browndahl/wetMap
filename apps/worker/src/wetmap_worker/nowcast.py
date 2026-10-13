@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from .consistency import geographic_consistency_report
 from .model import ATTRIBUTION, Frame
 
 METHOD = "adaptive-optical-flow-persistence"
@@ -351,6 +352,19 @@ def generate_nowcast(
     }
     (output_directory / "point-risk.json").write_text(
         json.dumps(point_grid, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    consistency = geographic_consistency_report(
+        [source_paths[-1], *output_paths],
+        point_cube,
+        point_frame_entries,
+        latest_frame.bounds,
+        rain_threshold_dbz,
+        rain_radius_pixels,
+        latest_frame.observedAt,
+    )
+    (output_directory / "consistency.json").write_text(
+        json.dumps(consistency, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
     verification_cube_path = output_directory / "verification-cube.npz"

@@ -802,6 +802,60 @@ a {
 .quality-horizon.is-degraded em {
   color: oklch(0.75 0.16 35);
 }
+.quality-consistency {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+  padding: 0.55rem;
+  border: 1px solid oklch(1 0 0 / 8%);
+  border-radius: 0.7rem;
+  color: var(--text-2);
+  background: oklch(0.1 0.025 235 / 38%);
+}
+.quality-consistency.is-verified {
+  border-color: oklch(0.76 0.16 155 / 28%);
+}
+.quality-consistency.is-degraded {
+  border-color: oklch(0.7 0.18 30 / 35%);
+}
+.quality-consistency > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.quality-consistency.is-degraded > svg {
+  color: oklch(0.75 0.16 35);
+}
+.quality-consistency > div {
+  flex: 1;
+  min-width: 0;
+}
+.quality-consistency header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.quality-consistency header strong {
+  color: var(--text-1);
+  font-size: 0.59rem;
+}
+.quality-consistency header span {
+  color: oklch(0.8 0.13 155);
+  font-size: 0.48rem;
+  font-weight: 750;
+}
+.quality-consistency.is-degraded header span {
+  color: oklch(0.75 0.16 35);
+}
+.quality-consistency p,
+.quality-consistency small {
+  display: block;
+  margin: 0.24rem 0 0;
+  color: var(--text-2);
+  font-size: 0.47rem;
+  line-height: 1.35;
+}
 .quality-ground {
   display: flex;
   align-items: center;

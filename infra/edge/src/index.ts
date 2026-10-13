@@ -667,6 +667,7 @@ async function precisionObservatory(
       criticalSuccessIndex: number | null;
       calibration?: unknown;
     };
+    geographicConsistency?: unknown;
   };
   const headers = new Headers(qualityResponse.headers);
   headers.delete("Content-Length");
@@ -693,6 +694,7 @@ async function precisionObservatory(
             calibration: report.groundGauge.calibration,
           }
         : undefined,
+      geographicConsistency: report.geographicConsistency,
     },
     { headers },
   );
@@ -1848,6 +1850,7 @@ async function precipitation(
       });
     }
   }
+  const radarStartedAt = performance.now();
   const radarPromise = coordinatesAreValid
     ? radarPointSamples(latitude, longitude, env).catch((error) => {
         console.error("precipitation.radar.failed", {
@@ -1858,8 +1861,12 @@ async function precipitation(
         return null;
       })
     : Promise.resolve(null);
+  const measuredRadarPromise = radarPromise.then((value) => ({
+    value,
+    durationMs: elapsed(radarStartedAt),
+  }));
   const modelResponse = await modelPrecipitation(url, env, context);
-  const radar = await radarPromise;
+  const { value: radar, durationMs: radarMs } = await measuredRadarPromise;
   if (!modelResponse.ok) return modelResponse;
 
   try {
@@ -1871,6 +1878,17 @@ async function precipitation(
     headers.set("Cache-Control", "public,max-age=60");
     headers.set("X-WetMap-Precipitation-Source", combined.source);
     headers.set("X-WetMap-Point-Cache", "MISS");
+    headers.set(
+      "Server-Timing",
+      [
+        headers.get("Server-Timing"),
+        `radar;dur=${radarMs.toFixed(1)}`,
+        `combined_total;dur=${elapsed(startedAt).toFixed(1)}`,
+      ]
+        .filter(Boolean)
+        .join(", "),
+    );
+    headers.set("Timing-Allow-Origin", "*");
     const response = new Response(JSON.stringify(combined), {
       status: modelResponse.status,
       headers,

@@ -283,6 +283,11 @@ def run(output: Path, limit: int, upload: bool) -> None:
                     public_report = public_verification_report(full_history)
                     if gauge_history:
                         public_report["groundGauge"] = public_gauge_report(gauge_history)
+                    consistency_path = nowcast_directory / "consistency.json"
+                    if consistency_path.exists():
+                        public_report["geographicConsistency"] = json.loads(
+                            consistency_path.read_text(encoding="utf-8")
+                        )
                     write_json_atomic(
                         nowcast_directory / "verification.json",
                         public_report,

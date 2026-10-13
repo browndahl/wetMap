@@ -532,6 +532,8 @@ components:
           maxItems: 4
           items: { $ref: "#/components/schemas/PrecisionObservatory" }
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
+        geographicConsistency:
+          { $ref: "#/components/schemas/GeographicConsistencyQuality" }
         results:
           type: array
           maxItems: 288
@@ -606,6 +608,62 @@ components:
         totalSampleCount: { type: integer, minimum: 0 }
         observatory: { $ref: "#/components/schemas/PrecisionObservatory" }
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
+        geographicConsistency:
+          { $ref: "#/components/schemas/GeographicConsistencyQuality" }
+    GeographicConsistencyQuality:
+      type: object
+      required:
+        - schemaVersion
+        - generatedAt
+        - basedOnObservedAt
+        - status
+        - rainThresholdDbz
+        - spatialRadiusPixels
+        - locationCount
+        - frameCount
+        - comparisonCount
+        - valueMismatchCount
+        - rainClassificationMismatchCount
+        - maximumReflectivityDifferenceDbz
+        - locations
+        - mismatchExamples
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        generatedAt: { type: string, format: date-time }
+        basedOnObservedAt: { type: string, format: date-time }
+        status: { type: string, enum: [verified, degraded] }
+        rainThresholdDbz: { type: number, enum: [5, 10, 15, 20] }
+        spatialRadiusPixels: { type: integer, enum: [1, 3, 5] }
+        locationCount: { type: integer, minimum: 1, maximum: 20 }
+        frameCount: { type: integer, const: 13 }
+        comparisonCount: { type: integer, minimum: 13, maximum: 260 }
+        valueMismatchCount: { type: integer, minimum: 0 }
+        rainClassificationMismatchCount: { type: integer, minimum: 0 }
+        maximumReflectivityDifferenceDbz: { type: number, minimum: 0 }
+        locations:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { type: string }
+        mismatchExamples:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required:
+              - location
+              - latitude
+              - longitude
+              - leadMinutes
+              - mapReflectivityDbz
+              - pointReflectivityDbz
+            properties:
+              location: { type: string }
+              latitude: { type: number }
+              longitude: { type: number }
+              leadMinutes: { type: integer, minimum: 0, maximum: 60 }
+              mapReflectivityDbz: { type: [number, "null"] }
+              pointReflectivityDbz: { type: [number, "null"] }
     PrecisionObservatory:
       type: object
       required:

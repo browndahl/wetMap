@@ -117,6 +117,30 @@ export interface GroundGaugeQuality {
   calibration?: RadarThresholdCalibration;
 }
 
+export interface GeographicConsistencyQuality {
+  schemaVersion: 1;
+  generatedAt: string;
+  basedOnObservedAt: string;
+  status: "verified" | "degraded";
+  rainThresholdDbz: 5 | 10 | 15 | 20;
+  spatialRadiusPixels: 1 | 3 | 5;
+  locationCount: number;
+  frameCount: number;
+  comparisonCount: number;
+  valueMismatchCount: number;
+  rainClassificationMismatchCount: number;
+  maximumReflectivityDifferenceDbz: number;
+  locations: string[];
+  mismatchExamples: Array<{
+    location: string;
+    latitude: number;
+    longitude: number;
+    leadMinutes: number;
+    mapReflectivityDbz: number | null;
+    pointReflectivityDbz: number | null;
+  }>;
+}
+
 export type RadarCalibrationStatus =
   | "collecting"
   | "awaiting-overlap"
@@ -172,6 +196,7 @@ export interface NowcastQualityResponse {
   meanCriticalSuccessIndexSkill: number | null;
   observatory?: PrecisionObservatory;
   groundGauge?: GroundGaugeQuality;
+  geographicConsistency?: GeographicConsistencyQuality;
 }
 
 export interface PrecisionObservatoryResponse {
@@ -184,6 +209,7 @@ export interface PrecisionObservatoryResponse {
   totalSampleCount: number;
   observatory?: PrecisionObservatory;
   groundGauge?: GroundGaugeQuality;
+  geographicConsistency?: GeographicConsistencyQuality;
 }
 
 export interface ForecastPoint {

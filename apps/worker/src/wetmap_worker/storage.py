@@ -167,7 +167,7 @@ def upload_nowcast_r2(
                 "CacheControl": "no-store",
             },
         )
-    metadata_names = ["nowcast.json", "risk.json", "point-risk.json"]
+    metadata_names = ["nowcast.json", "risk.json", "point-risk.json", "consistency.json"]
     for optional_name in (
         "verification.json",
         "verification-history.json",

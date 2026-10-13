@@ -4,6 +4,7 @@ import {
   Activity,
   CheckCircle2,
   CloudRain,
+  MapPinned,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -48,6 +49,7 @@ export default function PrecisionObservatory({ locale }: Props) {
   const observatory = quality.data?.observatory;
   const groundGauge = quality.data?.groundGauge;
   const calibration = groundGauge?.calibration;
+  const geographicConsistency = quality.data?.geographicConsistency;
   const groundGaugeEvents = groundGauge
     ? groundGauge.hits + groundGauge.misses
     : 0;
@@ -178,6 +180,42 @@ export default function PrecisionObservatory({ locale }: Props) {
 
               {!observatory && (
                 <p className="quality-message">{t("precisionWarmingUp")}</p>
+              )}
+
+              {geographicConsistency && (
+                <section
+                  className={`quality-consistency is-${geographicConsistency.status}`}
+                >
+                  <MapPinned size={15} aria-hidden="true" />
+                  <div>
+                    <header>
+                      <strong>{t("precisionGeographicConsistency")}</strong>
+                      <span>
+                        {t(
+                          geographicConsistency.status === "verified"
+                            ? "precisionConsistencyVerified"
+                            : "precisionConsistencyDegraded",
+                        )}
+                      </span>
+                    </header>
+                    <p>
+                      {geographicConsistency.locationCount}{" "}
+                      {t("precisionLocations")} ·{" "}
+                      {geographicConsistency.frameCount} {t("precisionFrames")}{" "}
+                      ·{" "}
+                      {geographicConsistency.comparisonCount.toLocaleString(
+                        locale === "da" ? "da-DK" : "en-GB",
+                      )}{" "}
+                      {t("precisionMapPointComparisons")}
+                    </p>
+                    <small>
+                      {geographicConsistency.rainClassificationMismatchCount}{" "}
+                      {t("precisionRainMismatches")} ·{" "}
+                      {geographicConsistency.valueMismatchCount}{" "}
+                      {t("precisionValueMismatches")}
+                    </small>
+                  </div>
+                </section>
               )}
 
               <div className="quality-ground">

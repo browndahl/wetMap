@@ -67,3 +67,27 @@ if ground_gauge.get("schemaVersion", 0) >= 3:
         f"{calibration.get('status', 'unknown')} with applied threshold "
         f"{calibration.get('appliedThresholdDbz', 'unknown')} dBZ"
     )
+
+consistency = report.get("geographicConsistency") or {}
+if consistency:
+    if consistency.get("status") != "verified":
+        raise SystemExit(
+            "Map/point geographic consistency is degraded: "
+            f"{consistency.get('rainClassificationMismatchCount', 'unknown')} rain mismatches"
+        )
+    if int(consistency.get("locationCount", 0)) < 18:
+        raise SystemExit("Geographic consistency covers too few Danish test locations")
+    if int(consistency.get("frameCount", 0)) != 13:
+        raise SystemExit("Geographic consistency does not cover observation plus 60-minute nowcast")
+    expected_comparisons = int(consistency["locationCount"]) * int(
+        consistency["frameCount"]
+    )
+    if int(consistency.get("comparisonCount", 0)) != expected_comparisons:
+        raise SystemExit("Geographic consistency comparison count is incomplete")
+    if int(consistency.get("valueMismatchCount", 0)) != 0:
+        raise SystemExit("Map and point dBZ values disagree")
+    print(
+        "Geographic consistency verified across "
+        f"{consistency['locationCount']} locations and "
+        f"{consistency['frameCount']} frames"
+    )

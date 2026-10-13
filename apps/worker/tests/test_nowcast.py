@@ -77,6 +77,17 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     assert point_metadata["rainThresholdDbz"] == 15
     assert point_metadata["neighborhoodRadiusPixels"] == 5
     assert len(point_grid) == POINT_GRID_WIDTH * POINT_GRID_HEIGHT * (len(LEAD_MINUTES) + 1)
+    consistency = json.loads((tmp_path / "nowcast/consistency.json").read_text())
+    assert consistency["status"] == "verified"
+    assert consistency["locationCount"] >= 18
+    assert consistency["frameCount"] == len(LEAD_MINUTES) + 1
+    assert consistency["comparisonCount"] == consistency["locationCount"] * (
+        len(LEAD_MINUTES) + 1
+    )
+    assert consistency["valueMismatchCount"] == 0
+    assert consistency["rainClassificationMismatchCount"] == 0
+    assert consistency["rainThresholdDbz"] == 15
+    assert consistency["spatialRadiusPixels"] == 5
     verification_metadata = json.loads(
         (tmp_path / "nowcast/verification-forecast.json").read_text()
     )

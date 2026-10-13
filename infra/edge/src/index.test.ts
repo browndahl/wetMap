@@ -233,7 +233,7 @@ describe("radar nowcast edge endpoint", () => {
     r2.values.set(
       "nowcast/verification.json",
       JSON.stringify({
-        schemaVersion: 4,
+        schemaVersion: 5,
         generatedAt: "2026-10-12T12:30:00Z",
         latestVerifiedAt: "2026-10-12T12:29:00Z",
         algorithmVersion: "adaptive-optical-flow-persistence-v1",
@@ -266,6 +266,15 @@ describe("radar nowcast edge endpoint", () => {
           },
           results: [{ large: "history-is-not-forwarded" }],
         },
+        geographicConsistency: {
+          schemaVersion: 1,
+          status: "verified",
+          locationCount: 20,
+          frameCount: 13,
+          comparisonCount: 260,
+          valueMismatchCount: 0,
+          rainClassificationMismatchCount: 0,
+        },
         results: [{ large: "history-is-not-forwarded" }],
       }),
     );
@@ -282,6 +291,10 @@ describe("radar nowcast edge endpoint", () => {
         calibration: { status: string; appliedThresholdDbz: number };
         results?: unknown[];
       };
+      geographicConsistency: {
+        status: string;
+        comparisonCount: number;
+      };
       results?: unknown[];
     };
 
@@ -290,6 +303,8 @@ describe("radar nowcast edge endpoint", () => {
     expect(body.groundGauge.stationComparisonCount).toBe(1260);
     expect(body.groundGauge.calibration.status).toBe("awaiting-overlap");
     expect(body.groundGauge.calibration.appliedThresholdDbz).toBe(20);
+    expect(body.geographicConsistency.status).toBe("verified");
+    expect(body.geographicConsistency.comparisonCount).toBe(260);
     expect(body.groundGauge.results).toBeUndefined();
     expect(body.results).toBeUndefined();
   });
@@ -904,6 +919,11 @@ describe("next-hour precipitation edge endpoint", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("X-WetMap-Precipitation-Source")).toBe(
       "dmi-radar-nowcast-harmonie",
+    );
+    expect(response.headers.get("X-WetMap-Point-Cache")).toBe("MISS");
+    expect(response.headers.get("Server-Timing")).toContain("radar;dur=");
+    expect(response.headers.get("Server-Timing")).toContain(
+      "combined_total;dur=",
     );
     expect(body.source).toBe("dmi-radar-nowcast-harmonie");
     expect(body.basedOnObservedAt).toBe("2026-10-10T22:10:00Z");

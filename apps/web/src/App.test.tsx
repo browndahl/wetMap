@@ -116,6 +116,22 @@ const apiMocks = vi.hoisted(() => ({
         })),
       },
     },
+    geographicConsistency: {
+      schemaVersion: 1,
+      generatedAt: "2026-10-13T10:00:00Z",
+      basedOnObservedAt: "2026-10-13T09:55:00Z",
+      status: "verified",
+      rainThresholdDbz: 20,
+      spatialRadiusPixels: 1,
+      locationCount: 20,
+      frameCount: 13,
+      comparisonCount: 260,
+      valueMismatchCount: 0,
+      rainClassificationMismatchCount: 0,
+      maximumReflectivityDifferenceDbz: 0,
+      locations: ["Aarhus", "Copenhagen"],
+      mismatchExamples: [],
+    },
   },
   forecast: {
     latitude: 56.16,
@@ -298,6 +314,14 @@ it("opens the precision observatory with honest dry-weather status", async () =>
   expect(screen.getByText("Indsamler nyt datasæt")).toBeInTheDocument();
   expect(screen.getByText("5 dBZ")).toBeInTheDocument();
   expect(screen.getAllByText("20 dBZ").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText("Kort og punktprognose")).toBeInTheDocument();
+  expect(screen.getByText("Geografisk konsistent")).toBeInTheDocument();
+  expect(
+    screen.getByText(/260 kort\/punkt-sammenligninger/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/0 uoverensstemmelser i regnstatus/),
+  ).toBeInTheDocument();
 });
 
 afterEach(() => {
