@@ -716,3 +716,34 @@ def update_verification_state(
         "retentionMinutes": FORECAST_RETENTION_MINUTES,
         "forecasts": forecasts,
     }
+
+
+def verification_forecast_changed(
+    previous_state: dict[str, Any] | None,
+    forecast: dict[str, Any],
+) -> bool:
+    """Detect a new source time or a verification contract rollout."""
+
+    def contract(entry: dict[str, Any]) -> tuple[Any, ...]:
+        candidates = tuple(
+            sorted(
+                (
+                    candidate.get("candidateId"),
+                    candidate.get("cubeKey"),
+                    candidate.get("baselineCubeKey"),
+                )
+                for candidate in entry.get("shadowCandidates", [])
+            )
+        )
+        return (
+            entry.get("schemaVersion", 1),
+            entry.get("algorithmVersion"),
+            candidates,
+        )
+
+    matching = [
+        entry
+        for entry in (previous_state or {}).get("forecasts", [])
+        if entry.get("basedOnObservedAt") == forecast.get("basedOnObservedAt")
+    ]
+    return not matching or any(contract(entry) != contract(forecast) for entry in matching)

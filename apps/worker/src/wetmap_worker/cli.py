@@ -32,6 +32,7 @@ from .verification import (
     public_verification_report,
     quality_by_lead,
     update_verification_state,
+    verification_forecast_changed,
     verification_candidates,
     verify_previous_nowcast,
 )
@@ -258,9 +259,8 @@ def run(output: Path, limit: int, upload: bool) -> None:
                     verification_state = update_verification_state(
                         previous_state, verification_forecast
                     )
-                    is_new_forecast = not any(
-                        entry.get("basedOnObservedAt") == verification_forecast["basedOnObservedAt"]
-                        for entry in previous_state.get("forecasts", [])
+                    is_new_forecast = verification_forecast_changed(
+                        previous_state, verification_forecast
                     )
                     upload_verification_assets = (
                         is_new_forecast or verification_results_added or gauge_result_added

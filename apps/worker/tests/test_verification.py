@@ -16,6 +16,7 @@ from wetmap_worker.verification import (
     public_verification_report,
     quality_by_lead,
     update_verification_state,
+    verification_forecast_changed,
     verification_candidates,
     verify_previous_nowcast,
 )
@@ -256,6 +257,33 @@ def test_tracks_pending_forecasts_for_every_matching_horizon() -> None:
         },
     )
     assert len(updated["forecasts"]) == 3
+
+
+def test_republishes_a_new_verification_contract_for_the_same_observation() -> None:
+    previous = {
+        "forecasts": [
+            {
+                "schemaVersion": 1,
+                "algorithmVersion": ALGORITHM_VERSION,
+                "basedOnObservedAt": "2026-10-11T12:00:00Z",
+            }
+        ]
+    }
+    upgraded = {
+        "schemaVersion": 2,
+        "algorithmVersion": ALGORITHM_VERSION,
+        "basedOnObservedAt": "2026-10-11T12:00:00Z",
+        "shadowCandidates": [
+            {
+                "candidateId": SHADOW_CANDIDATE_ID,
+                "cubeKey": "trajectoryRecency",
+                "baselineCubeKey": "baselineOpticalFlow",
+            }
+        ],
+    }
+
+    assert verification_forecast_changed(previous, upgraded) is True
+    assert verification_forecast_changed({"forecasts": [upgraded]}, upgraded) is False
 
 
 def test_keeps_algorithm_versions_in_separate_quality_cohorts(tmp_path: Path) -> None:
