@@ -1351,6 +1351,7 @@ a {
   .quality-panel {
     top: 12.5rem;
     right: 1rem;
+    max-height: calc(100vh - 13.5rem);
   }
   .weather-card {
     top: 9.3rem;
