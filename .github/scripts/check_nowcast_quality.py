@@ -93,11 +93,15 @@ if consistency:
     )
 
 for candidate in report.get("shadowCandidates", []):
-    if candidate.get("candidateId") != "trajectory-recency-flow-v1":
+    candidate_id = candidate.get("candidateId")
+    if candidate_id not in {
+        "trajectory-recency-flow-v1",
+        "trajectory-speed-bias-v2",
+    }:
         raise SystemExit(f"Unknown shadow nowcast candidate {candidate.get('candidateId')}")
     lead_entries = candidate.get("byLeadMinutes", [])
     candidate_leads = {int(entry["leadMinutes"]) for entry in lead_entries}
-    if not candidate_leads.issubset({45, 50, 55, 60}):
+    if not candidate_leads.issubset({40, 50, 60}):
         raise SystemExit(f"Shadow candidate has invalid leads {sorted(candidate_leads)}")
     for entry in lead_entries:
         if entry.get("status") not in {
@@ -122,7 +126,7 @@ for candidate in report.get("shadowCandidates", []):
         if float(entry.get("falseAlarmRateIncrease", 1)) > 0.02:
             raise SystemExit("Shadow candidate promoted with too many additional false alarms")
     print(
-        "Shadow nowcast candidate measured at leads "
+        f"Shadow nowcast candidate {candidate_id} measured at leads "
         f"{sorted(candidate_leads)}; promoted "
         f"{candidate.get('safeToPromoteLeadMinutes', [])}"
     )

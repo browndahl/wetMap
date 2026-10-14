@@ -17,6 +17,10 @@ from wetmap_worker.nowcast import (
     SHADOW_CANDIDATE_CUBE_KEY,
     SHADOW_CANDIDATE_ID,
     SHADOW_CANDIDATE_METHOD,
+    SPEED_BASELINE_CUBE_KEY,
+    SPEED_CANDIDATE_CUBE_KEY,
+    SPEED_CANDIDATE_ID,
+    SPEED_CANDIDATE_METHOD,
     generate_nowcast,
 )
 
@@ -97,15 +101,21 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     )
     assert verification_metadata["schemaVersion"] == 2
     assert verification_metadata["dataKey"].startswith("nowcast/verification-cubes/cube-")
-    shadow = verification_metadata["shadowCandidates"][0]
-    assert shadow["candidateId"] == SHADOW_CANDIDATE_ID
-    assert shadow["forecastMethod"] == SHADOW_CANDIDATE_METHOD
-    assert shadow["baselineCubeKey"] == SHADOW_BASELINE_CUBE_KEY
-    assert [frame["leadMinutes"] for frame in shadow["frames"]] == [40, 50, 60]
+    trajectory, speed = verification_metadata["shadowCandidates"]
+    assert trajectory["candidateId"] == SHADOW_CANDIDATE_ID
+    assert trajectory["forecastMethod"] == SHADOW_CANDIDATE_METHOD
+    assert trajectory["baselineCubeKey"] == SHADOW_BASELINE_CUBE_KEY
+    assert [frame["leadMinutes"] for frame in trajectory["frames"]] == [40, 50, 60]
+    assert speed["candidateId"] == SPEED_CANDIDATE_ID
+    assert speed["forecastMethod"] == SPEED_CANDIDATE_METHOD
+    assert speed["baselineCubeKey"] == SPEED_BASELINE_CUBE_KEY
+    assert [frame["leadMinutes"] for frame in speed["frames"]] == [40, 50, 60]
     with np.load(tmp_path / "nowcast/verification-cube.npz") as archive:
         assert archive["cube"].shape[-1] == len(LEAD_MINUTES) + 1
         assert archive[SHADOW_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
         assert archive[SHADOW_BASELINE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[SPEED_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[SPEED_BASELINE_CUBE_KEY].shape == archive["cube"].shape
 
 
 def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Path) -> None:
@@ -189,6 +199,13 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
         "meanCriticalSuccessIndexSkill": 0.11,
         "safeToPromote": True,
     }
+    speed_candidate_quality = {
+        **candidate_quality,
+        "candidateId": SPEED_CANDIDATE_ID,
+        "forecastMethod": SPEED_CANDIDATE_METHOD,
+        "criticalSuccessIndex": 0.52,
+        "meanCriticalSuccessIndexSkill": 0.14,
+    }
 
     manifest, risk, _outputs = generate_nowcast(
         paths,
@@ -198,7 +215,7 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
             40: {
                 "operationalStatus": "degraded",
                 "operationalCriticalSuccessIndex": 0.3,
-                "shadowCandidates": [candidate_quality],
+                "shadowCandidates": [candidate_quality, speed_candidate_quality],
             },
             50: {
                 "shadowCandidates": [
@@ -207,18 +224,33 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
                         "sampleCount": 52,
                         "criticalSuccessIndex": 0.48,
                         "meanCriticalSuccessIndexSkill": 0.09,
-                    }
+                    },
+                    {
+                        **speed_candidate_quality,
+                        "sampleCount": 52,
+                        "criticalSuccessIndex": 0.51,
+                        "meanCriticalSuccessIndexSkill": 0.12,
+                    },
                 ]
             },
         },
     )
 
     by_lead = {frame["leadMinutes"]: frame for frame in manifest["frames"]}
-    assert by_lead[40]["forecastMethod"] == SHADOW_CANDIDATE_METHOD
-    assert by_lead[45]["forecastMethod"] == SHADOW_CANDIDATE_METHOD
-    assert by_lead[45]["verificationCsi"] == 0.48
-    assert by_lead[45]["skillOverPersistence"] == 0.09
+    assert by_lead[40]["forecastMethod"] == SPEED_CANDIDATE_METHOD
+    assert by_lead[45]["forecastMethod"] == SPEED_CANDIDATE_METHOD
+    assert by_lead[45]["verificationCsi"] == 0.51
+    assert by_lead[45]["skillOverPersistence"] == 0.12
     assert by_lead[45]["validationSamples"] == 48
-    assert by_lead[50]["forecastMethod"] == SHADOW_CANDIDATE_METHOD
+    assert by_lead[50]["forecastMethod"] == SPEED_CANDIDATE_METHOD
     assert by_lead[55]["forecastMethod"] == "optical-flow"
     assert risk["frames"][9]["alertEligible"] is True
+    with np.load(tmp_path / "promoted/verification-cube.npz") as archive:
+        assert np.array_equal(
+            archive[SPEED_BASELINE_CUBE_KEY][..., 10],
+            archive[SHADOW_CANDIDATE_CUBE_KEY][..., 10],
+        )
+        assert not np.array_equal(
+            archive["cube"][..., 10],
+            archive[SPEED_BASELINE_CUBE_KEY][..., 10],
+        )

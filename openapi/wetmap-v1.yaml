@@ -284,7 +284,13 @@ components:
         forecastMethod:
           {
             type: string,
-            enum: [optical-flow, persistence, trajectory-optical-flow],
+            enum:
+              [
+                optical-flow,
+                persistence,
+                trajectory-optical-flow,
+                trajectory-speed-corrected,
+              ],
           }
         validationSamples: { type: integer, minimum: 0 }
         verificationCsi: { type: [number, "null"], minimum: 0, maximum: 1 }
@@ -387,7 +393,14 @@ components:
         forecastMethod:
           {
             type: [string, "null"],
-            enum: [optical-flow, persistence, trajectory-optical-flow, null],
+            enum:
+              [
+                optical-flow,
+                persistence,
+                trajectory-optical-flow,
+                trajectory-speed-corrected,
+                null,
+              ],
           }
     RainEta:
       type: object
@@ -502,7 +515,7 @@ components:
                   leadMinutes: { type: integer, minimum: 5, maximum: 60 }
                   byForecastMethod:
                     type: array
-                    maxItems: 3
+                    maxItems: 4
                     items:
                       allOf:
                         - $ref: "#/components/schemas/VerificationSummary"
@@ -517,6 +530,7 @@ components:
                                     optical-flow,
                                     persistence,
                                     trajectory-optical-flow,
+                                    trajectory-speed-corrected,
                                   ],
                               }
         byThresholdDbz:
@@ -598,7 +612,13 @@ components:
               forecastMethod:
                 {
                   type: string,
-                  enum: [optical-flow, persistence, trajectory-optical-flow],
+                  enum:
+                    [
+                      optical-flow,
+                      persistence,
+                      trajectory-optical-flow,
+                      trajectory-speed-corrected,
+                    ],
                 }
               thresholdScores:
                 type: array
@@ -641,9 +661,17 @@ components:
         - safeToPromoteLeadMinutes
         - byLeadMinutes
       properties:
-        candidateId: { type: string, const: trajectory-recency-flow-v1 }
-        forecastMethod: { type: string, const: trajectory-optical-flow }
-        minimumLeadMinutes: { type: integer, const: 45 }
+        candidateId:
+          {
+            type: string,
+            enum: [trajectory-recency-flow-v1, trajectory-speed-bias-v2],
+          }
+        forecastMethod:
+          {
+            type: string,
+            enum: [trajectory-optical-flow, trajectory-speed-corrected],
+          }
+        minimumLeadMinutes: { type: integer, const: 40 }
         promotionGate:
           type: object
           required:

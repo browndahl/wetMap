@@ -60,9 +60,7 @@ export default function PrecisionObservatory({ locale }: Props) {
   const groundGauge = quality.data?.groundGauge;
   const calibration = groundGauge?.calibration;
   const geographicConsistency = quality.data?.geographicConsistency;
-  const shadowCandidate = quality.data?.shadowCandidates?.find(
-    (candidate) => candidate.candidateId === "trajectory-recency-flow-v1",
-  );
+  const shadowCandidates = quality.data?.shadowCandidates ?? [];
   const groundGaugeEvents = groundGauge
     ? groundGauge.hits + groundGauge.misses
     : 0;
@@ -231,12 +229,23 @@ export default function PrecisionObservatory({ locale }: Props) {
                 </section>
               )}
 
-              {shadowCandidate && (
-                <section className="quality-shadow">
+              {shadowCandidates.map((shadowCandidate) => (
+                <section
+                  className="quality-shadow"
+                  key={shadowCandidate.candidateId}
+                >
                   <header>
                     <span>
                       <FlaskConical size={15} aria-hidden="true" />
-                      <strong>{t("precisionShadowTitle")}</strong>
+                      <strong>
+                        {t("precisionShadowTitle")} ·{" "}
+                        {t(
+                          shadowCandidate.forecastMethod ===
+                            "trajectory-speed-corrected"
+                            ? "nowcastSpeedCorrected"
+                            : "nowcastTrajectory",
+                        )}
+                      </strong>
                     </span>
                     <em>{t("precisionShadowLive")}</em>
                   </header>
@@ -279,7 +288,7 @@ export default function PrecisionObservatory({ locale }: Props) {
                   </div>
                   <small>{t("precisionShadowSafety")}</small>
                 </section>
-              )}
+              ))}
 
               <div className="quality-ground">
                 <CloudRain size={15} aria-hidden="true" />

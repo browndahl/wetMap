@@ -38,6 +38,7 @@ const apiMocks = vi.hoisted(() => ({
     totalSampleCount: 48,
     meanCriticalSuccessIndex: null,
     meanCriticalSuccessIndexSkill: null,
+    shadowCandidates: [] as Array<Record<string, unknown>>,
     observatory: {
       schemaVersion: 1,
       thresholdDbz: 20,
@@ -211,6 +212,7 @@ beforeEach(() => {
   apiMocks.forecast.points = [];
   apiMocks.rain.points = [];
   apiMocks.rain.source = "open-meteo-dmi";
+  apiMocks.quality.shadowCandidates = [];
   apiMocks.locations = [];
   apiMocks.getPushConfig.mockClear();
   apiMocks.savePushSubscription.mockClear();
@@ -321,6 +323,68 @@ it("opens the precision observatory with honest dry-weather status", async () =>
   ).toBeInTheDocument();
   expect(
     screen.getByText(/0 uoverensstemmelser i regnstatus/),
+  ).toBeInTheDocument();
+});
+
+it("shows both independently measured long-range shadow candidates", async () => {
+  const promotionGate = {
+    minimumSamples: 48,
+    minimumEventPixels: 1000,
+    minimumCriticalSuccessIndex: 0.2,
+    minimumCriticalSuccessIndexImprovement: 0.02,
+    minimumSkillOverPersistence: 0,
+    maximumFalseAlarmRateIncrease: 0.02,
+  };
+  const lead = {
+    leadMinutes: 60,
+    status: "collecting",
+    safeToPromote: false,
+    sampleCount: 1,
+    eventPixelCount: 10,
+    falseAlarmRate: 0.2,
+    baselineFalseAlarmRate: 0.2,
+    falseAlarmRateIncrease: 0,
+    baselineCriticalSuccessIndex: 0.3,
+    criticalSuccessIndexImprovement: 0,
+  };
+  apiMocks.quality.shadowCandidates = [
+    {
+      candidateId: "trajectory-recency-flow-v1",
+      forecastMethod: "trajectory-optical-flow",
+      minimumLeadMinutes: 40,
+      promotionGate,
+      safeToPromoteLeadMinutes: [],
+      byLeadMinutes: [lead],
+    },
+    {
+      candidateId: "trajectory-speed-bias-v2",
+      forecastMethod: "trajectory-speed-corrected",
+      minimumLeadMinutes: 40,
+      promotionGate,
+      safeToPromoteLeadMinutes: [],
+      byLeadMinutes: [lead],
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Åbn Precision Observatory" }),
+  );
+
+  expect(
+    screen.getByText(/Langtids-nowcast eksperiment · Banemodel/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      /Langtids-nowcast eksperiment · Hastighedskorrigeret banemodel/,
+    ),
   ).toBeInTheDocument();
 });
 

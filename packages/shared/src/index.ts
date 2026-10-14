@@ -37,7 +37,11 @@ export interface NowcastFrame {
   product: "DBZH_NOWCAST";
   unit: "dBZ";
   confidence: number;
-  forecastMethod?: "optical-flow" | "persistence" | "trajectory-optical-flow";
+  forecastMethod?:
+    | "optical-flow"
+    | "persistence"
+    | "trajectory-optical-flow"
+    | "trajectory-speed-corrected";
   validationSamples?: number;
   verificationCsi?: number | null;
   skillOverPersistence?: number | null;
@@ -289,6 +293,7 @@ export interface RainForecastPoint {
     | "optical-flow"
     | "persistence"
     | "trajectory-optical-flow"
+    | "trajectory-speed-corrected"
     | null;
 }
 

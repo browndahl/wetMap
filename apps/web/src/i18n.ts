@@ -11,6 +11,7 @@ const messages = {
     nowcastOpticalFlow: "Optisk flow",
     nowcastPersistence: "Stabilitetsmodel",
     nowcastTrajectory: "Banemodel",
+    nowcastSpeedCorrected: "Hastighedskorrigeret banemodel",
     nowcastNote:
       "Nowcast bruger verificeret optisk flow og skifter automatisk til en stabilitetsmodel, hvis den er mere præcis. Usikkerheden vokser frem mod +60 min.",
     noData: "Venter på radardata",
@@ -183,6 +184,7 @@ const messages = {
     nowcastOpticalFlow: "Optical flow",
     nowcastPersistence: "Persistence model",
     nowcastTrajectory: "Trajectory model",
+    nowcastSpeedCorrected: "Speed-corrected trajectory model",
     nowcastNote:
       "The nowcast uses verified optical flow and automatically switches to persistence when it is more accurate. Uncertainty increases towards +60 min.",
     noData: "Waiting for radar data",

@@ -262,7 +262,11 @@ interface PointRiskMetadata {
     leadMinutes: number;
     predictedAt: string;
     confidence: number;
-    forecastMethod?: "optical-flow" | "persistence";
+    forecastMethod?:
+      | "optical-flow"
+      | "persistence"
+      | "trajectory-optical-flow"
+      | "trajectory-speed-corrected";
     validationSamples?: number;
   }>;
 }
@@ -271,7 +275,11 @@ interface RadarPointSample {
   leadMinutes: number;
   predictedAt: string;
   confidence: number;
-  forecastMethod?: "optical-flow" | "persistence";
+  forecastMethod?:
+    | "optical-flow"
+    | "persistence"
+    | "trajectory-optical-flow"
+    | "trajectory-speed-corrected";
   validationSamples?: number;
   reflectivityDbz: number | null;
 }
@@ -1486,10 +1494,19 @@ function combineRadarAndModel(
       )
         ? ("persistence" as const)
         : coveredSamples.some(
-              (sample) => sample.forecastMethod === "optical-flow",
+              (sample) =>
+                sample.forecastMethod === "trajectory-speed-corrected",
             )
-          ? ("optical-flow" as const)
-          : null,
+          ? ("trajectory-speed-corrected" as const)
+          : coveredSamples.some(
+                (sample) => sample.forecastMethod === "trajectory-optical-flow",
+              )
+            ? ("trajectory-optical-flow" as const)
+            : coveredSamples.some(
+                  (sample) => sample.forecastMethod === "optical-flow",
+                )
+              ? ("optical-flow" as const)
+              : null,
     };
   });
   if (!radarPointCount)

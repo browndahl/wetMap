@@ -873,7 +873,11 @@ describe("next-hour precipitation edge endpoint", () => {
       ).toISOString(),
       confidence: Math.max(0.45, 1 - leadIndex * 0.045),
       forecastMethod:
-        leadIndex >= 9 ? ("persistence" as const) : ("optical-flow" as const),
+        leadIndex >= 10
+          ? ("persistence" as const)
+          : leadIndex >= 8
+            ? ("trajectory-speed-corrected" as const)
+            : ("optical-flow" as const),
     }));
     r2.values.set(
       "nowcast/point-risk.json",
@@ -951,6 +955,11 @@ describe("next-hour precipitation edge endpoint", () => {
     );
     expect(
       body.points.some((point) => point.forecastMethod === "persistence"),
+    ).toBe(true);
+    expect(
+      body.points.some(
+        (point) => point.forecastMethod === "trajectory-speed-corrected",
+      ),
     ).toBe(true);
     expect(body.rainEta).toMatchObject({
       status: "raining",

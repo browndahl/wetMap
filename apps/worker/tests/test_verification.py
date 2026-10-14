@@ -10,6 +10,8 @@ from wetmap_worker.nowcast import (
     POINT_GRID_WIDTH,
     SHADOW_CANDIDATE_ID,
     SHADOW_CANDIDATE_METHOD,
+    SPEED_CANDIDATE_ID,
+    SPEED_CANDIDATE_METHOD,
 )
 from wetmap_worker.verification import (
     append_verification_history,
@@ -385,6 +387,8 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
         cube=operational_cube,
         baselineOpticalFlow=baseline_cube,
         trajectoryRecency=candidate_cube,
+        speedCorrectedBaseline=baseline_cube,
+        trajectorySpeedCorrected=candidate_cube,
     )
     metadata = {
         "schemaVersion": 2,
@@ -415,7 +419,20 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
                         "cubeFrameIndex": 1,
                     }
                 ],
-            }
+            },
+            {
+                "candidateId": SPEED_CANDIDATE_ID,
+                "forecastMethod": SPEED_CANDIDATE_METHOD,
+                "cubeKey": "trajectorySpeedCorrected",
+                "baselineCubeKey": "speedCorrectedBaseline",
+                "frames": [
+                    {
+                        "leadMinutes": 45,
+                        "predictedAt": "2026-10-11T12:00:00Z",
+                        "cubeFrameIndex": 1,
+                    }
+                ],
+            },
         ],
     }
 
@@ -424,12 +441,17 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
     )
 
     assert result is not None
+    assert len(result["shadowCandidateScores"]) == 2
     candidate = result["shadowCandidateScores"][0]
     assert candidate["candidateId"] == SHADOW_CANDIDATE_ID
     assert candidate["criticalSuccessIndex"] == result["criticalSuccessIndex"]
     assert candidate["criticalSuccessIndexImprovement"] > 0
     assert candidate["baselineScore"]["criticalSuccessIndex"] < result["criticalSuccessIndex"]
     assert candidate["leadMinutes"] == 45
+    speed_candidate = result["shadowCandidateScores"][1]
+    assert speed_candidate["candidateId"] == SPEED_CANDIDATE_ID
+    assert speed_candidate["forecastMethod"] == SPEED_CANDIDATE_METHOD
+    assert speed_candidate["criticalSuccessIndexImprovement"] > 0
 
 
 def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path) -> None:
@@ -466,6 +488,11 @@ def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path
         "thresholdDbz": 20,
         "thresholdScores": [],
     }
+    speed_candidate = {
+        **candidate,
+        "candidateId": SPEED_CANDIDATE_ID,
+        "forecastMethod": SPEED_CANDIDATE_METHOD,
+    }
     results = [
         {
             "verifiedAt": "2026-10-12T13:01:00Z",
@@ -477,7 +504,7 @@ def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path
             "algorithmVersion": ALGORITHM_VERSION,
             "thresholdDbz": 20,
             "thresholdScores": [],
-            "shadowCandidateScores": [candidate],
+            "shadowCandidateScores": [candidate, speed_candidate],
             **operational,
         }
         for index in range(48)
@@ -485,6 +512,7 @@ def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path
 
     report = append_verification_history(tmp_path / "shadow-history.json", results)
 
+    assert len(report["shadowCandidates"]) == 2
     shadow = report["shadowCandidates"][0]
     lead = shadow["byLeadMinutes"][0]
     assert lead["sampleCount"] == 48
@@ -494,6 +522,9 @@ def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path
     assert lead["status"] == "promotable"
     assert lead["safeToPromote"] is True
     assert shadow["safeToPromoteLeadMinutes"] == [60]
+    speed_shadow = report["shadowCandidates"][1]
+    assert speed_shadow["candidateId"] == SPEED_CANDIDATE_ID
+    assert speed_shadow["safeToPromoteLeadMinutes"] == [60]
     profile_candidate = quality_by_lead(report)[60]["shadowCandidates"][0]
     assert profile_candidate["safeToPromote"] is True
     public = public_verification_report(report)

@@ -21,6 +21,11 @@ SHADOW_CANDIDATE_ID = "trajectory-recency-flow-v1"
 SHADOW_CANDIDATE_METHOD = "trajectory-optical-flow"
 SHADOW_CANDIDATE_CUBE_KEY = "trajectoryRecency"
 SHADOW_BASELINE_CUBE_KEY = "baselineOpticalFlow"
+SPEED_CANDIDATE_ID = "trajectory-speed-bias-v2"
+SPEED_CANDIDATE_METHOD = "trajectory-speed-corrected"
+SPEED_CANDIDATE_CUBE_KEY = "trajectorySpeedCorrected"
+SPEED_BASELINE_CUBE_KEY = "speedCorrectedBaseline"
+SPEED_CORRECTION_FACTOR = 1.1
 SHADOW_MINIMUM_LEAD_MINUTES = 40
 SHADOW_VERIFICATION_LEAD_MINUTES = (40, 50, 60)
 LEAD_MINUTES = tuple(range(5, 61, 5))
@@ -146,19 +151,24 @@ def _advect_trajectory(rgba: np.ndarray, flow: np.ndarray, steps: float) -> np.n
     )
 
 
-def _shadow_candidate_quality(quality: dict[str, Any]) -> dict[str, Any]:
+def _shadow_candidate_quality(
+    quality: dict[str, Any], candidate_id: str
+) -> dict[str, Any]:
     return next(
         (
             candidate
             for candidate in quality.get("shadowCandidates", [])
-            if candidate.get("candidateId") == SHADOW_CANDIDATE_ID
+            if candidate.get("candidateId") == candidate_id
         ),
         {},
     )
 
 
 def _shadow_candidate_evidence(
-    quality_by_lead: dict[int, dict[str, Any]], lead_minutes: int
+    quality_by_lead: dict[int, dict[str, Any]],
+    lead_minutes: int,
+    candidate_id: str,
+    forecast_method: str,
 ) -> dict[str, Any]:
     """Return direct or conservatively interpolated promotion evidence.
 
@@ -168,7 +178,9 @@ def _shadow_candidate_evidence(
     """
     if lead_minutes < SHADOW_MINIMUM_LEAD_MINUTES:
         return {}
-    direct = _shadow_candidate_quality(quality_by_lead.get(lead_minutes, {}))
+    direct = _shadow_candidate_quality(
+        quality_by_lead.get(lead_minutes, {}), candidate_id
+    )
     if direct.get("safeToPromote") is True:
         return {**direct, "promotionEvidenceLeadMinutes": [lead_minutes]}
     lower_leads = [lead for lead in SHADOW_VERIFICATION_LEAD_MINUTES if lead < lead_minutes]
@@ -177,16 +189,20 @@ def _shadow_candidate_evidence(
         return direct
     lower_lead = max(lower_leads)
     upper_lead = min(upper_leads)
-    lower = _shadow_candidate_quality(quality_by_lead.get(lower_lead, {}))
-    upper = _shadow_candidate_quality(quality_by_lead.get(upper_lead, {}))
+    lower = _shadow_candidate_quality(
+        quality_by_lead.get(lower_lead, {}), candidate_id
+    )
+    upper = _shadow_candidate_quality(
+        quality_by_lead.get(upper_lead, {}), candidate_id
+    )
     if not (
         lower.get("safeToPromote") is True
         and upper.get("safeToPromote") is True
     ):
         return direct
     return {
-        "candidateId": SHADOW_CANDIDATE_ID,
-        "forecastMethod": SHADOW_CANDIDATE_METHOD,
+        "candidateId": candidate_id,
+        "forecastMethod": forecast_method,
         "safeToPromote": True,
         "sampleCount": min(
             int(lower.get("sampleCount", 0) or 0),
@@ -286,6 +302,8 @@ def generate_nowcast(
     ]
     trajectory_verification_frames = [verification_frames[0]]
     baseline_verification_frames = [verification_frames[0]]
+    speed_candidate_verification_frames = [verification_frames[0]]
+    speed_baseline_verification_frames = [verification_frames[0]]
     point_frame_entries: list[dict[str, Any]] = [
         {
             "leadMinutes": 0,
@@ -301,11 +319,30 @@ def generate_nowcast(
             if lead_minutes >= SHADOW_MINIMUM_LEAD_MINUTES
             else optical_flow_prediction
         )
-        quality = (quality_by_lead or {}).get(lead_minutes, {})
-        candidate_quality = _shadow_candidate_evidence(
-            quality_by_lead or {}, lead_minutes
+        speed_candidate_prediction = (
+            _advect_trajectory(
+                latest,
+                trajectory_flow * SPEED_CORRECTION_FACTOR,
+                lead_minutes,
+            )
+            if lead_minutes >= SHADOW_MINIMUM_LEAD_MINUTES
+            else optical_flow_prediction
         )
-        use_shadow_candidate = candidate_quality.get("safeToPromote") is True
+        quality = (quality_by_lead or {}).get(lead_minutes, {})
+        trajectory_quality = _shadow_candidate_evidence(
+            quality_by_lead or {},
+            lead_minutes,
+            SHADOW_CANDIDATE_ID,
+            SHADOW_CANDIDATE_METHOD,
+        )
+        speed_candidate_quality = _shadow_candidate_evidence(
+            quality_by_lead or {},
+            lead_minutes,
+            SPEED_CANDIDATE_ID,
+            SPEED_CANDIDATE_METHOD,
+        )
+        use_trajectory_candidate = trajectory_quality.get("safeToPromote") is True
+        use_speed_candidate = speed_candidate_quality.get("safeToPromote") is True
         operational_status = quality.get("operationalStatus")
         raw_validation_samples = int(
             quality.get("opticalFlowSampleCount", quality.get("sampleCount", 0)) or 0
@@ -321,20 +358,33 @@ def generate_nowcast(
             and isinstance(raw_skill, (int, float))
             and raw_skill <= -0.02
         )
-        if use_shadow_candidate:
-            raw_prediction = trajectory_prediction
-            forecast_method = SHADOW_CANDIDATE_METHOD
-            validation_samples = int(candidate_quality.get("sampleCount", 0) or 0)
-            skill = candidate_quality.get("meanCriticalSuccessIndexSkill")
+        if use_trajectory_candidate:
+            incumbent_prediction = trajectory_prediction
+            incumbent_method = SHADOW_CANDIDATE_METHOD
+            incumbent_quality = trajectory_quality
         elif use_persistence:
-            raw_prediction = latest.copy()
-            forecast_method = "persistence"
+            incumbent_prediction = latest.copy()
+            incumbent_method = "persistence"
+            incumbent_quality = None
         else:
-            raw_prediction = optical_flow_prediction
-            forecast_method = "optical-flow"
+            incumbent_prediction = optical_flow_prediction
+            incumbent_method = "optical-flow"
+            incumbent_quality = None
+        speed_baseline_prediction = incumbent_prediction
+        if use_speed_candidate:
+            raw_prediction = speed_candidate_prediction
+            forecast_method = SPEED_CANDIDATE_METHOD
+            active_candidate_quality = speed_candidate_quality
+        else:
+            raw_prediction = incumbent_prediction
+            forecast_method = incumbent_method
+            active_candidate_quality = incumbent_quality
+        if active_candidate_quality is not None:
+            validation_samples = int(active_candidate_quality.get("sampleCount", 0) or 0)
+            skill = active_candidate_quality.get("meanCriticalSuccessIndexSkill")
         heuristic_confidence = max(0.25, math.exp(-lead_minutes / 75))
-        if use_shadow_candidate:
-            verified_csi = candidate_quality.get("criticalSuccessIndex")
+        if active_candidate_quality is not None:
+            verified_csi = active_candidate_quality.get("criticalSuccessIndex")
         elif use_persistence:
             verified_csi = quality.get(
                 "persistenceCriticalSuccessIndex",
@@ -348,9 +398,11 @@ def generate_nowcast(
                 "opticalFlowCriticalSuccessIndex",
                 quality.get("criticalSuccessIndex"),
             )
-        if not use_shadow_candidate:
+        if active_candidate_quality is None:
             verified_csi = quality.get("operationalCriticalSuccessIndex", verified_csi)
-        effective_operational_status = "verified" if use_shadow_candidate else operational_status
+        effective_operational_status = (
+            "verified" if active_candidate_quality is not None else operational_status
+        )
         evidence_ready = effective_operational_status in (None, "verified", "degraded")
         if evidence_ready and validation_samples >= 6 and isinstance(verified_csi, (int, float)):
             empirical_confidence = min(0.95, max(0.2, 0.2 + 0.75 * verified_csi))
@@ -403,6 +455,20 @@ def generate_nowcast(
         trajectory_verification_frames.append(
             _reflectivity_grid(
                 trajectory_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        speed_candidate_verification_frames.append(
+            _reflectivity_grid(
+                speed_candidate_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        speed_baseline_verification_frames.append(
+            _reflectivity_grid(
+                speed_baseline_prediction[..., 3],
                 VERIFICATION_GRID_WIDTH,
                 VERIFICATION_GRID_HEIGHT,
             )
@@ -526,7 +592,13 @@ def generate_nowcast(
             ),
             SHADOW_CANDIDATE_CUBE_KEY: np.stack(
                 trajectory_verification_frames, axis=-1
-            )
+            ),
+            SPEED_CANDIDATE_CUBE_KEY: np.stack(
+                speed_candidate_verification_frames, axis=-1
+            ),
+            SPEED_BASELINE_CUBE_KEY: np.stack(
+                speed_baseline_verification_frames, axis=-1
+            ),
         },
     )
     verification_slot = int(latest_time.timestamp() // 300) % VERIFICATION_RING_SLOTS
@@ -555,7 +627,19 @@ def generate_nowcast(
                     for index, frame in enumerate(point_frame_entries)
                     if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES
                 ],
-            }
+            },
+            {
+                "candidateId": SPEED_CANDIDATE_ID,
+                "forecastMethod": SPEED_CANDIDATE_METHOD,
+                "cubeKey": SPEED_CANDIDATE_CUBE_KEY,
+                "baselineCubeKey": SPEED_BASELINE_CUBE_KEY,
+                "minimumLeadMinutes": SHADOW_MINIMUM_LEAD_MINUTES,
+                "frames": [
+                    {**frame, "cubeFrameIndex": index}
+                    for index, frame in enumerate(point_frame_entries)
+                    if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES
+                ],
+            },
         ],
         "sha256": hashlib.sha256(verification_cube_path.read_bytes()).hexdigest(),
     }
