@@ -21,7 +21,8 @@ SHADOW_CANDIDATE_ID = "trajectory-recency-flow-v1"
 SHADOW_CANDIDATE_METHOD = "trajectory-optical-flow"
 SHADOW_CANDIDATE_CUBE_KEY = "trajectoryRecency"
 SHADOW_BASELINE_CUBE_KEY = "baselineOpticalFlow"
-SHADOW_MINIMUM_LEAD_MINUTES = 45
+SHADOW_MINIMUM_LEAD_MINUTES = 40
+SHADOW_VERIFICATION_LEAD_MINUTES = (40, 50, 60)
 LEAD_MINUTES = tuple(range(5, 61, 5))
 RISK_WIDTH = 128
 RISK_HEIGHT = 96
@@ -145,16 +146,6 @@ def _advect_trajectory(rgba: np.ndarray, flow: np.ndarray, steps: float) -> np.n
     )
 
 
-def _promoted_shadow_candidate(quality: dict[str, Any], lead_minutes: int) -> bool:
-    if lead_minutes < SHADOW_MINIMUM_LEAD_MINUTES:
-        return False
-    return any(
-        candidate.get("candidateId") == SHADOW_CANDIDATE_ID
-        and candidate.get("safeToPromote") is True
-        for candidate in quality.get("shadowCandidates", [])
-    )
-
-
 def _shadow_candidate_quality(quality: dict[str, Any]) -> dict[str, Any]:
     return next(
         (
@@ -164,6 +155,53 @@ def _shadow_candidate_quality(quality: dict[str, Any]) -> dict[str, Any]:
         ),
         {},
     )
+
+
+def _shadow_candidate_evidence(
+    quality_by_lead: dict[int, dict[str, Any]], lead_minutes: int
+) -> dict[str, Any]:
+    """Return direct or conservatively interpolated promotion evidence.
+
+    Danish radar observations arrive on ten-minute anchors. Five-minute display
+    frames between those anchors may only use the candidate when both adjacent
+    anchors have independently passed the promotion gate.
+    """
+    if lead_minutes < SHADOW_MINIMUM_LEAD_MINUTES:
+        return {}
+    direct = _shadow_candidate_quality(quality_by_lead.get(lead_minutes, {}))
+    if direct.get("safeToPromote") is True:
+        return {**direct, "promotionEvidenceLeadMinutes": [lead_minutes]}
+    lower_leads = [lead for lead in SHADOW_VERIFICATION_LEAD_MINUTES if lead < lead_minutes]
+    upper_leads = [lead for lead in SHADOW_VERIFICATION_LEAD_MINUTES if lead > lead_minutes]
+    if not lower_leads or not upper_leads:
+        return direct
+    lower_lead = max(lower_leads)
+    upper_lead = min(upper_leads)
+    lower = _shadow_candidate_quality(quality_by_lead.get(lower_lead, {}))
+    upper = _shadow_candidate_quality(quality_by_lead.get(upper_lead, {}))
+    if not (
+        lower.get("safeToPromote") is True
+        and upper.get("safeToPromote") is True
+    ):
+        return direct
+    return {
+        "candidateId": SHADOW_CANDIDATE_ID,
+        "forecastMethod": SHADOW_CANDIDATE_METHOD,
+        "safeToPromote": True,
+        "sampleCount": min(
+            int(lower.get("sampleCount", 0) or 0),
+            int(upper.get("sampleCount", 0) or 0),
+        ),
+        "criticalSuccessIndex": min(
+            float(lower.get("criticalSuccessIndex", 0) or 0),
+            float(upper.get("criticalSuccessIndex", 0) or 0),
+        ),
+        "meanCriticalSuccessIndexSkill": min(
+            float(lower.get("meanCriticalSuccessIndexSkill", 0) or 0),
+            float(upper.get("meanCriticalSuccessIndexSkill", 0) or 0),
+        ),
+        "promotionEvidenceLeadMinutes": [lower_lead, upper_lead],
+    }
 
 
 def _risk_bucket(alpha: np.ndarray, rain_threshold_dbz: int = 20) -> str:
@@ -264,8 +302,10 @@ def generate_nowcast(
             else optical_flow_prediction
         )
         quality = (quality_by_lead or {}).get(lead_minutes, {})
-        candidate_quality = _shadow_candidate_quality(quality)
-        use_shadow_candidate = _promoted_shadow_candidate(quality, lead_minutes)
+        candidate_quality = _shadow_candidate_evidence(
+            quality_by_lead or {}, lead_minutes
+        )
+        use_shadow_candidate = candidate_quality.get("safeToPromote") is True
         operational_status = quality.get("operationalStatus")
         raw_validation_samples = int(
             quality.get("opticalFlowSampleCount", quality.get("sampleCount", 0)) or 0
@@ -513,7 +553,7 @@ def generate_nowcast(
                 "frames": [
                     {**frame, "cubeFrameIndex": index}
                     for index, frame in enumerate(point_frame_entries)
-                    if int(frame["leadMinutes"]) >= SHADOW_MINIMUM_LEAD_MINUTES
+                    if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES
                 ],
             }
         ],

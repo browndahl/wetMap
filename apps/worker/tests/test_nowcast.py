@@ -101,7 +101,7 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     assert shadow["candidateId"] == SHADOW_CANDIDATE_ID
     assert shadow["forecastMethod"] == SHADOW_CANDIDATE_METHOD
     assert shadow["baselineCubeKey"] == SHADOW_BASELINE_CUBE_KEY
-    assert [frame["leadMinutes"] for frame in shadow["frames"]] == [45, 50, 55, 60]
+    assert [frame["leadMinutes"] for frame in shadow["frames"]] == [40, 50, 60]
     with np.load(tmp_path / "nowcast/verification-cube.npz") as archive:
         assert archive["cube"].shape[-1] == len(LEAD_MINUTES) + 1
         assert archive[SHADOW_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
@@ -162,7 +162,7 @@ def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Pa
     assert int(first_alpha.max()) == 133
 
 
-def test_promotes_only_a_verified_shadow_candidate_at_its_exact_long_horizon(
+def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
     tmp_path: Path,
 ) -> None:
     paths = [tmp_path / f"source-{index}.webp" for index in range(3)]
@@ -195,18 +195,30 @@ def test_promotes_only_a_verified_shadow_candidate_at_its_exact_long_horizon(
         frames,
         tmp_path / "promoted",
         {
-            40: {"shadowCandidates": [candidate_quality]},
-            45: {
+            40: {
                 "operationalStatus": "degraded",
                 "operationalCriticalSuccessIndex": 0.3,
                 "shadowCandidates": [candidate_quality],
+            },
+            50: {
+                "shadowCandidates": [
+                    {
+                        **candidate_quality,
+                        "sampleCount": 52,
+                        "criticalSuccessIndex": 0.48,
+                        "meanCriticalSuccessIndexSkill": 0.09,
+                    }
+                ]
             },
         },
     )
 
     by_lead = {frame["leadMinutes"]: frame for frame in manifest["frames"]}
-    assert by_lead[40]["forecastMethod"] == "optical-flow"
+    assert by_lead[40]["forecastMethod"] == SHADOW_CANDIDATE_METHOD
     assert by_lead[45]["forecastMethod"] == SHADOW_CANDIDATE_METHOD
     assert by_lead[45]["verificationCsi"] == 0.48
+    assert by_lead[45]["skillOverPersistence"] == 0.09
     assert by_lead[45]["validationSamples"] == 48
+    assert by_lead[50]["forecastMethod"] == SHADOW_CANDIDATE_METHOD
+    assert by_lead[55]["forecastMethod"] == "optical-flow"
     assert risk["frames"][9]["alertEligible"] is True

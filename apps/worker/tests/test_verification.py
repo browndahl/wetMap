@@ -278,12 +278,24 @@ def test_republishes_a_new_verification_contract_for_the_same_observation() -> N
                 "candidateId": SHADOW_CANDIDATE_ID,
                 "cubeKey": "trajectoryRecency",
                 "baselineCubeKey": "baselineOpticalFlow",
+                "minimumLeadMinutes": 40,
+                "frames": [{"leadMinutes": 40}, {"leadMinutes": 50}, {"leadMinutes": 60}],
             }
         ],
     }
 
     assert verification_forecast_changed(previous, upgraded) is True
     assert verification_forecast_changed({"forecasts": [upgraded]}, upgraded) is False
+    changed_anchors = {
+        **upgraded,
+        "shadowCandidates": [
+            {
+                **upgraded["shadowCandidates"][0],
+                "frames": [{"leadMinutes": 45}, {"leadMinutes": 55}],
+            }
+        ],
+    }
+    assert verification_forecast_changed({"forecasts": [upgraded]}, changed_anchors) is True
 
 
 def test_keeps_algorithm_versions_in_separate_quality_cohorts(tmp_path: Path) -> None:

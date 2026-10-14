@@ -20,6 +20,7 @@ from .nowcast import (
     SHADOW_PROMOTION_MINIMUM_CSI_IMPROVEMENT,
     SHADOW_PROMOTION_MINIMUM_EVENT_PIXELS,
     SHADOW_PROMOTION_MINIMUM_SAMPLES,
+    SHADOW_VERIFICATION_LEAD_MINUTES,
     _parse_time,
     _reflectivity_grid,
 )
@@ -294,6 +295,8 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
     )
     for operational_entry in history:
         for candidate_entry in operational_entry.get("shadowCandidateScores", []):
+            if int(candidate_entry["leadMinutes"]) not in SHADOW_VERIFICATION_LEAD_MINUTES:
+                continue
             key = (
                 str(candidate_entry["candidateId"]),
                 str(candidate_entry["forecastMethod"]),
@@ -731,6 +734,11 @@ def verification_forecast_changed(
                     candidate.get("candidateId"),
                     candidate.get("cubeKey"),
                     candidate.get("baselineCubeKey"),
+                    candidate.get("minimumLeadMinutes"),
+                    tuple(
+                        int(frame.get("leadMinutes", 0))
+                        for frame in candidate.get("frames", [])
+                    ),
                 )
                 for candidate in entry.get("shadowCandidates", [])
             )
