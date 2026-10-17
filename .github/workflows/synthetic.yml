@@ -7,12 +7,8 @@ on:
 permissions:
   contents: read
 jobs:
-  refresh-radar:
-    uses: ./.github/workflows/radar.yml
-    secrets: inherit
   probe:
-    needs: refresh-radar
-    if: always() && vars.PUBLIC_URL != ''
+    if: vars.PUBLIC_URL != '' && vars.API_URL != ''
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

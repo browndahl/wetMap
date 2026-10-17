@@ -1,6 +1,7 @@
 import unittest
 import urllib.error
 from datetime import datetime, timezone
+from pathlib import Path
 
 from check_live_performance import (
     ProbeResult,
@@ -36,6 +37,14 @@ def result(
 
 
 class LivePerformanceCheckTests(unittest.TestCase):
+    def test_synthetic_monitor_does_not_mutate_the_radar_pipeline(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[1] / "workflows" / "synthetic.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("refresh-radar", workflow)
+        self.assertNotIn("uses: ./.github/workflows/radar.yml", workflow)
+
     def test_retries_until_the_async_edge_cache_is_ready(self) -> None:
         responses = iter([result("MISS"), result("MISS"), result("HIT")])
         delays: list[float] = []
