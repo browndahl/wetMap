@@ -19,6 +19,8 @@ from wetmap_worker.nowcast import (
     _advect,
     _advect_trajectory,
     _dense_motion,
+    _regime_prediction,
+    _regime_selector,
     _reflectivity_grid,
 )
 from wetmap_worker.verification import _categorical_scores
@@ -77,6 +79,7 @@ def backtest(frame_directory: Path) -> dict[int, dict[str, dict[str, int | float
         source = [images[value] for value in source_times]
         baseline_flow = _dense_motion(source, [5.0, 5.0])
         trajectory_flow = _dense_motion(source, [5.0, 5.0], recency_weighted=True)
+        regime_selector = _regime_selector(source, [5.0, 5.0], 20)
         for lead_minutes in SHADOW_VERIFICATION_LEAD_MINUTES:
             target = images.get(base_time + timedelta(minutes=lead_minutes))
             if target is None:
@@ -84,15 +87,26 @@ def backtest(frame_directory: Path) -> dict[int, dict[str, dict[str, int | float
             actual = _reflectivity_grid(
                 target[..., 3], VERIFICATION_GRID_WIDTH, VERIFICATION_GRID_HEIGHT
             )
+            optical_prediction = _advect(source[-1], baseline_flow, lead_minutes)
+            trajectory_prediction = _advect_trajectory(
+                source[-1], trajectory_flow, lead_minutes
+            )
+            speed_prediction = _advect_trajectory(
+                source[-1],
+                trajectory_flow * SPEED_CORRECTION_FACTOR,
+                lead_minutes,
+            )
             predictions = {
-                "optical-flow": _advect(source[-1], baseline_flow, lead_minutes),
-                "trajectory-recency-flow-v1": _advect_trajectory(
-                    source[-1], trajectory_flow, lead_minutes
-                ),
-                "trajectory-speed-bias-v2": _advect_trajectory(
+                "persistence": source[-1],
+                "optical-flow": optical_prediction,
+                "trajectory-recency-flow-v1": trajectory_prediction,
+                "trajectory-speed-bias-v2": speed_prediction,
+                "regime-adaptive-ensemble-v3": _regime_prediction(
                     source[-1],
-                    trajectory_flow * SPEED_CORRECTION_FACTOR,
-                    lead_minutes,
+                    optical_prediction,
+                    trajectory_prediction,
+                    speed_prediction,
+                    str(regime_selector["selectedMember"]),
                 ),
             }
             for name, prediction in predictions.items():
@@ -111,8 +125,10 @@ def backtest(frame_directory: Path) -> dict[int, dict[str, dict[str, int | float
             name: _summary(scores[(name, lead_minutes)])
             for name in (
                 "optical-flow",
+                "persistence",
                 "trajectory-recency-flow-v1",
                 "trajectory-speed-bias-v2",
+                "regime-adaptive-ensemble-v3",
             )
         }
         for lead_minutes in SHADOW_VERIFICATION_LEAD_MINUTES

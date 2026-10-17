@@ -241,9 +241,12 @@ export default function PrecisionObservatory({ locale }: Props) {
                         {t("precisionShadowTitle")} ·{" "}
                         {t(
                           shadowCandidate.forecastMethod ===
-                            "trajectory-speed-corrected"
-                            ? "nowcastSpeedCorrected"
-                            : "nowcastTrajectory",
+                            "regime-adaptive-ensemble"
+                            ? "nowcastAdaptiveEnsemble"
+                            : shadowCandidate.forecastMethod ===
+                                "trajectory-speed-corrected"
+                              ? "nowcastSpeedCorrected"
+                              : "nowcastTrajectory",
                         )}
                       </strong>
                     </span>
@@ -277,6 +280,15 @@ export default function PrecisionObservatory({ locale }: Props) {
                                 : `${lead.falseAlarmRateIncrease >= 0 ? "+" : ""}${Math.round(lead.falseAlarmRateIncrease * 100)} pp`}
                             </dd>
                           </div>
+                          {lead.meanBrierSkillScore != null && (
+                            <div>
+                              <dt>{t("precisionBrierSkill")}</dt>
+                              <dd>
+                                {lead.meanBrierSkillScore >= 0 ? "+" : ""}
+                                {Math.round(lead.meanBrierSkillScore * 100)}%
+                              </dd>
+                            </div>
+                          )}
                         </dl>
                         <small>
                           {lead.sampleCount}/

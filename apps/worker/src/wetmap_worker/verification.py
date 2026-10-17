@@ -129,7 +129,7 @@ def verify_previous_nowcast(
         with np.load(cube_path, allow_pickle=False) as archive:
             cube = archive["cube"]
             for shadow_candidate in metadata.get("shadowCandidates", []):
-                for key_name in ("cubeKey", "baselineCubeKey"):
+                for key_name in ("cubeKey", "baselineCubeKey", "probabilityCubeKey"):
                     cube_key = str(shadow_candidate.get(key_name, ""))
                     if cube_key and cube_key in archive:
                         shadow_cubes[cube_key] = archive[cube_key]
@@ -179,6 +179,9 @@ def verify_previous_nowcast(
         baseline_cube = shadow_cubes.get(
             str(shadow_candidate.get("baselineCubeKey", "")), cube
         )
+        probability_cube = shadow_cubes.get(
+            str(shadow_candidate.get("probabilityCubeKey", ""))
+        )
         if shadow_frame is None or candidate_cube is None:
             continue
         if candidate_cube.shape != (height, width, frame_count) or candidate_cube.dtype != np.uint8:
@@ -217,6 +220,44 @@ def verify_previous_nowcast(
             for score in shadow_threshold_scores
             if score["thresholdDbz"] == SIGNIFICANT_ECHO_DBZ
         )
+        probability_metrics: dict[str, float | None] = {}
+        if probability_cube is not None:
+            if (
+                probability_cube.shape != (height, width, frame_count)
+                or probability_cube.dtype != np.uint8
+            ):
+                raise ValueError(
+                    "Archived shadow probability cube has an unexpected shape or type"
+                )
+            probability_threshold = int(
+                shadow_candidate.get("probabilityThresholdDbz", SIGNIFICANT_ECHO_DBZ)
+            )
+            valid = (persistence > 0) & (actual > 0)
+            observed_echo = (actual >= probability_threshold + 32).astype(np.float32)
+            probability = np.clip(
+                probability_cube[..., shadow_index].astype(np.float32) / 100,
+                0,
+                1,
+            )
+            persistence_probability = (
+                persistence >= probability_threshold + 32
+            ).astype(np.float32)
+            if np.any(valid):
+                brier_score = float(np.mean((probability[valid] - observed_echo[valid]) ** 2))
+                persistence_brier_score = float(
+                    np.mean(
+                        (persistence_probability[valid] - observed_echo[valid]) ** 2
+                    )
+                )
+                probability_metrics = {
+                    "brierScore": round(brier_score, 6),
+                    "persistenceBrierScore": round(persistence_brier_score, 6),
+                    "brierSkillScore": (
+                        round(1 - brier_score / persistence_brier_score, 4)
+                        if persistence_brier_score > 0
+                        else None
+                    ),
+                }
         shadow_candidate_scores.append(
             {
                 "candidateId": shadow_candidate["candidateId"],
@@ -225,6 +266,7 @@ def verify_previous_nowcast(
                 **{key: value for key, value in shadow_primary.items() if key != "thresholdDbz"},
                 "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
                 "thresholdScores": shadow_threshold_scores,
+                **probability_metrics,
             }
         )
     result = {
@@ -265,6 +307,21 @@ def _aggregate_scores(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
         for entry in entries
         if entry.get("persistenceCriticalSuccessIndex") is not None
     ]
+    brier_scores = [
+        float(entry["brierScore"])
+        for entry in entries
+        if entry.get("brierScore") is not None
+    ]
+    persistence_brier_scores = [
+        float(entry["persistenceBrierScore"])
+        for entry in entries
+        if entry.get("persistenceBrierScore") is not None
+    ]
+    brier_skill_scores = [
+        float(entry["brierSkillScore"])
+        for entry in entries
+        if entry.get("brierSkillScore") is not None
+    ]
     return {
         "sampleCount": len(entries),
         "validPixels": valid_pixels,
@@ -280,6 +337,19 @@ def _aggregate_scores(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "meanCriticalSuccessIndexSkill": (round(sum(skills) / len(skills), 4) if skills else None),
         "meanPersistenceCriticalSuccessIndex": (
             round(sum(persistence_csi) / len(persistence_csi), 4) if persistence_csi else None
+        ),
+        "meanBrierScore": (
+            round(sum(brier_scores) / len(brier_scores), 6) if brier_scores else None
+        ),
+        "meanPersistenceBrierScore": (
+            round(sum(persistence_brier_scores) / len(persistence_brier_scores), 6)
+            if persistence_brier_scores
+            else None
+        ),
+        "meanBrierSkillScore": (
+            round(sum(brier_skill_scores) / len(brier_skill_scores), 4)
+            if brier_skill_scores
+            else None
         ),
     }
 
@@ -340,6 +410,10 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
         enough_samples = candidate_summary["sampleCount"] >= SHADOW_PROMOTION_MINIMUM_SAMPLES
         enough_events = event_pixel_count >= SHADOW_PROMOTION_MINIMUM_EVENT_PIXELS
         skill = candidate_summary["meanCriticalSuccessIndexSkill"]
+        has_probability_scores = any(
+            candidate.get("brierScore") is not None for candidate, _operational in pairs
+        )
+        brier_skill = candidate_summary["meanBrierSkillScore"]
         meets_quality_gate = bool(
             enough_samples
             and enough_events
@@ -351,6 +425,10 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
             and skill >= ALERT_MINIMUM_SKILL
             and isinstance(false_alarm_rate_increase, (int, float))
             and false_alarm_rate_increase <= SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE
+            and (
+                not has_probability_scores
+                or (isinstance(brier_skill, (int, float)) and brier_skill >= 0)
+            )
         )
         if not enough_samples:
             status = "collecting"
@@ -390,6 +468,9 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
                 "minimumSkillOverPersistence": ALERT_MINIMUM_SKILL,
                 "maximumFalseAlarmRateIncrease": (
                     SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE
+                ),
+                "minimumBrierSkillOverPersistence": (
+                    0.0 if any(entry.get("meanBrierScore") is not None for entry in leads) else None
                 ),
             },
             "safeToPromoteLeadMinutes": [
@@ -734,6 +815,8 @@ def verification_forecast_changed(
                     candidate.get("candidateId"),
                     candidate.get("cubeKey"),
                     candidate.get("baselineCubeKey"),
+                    candidate.get("probabilityCubeKey"),
+                    candidate.get("probabilityThresholdDbz"),
                     candidate.get("minimumLeadMinutes"),
                     tuple(
                         int(frame.get("leadMinutes", 0))

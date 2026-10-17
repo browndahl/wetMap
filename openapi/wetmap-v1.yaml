@@ -290,6 +290,7 @@ components:
                 persistence,
                 trajectory-optical-flow,
                 trajectory-speed-corrected,
+                regime-adaptive-ensemble,
               ],
           }
         validationSamples: { type: integer, minimum: 0 }
@@ -399,6 +400,7 @@ components:
                 persistence,
                 trajectory-optical-flow,
                 trajectory-speed-corrected,
+                regime-adaptive-ensemble,
                 null,
               ],
           }
@@ -531,6 +533,7 @@ components:
                                     persistence,
                                     trajectory-optical-flow,
                                     trajectory-speed-corrected,
+                                    regime-adaptive-ensemble,
                                   ],
                               }
         byThresholdDbz:
@@ -618,6 +621,7 @@ components:
                       persistence,
                       trajectory-optical-flow,
                       trajectory-speed-corrected,
+                      regime-adaptive-ensemble,
                     ],
                 }
               thresholdScores:
@@ -664,12 +668,22 @@ components:
         candidateId:
           {
             type: string,
-            enum: [trajectory-recency-flow-v1, trajectory-speed-bias-v2],
+            enum:
+              [
+                trajectory-recency-flow-v1,
+                trajectory-speed-bias-v2,
+                regime-adaptive-ensemble-v3,
+              ],
           }
         forecastMethod:
           {
             type: string,
-            enum: [trajectory-optical-flow, trajectory-speed-corrected],
+            enum:
+              [
+                trajectory-optical-flow,
+                trajectory-speed-corrected,
+                regime-adaptive-ensemble,
+              ],
           }
         minimumLeadMinutes: { type: integer, const: 40 }
         promotionGate:
@@ -692,10 +706,12 @@ components:
               { type: number, minimum: -1, maximum: 1 }
             maximumFalseAlarmRateIncrease:
               { type: number, minimum: -1, maximum: 1 }
+            minimumBrierSkillOverPersistence:
+              { type: [number, "null"], minimum: -1, maximum: 1 }
         safeToPromoteLeadMinutes:
           type: array
           maxItems: 4
-          items: { type: integer, enum: [45, 50, 55, 60] }
+          items: { type: integer, enum: [40, 45, 50, 55, 60] }
         byLeadMinutes:
           type: array
           maxItems: 4
@@ -715,7 +731,7 @@ components:
             - baselineCriticalSuccessIndex
             - criticalSuccessIndexImprovement
           properties:
-            leadMinutes: { type: integer, enum: [45, 50, 55, 60] }
+            leadMinutes: { type: integer, enum: [40, 45, 50, 55, 60] }
             status:
               {
                 type: string,
@@ -882,6 +898,10 @@ components:
           { type: [number, "null"], minimum: -1, maximum: 1 }
         meanPersistenceCriticalSuccessIndex:
           { type: [number, "null"], minimum: 0, maximum: 1 }
+        meanBrierScore: { type: [number, "null"], minimum: 0, maximum: 1 }
+        meanPersistenceBrierScore:
+          { type: [number, "null"], minimum: 0, maximum: 1 }
+        meanBrierSkillScore: { type: [number, "null"], minimum: -1, maximum: 1 }
     VerificationThresholdScore:
       type: object
       required:

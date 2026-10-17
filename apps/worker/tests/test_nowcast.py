@@ -11,6 +11,11 @@ from wetmap_worker.nowcast import (
     LEAD_MINUTES,
     POINT_GRID_HEIGHT,
     POINT_GRID_WIDTH,
+    REGIME_BASELINE_CUBE_KEY,
+    REGIME_CANDIDATE_CUBE_KEY,
+    REGIME_CANDIDATE_ID,
+    REGIME_CANDIDATE_METHOD,
+    REGIME_PROBABILITY_CUBE_KEY,
     RISK_HEIGHT,
     RISK_WIDTH,
     SHADOW_BASELINE_CUBE_KEY,
@@ -21,6 +26,7 @@ from wetmap_worker.nowcast import (
     SPEED_CANDIDATE_CUBE_KEY,
     SPEED_CANDIDATE_ID,
     SPEED_CANDIDATE_METHOD,
+    _regime_selector,
     generate_nowcast,
 )
 
@@ -30,6 +36,37 @@ def _frame(path: Path, x: int) -> None:
     rgba[25:45, x : x + 20, :3] = [52, 120, 229]
     rgba[25:45, x : x + 20, 3] = 133
     Image.fromarray(rgba).save(path, "WEBP", lossless=True)
+
+
+def _radar_array(x: int) -> np.ndarray:
+    rgba = np.ones((72, 96, 4), dtype=np.uint8)
+    rgba[25:45, x : x + 20, 3] = 180
+    return rgba
+
+
+def test_regime_selector_uses_only_recent_hindcast_skill() -> None:
+    selector = _regime_selector(
+        [_radar_array(20), _radar_array(24), _radar_array(28)],
+        [5.0, 5.0],
+        20,
+    )
+
+    assert selector["selectedMember"] in {
+        "optical-flow",
+        "trajectory",
+        "speed-corrected",
+    }
+    assert selector["scores"][selector["selectedMember"]] > selector["scores"]["persistence"]
+    assert selector["eventPixelCount"] >= 25
+    assert abs(sum(selector["weights"].values()) - 1) < 0.00001
+
+
+def test_regime_selector_fails_closed_to_persistence_without_motion_gain() -> None:
+    static = _radar_array(24)
+    selector = _regime_selector([static, static.copy(), static.copy()], [5.0, 5.0], 20)
+
+    assert selector["selectedMember"] == "persistence"
+    assert selector["scores"]["persistence"] == 1.0
 
 
 def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: Path) -> None:
@@ -101,7 +138,7 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     )
     assert verification_metadata["schemaVersion"] == 2
     assert verification_metadata["dataKey"].startswith("nowcast/verification-cubes/cube-")
-    trajectory, speed = verification_metadata["shadowCandidates"]
+    trajectory, speed, regime = verification_metadata["shadowCandidates"]
     assert trajectory["candidateId"] == SHADOW_CANDIDATE_ID
     assert trajectory["forecastMethod"] == SHADOW_CANDIDATE_METHOD
     assert trajectory["baselineCubeKey"] == SHADOW_BASELINE_CUBE_KEY
@@ -110,12 +147,30 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     assert speed["forecastMethod"] == SPEED_CANDIDATE_METHOD
     assert speed["baselineCubeKey"] == SPEED_BASELINE_CUBE_KEY
     assert [frame["leadMinutes"] for frame in speed["frames"]] == [40, 50, 60]
+    assert regime["candidateId"] == REGIME_CANDIDATE_ID
+    assert regime["forecastMethod"] == REGIME_CANDIDATE_METHOD
+    assert regime["baselineCubeKey"] == REGIME_BASELINE_CUBE_KEY
+    assert regime["probabilityCubeKey"] == REGIME_PROBABILITY_CUBE_KEY
+    assert regime["probabilityThresholdDbz"] == 15
+    assert regime["selector"]["selectedMember"] in {
+        "persistence",
+        "optical-flow",
+        "trajectory",
+        "speed-corrected",
+    }
+    assert abs(sum(regime["selector"]["weights"].values()) - 1) < 0.00001
+    assert [frame["leadMinutes"] for frame in regime["frames"]] == [40, 50, 60]
     with np.load(tmp_path / "nowcast/verification-cube.npz") as archive:
         assert archive["cube"].shape[-1] == len(LEAD_MINUTES) + 1
         assert archive[SHADOW_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
         assert archive[SHADOW_BASELINE_CUBE_KEY].shape == archive["cube"].shape
         assert archive[SPEED_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
         assert archive[SPEED_BASELINE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[REGIME_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[REGIME_BASELINE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[REGIME_PROBABILITY_CUBE_KEY].shape == archive["cube"].shape
+        assert int(archive[REGIME_PROBABILITY_CUBE_KEY].min()) >= 0
+        assert int(archive[REGIME_PROBABILITY_CUBE_KEY].max()) <= 100
 
 
 def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Path) -> None:

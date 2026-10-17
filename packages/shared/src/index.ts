@@ -41,7 +41,8 @@ export interface NowcastFrame {
     | "optical-flow"
     | "persistence"
     | "trajectory-optical-flow"
-    | "trajectory-speed-corrected";
+    | "trajectory-speed-corrected"
+    | "regime-adaptive-ensemble";
   validationSamples?: number;
   verificationCsi?: number | null;
   skillOverPersistence?: number | null;
@@ -81,6 +82,9 @@ export interface VerificationSummary {
   meanDbzMeanAbsoluteError: number | null;
   meanCriticalSuccessIndexSkill: number | null;
   meanPersistenceCriticalSuccessIndex?: number | null;
+  meanBrierScore?: number | null;
+  meanPersistenceBrierScore?: number | null;
+  meanBrierSkillScore?: number | null;
 }
 
 export interface PrecisionHorizon extends VerificationSummary {
@@ -138,6 +142,7 @@ export interface ShadowCandidateQuality {
     minimumCriticalSuccessIndexImprovement: number;
     minimumSkillOverPersistence: number;
     maximumFalseAlarmRateIncrease: number;
+    minimumBrierSkillOverPersistence?: number | null;
   };
   safeToPromoteLeadMinutes: number[];
   byLeadMinutes: ShadowCandidateLeadQuality[];
@@ -294,6 +299,7 @@ export interface RainForecastPoint {
     | "persistence"
     | "trajectory-optical-flow"
     | "trajectory-speed-corrected"
+    | "regime-adaptive-ensemble"
     | null;
 }
 

@@ -12,6 +12,7 @@ const messages = {
     nowcastPersistence: "Stabilitetsmodel",
     nowcastTrajectory: "Banemodel",
     nowcastSpeedCorrected: "Hastighedskorrigeret banemodel",
+    nowcastAdaptiveEnsemble: "Adaptiv ensemblemodel",
     nowcastNote:
       "Nowcast bruger verificeret optisk flow og skifter automatisk til en stabilitetsmodel, hvis den er mere præcis. Usikkerheden vokser frem mod +60 min.",
     noData: "Venter på radardata",
@@ -149,6 +150,7 @@ const messages = {
     precisionShadowHeldBack: "Tilbageholdt",
     precisionImprovement: "CSI-forbedring",
     precisionFalseAlarmChange: "Falske alarmer",
+    precisionBrierSkill: "Sandsynlighedsskill",
     precisionShadowSafety:
       "Aktiveres kun automatisk ved dokumenteret forbedring uden en uacceptabel stigning i falske alarmer.",
     precisionGroundCheck: "Kontrol mod regnmålere",
@@ -185,6 +187,7 @@ const messages = {
     nowcastPersistence: "Persistence model",
     nowcastTrajectory: "Trajectory model",
     nowcastSpeedCorrected: "Speed-corrected trajectory model",
+    nowcastAdaptiveEnsemble: "Adaptive ensemble model",
     nowcastNote:
       "The nowcast uses verified optical flow and automatically switches to persistence when it is more accurate. Uncertainty increases towards +60 min.",
     noData: "Waiting for radar data",
@@ -322,6 +325,7 @@ const messages = {
     precisionShadowHeldBack: "Held back",
     precisionImprovement: "CSI improvement",
     precisionFalseAlarmChange: "False alarms",
+    precisionBrierSkill: "Probability skill",
     precisionShadowSafety:
       "It activates automatically only after a documented improvement without an unacceptable increase in false alarms.",
     precisionGroundCheck: "Ground-gauge check",

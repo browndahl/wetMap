@@ -6,6 +6,8 @@ from PIL import Image
 
 from wetmap_worker.nowcast import (
     ALGORITHM_VERSION,
+    REGIME_CANDIDATE_ID,
+    REGIME_CANDIDATE_METHOD,
     POINT_GRID_HEIGHT,
     POINT_GRID_WIDTH,
     SHADOW_CANDIDATE_ID,
@@ -389,6 +391,9 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
         trajectoryRecency=candidate_cube,
         speedCorrectedBaseline=baseline_cube,
         trajectorySpeedCorrected=candidate_cube,
+        regimeAdaptiveBaseline=baseline_cube,
+        regimeAdaptiveEnsemble=candidate_cube,
+        regimeRainProbability=np.where(candidate_cube >= 52, 85, 10).astype(np.uint8),
     )
     metadata = {
         "schemaVersion": 2,
@@ -433,6 +438,21 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
                     }
                 ],
             },
+            {
+                "candidateId": REGIME_CANDIDATE_ID,
+                "forecastMethod": REGIME_CANDIDATE_METHOD,
+                "cubeKey": "regimeAdaptiveEnsemble",
+                "baselineCubeKey": "regimeAdaptiveBaseline",
+                "probabilityCubeKey": "regimeRainProbability",
+                "probabilityThresholdDbz": 20,
+                "frames": [
+                    {
+                        "leadMinutes": 45,
+                        "predictedAt": "2026-10-11T12:00:00Z",
+                        "cubeFrameIndex": 1,
+                    }
+                ],
+            },
         ],
     }
 
@@ -441,7 +461,7 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
     )
 
     assert result is not None
-    assert len(result["shadowCandidateScores"]) == 2
+    assert len(result["shadowCandidateScores"]) == 3
     candidate = result["shadowCandidateScores"][0]
     assert candidate["candidateId"] == SHADOW_CANDIDATE_ID
     assert candidate["criticalSuccessIndex"] == result["criticalSuccessIndex"]
@@ -452,6 +472,11 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
     assert speed_candidate["candidateId"] == SPEED_CANDIDATE_ID
     assert speed_candidate["forecastMethod"] == SPEED_CANDIDATE_METHOD
     assert speed_candidate["criticalSuccessIndexImprovement"] > 0
+    regime_candidate = result["shadowCandidateScores"][2]
+    assert regime_candidate["candidateId"] == REGIME_CANDIDATE_ID
+    assert regime_candidate["forecastMethod"] == REGIME_CANDIDATE_METHOD
+    assert regime_candidate["brierScore"] < regime_candidate["persistenceBrierScore"]
+    assert regime_candidate["brierSkillScore"] > 0
 
 
 def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path) -> None:
@@ -552,3 +577,86 @@ def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path
     assert noisy_lead["falseAlarmRateIncrease"] > 0.02
     assert noisy_lead["status"] == "held-back"
     assert noisy_lead["safeToPromote"] is False
+
+
+def test_requires_non_negative_probability_skill_for_ensemble_promotion(
+    tmp_path: Path,
+) -> None:
+    operational = {
+        "validPixels": 1000,
+        "hits": 50,
+        "misses": 30,
+        "falseAlarms": 20,
+        "correctNegatives": 900,
+        "precision": 0.7143,
+        "recall": 0.625,
+        "criticalSuccessIndex": 0.5,
+        "dbzMeanAbsoluteError": 4.0,
+        "persistenceCriticalSuccessIndex": 0.4,
+        "criticalSuccessIndexSkill": 0.1,
+    }
+    candidate = {
+        "candidateId": REGIME_CANDIDATE_ID,
+        "forecastMethod": REGIME_CANDIDATE_METHOD,
+        "leadMinutes": 60,
+        "validPixels": 1000,
+        "hits": 70,
+        "misses": 10,
+        "falseAlarms": 10,
+        "correctNegatives": 910,
+        "precision": 0.875,
+        "recall": 0.875,
+        "criticalSuccessIndex": 0.7778,
+        "dbzMeanAbsoluteError": 3.0,
+        "persistenceCriticalSuccessIndex": 0.4,
+        "criticalSuccessIndexSkill": 0.3778,
+        "criticalSuccessIndexImprovement": 0.2778,
+        "thresholdDbz": 20,
+        "thresholdScores": [],
+        "brierScore": 0.22,
+        "persistenceBrierScore": 0.2,
+        "brierSkillScore": -0.1,
+    }
+    results = [
+        {
+            "verifiedAt": "2026-10-12T13:01:00Z",
+            "basedOnObservedAt": f"2026-10-12T{index // 12:02d}:{(index % 12) * 5:02d}:00Z",
+            "predictedAt": "2026-10-12T13:00:00Z",
+            "observedAt": f"2026-10-12T{(index // 12) + 1:02d}:{(index % 12) * 5:02d}:00Z",
+            "leadMinutes": 60,
+            "forecastMethod": "optical-flow",
+            "algorithmVersion": ALGORITHM_VERSION,
+            "thresholdDbz": 20,
+            "thresholdScores": [],
+            "shadowCandidateScores": [candidate],
+            **operational,
+        }
+        for index in range(48)
+    ]
+
+    degraded = append_verification_history(tmp_path / "ensemble-degraded.json", results)
+    degraded_lead = degraded["shadowCandidates"][0]["byLeadMinutes"][0]
+    assert degraded_lead["meanBrierSkillScore"] == -0.1
+    assert degraded_lead["status"] == "held-back"
+    assert degraded_lead["safeToPromote"] is False
+
+    improved_results = [
+        {
+            **entry,
+            "shadowCandidateScores": [
+                {
+                    **candidate,
+                    "brierScore": 0.18,
+                    "brierSkillScore": 0.1,
+                }
+            ],
+        }
+        for entry in results
+    ]
+    improved = append_verification_history(tmp_path / "ensemble-improved.json", improved_results)
+    improved_candidate = improved["shadowCandidates"][0]
+    improved_lead = improved_candidate["byLeadMinutes"][0]
+    assert improved_candidate["promotionGate"]["minimumBrierSkillOverPersistence"] == 0
+    assert improved_lead["meanBrierSkillScore"] == 0.1
+    assert improved_lead["status"] == "promotable"
+    assert improved_lead["safeToPromote"] is True

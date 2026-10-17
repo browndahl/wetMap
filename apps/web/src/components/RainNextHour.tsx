@@ -417,12 +417,15 @@ export default function RainNextHour({
                                   point.forecastMethod === "persistence"
                                     ? "nowcastPersistence"
                                     : point.forecastMethod ===
-                                        "trajectory-speed-corrected"
-                                      ? "nowcastSpeedCorrected"
+                                        "regime-adaptive-ensemble"
+                                      ? "nowcastAdaptiveEnsemble"
                                       : point.forecastMethod ===
-                                          "trajectory-optical-flow"
-                                        ? "nowcastTrajectory"
-                                        : "nowcastOpticalFlow",
+                                          "trajectory-speed-corrected"
+                                        ? "nowcastSpeedCorrected"
+                                        : point.forecastMethod ===
+                                            "trajectory-optical-flow"
+                                          ? "nowcastTrajectory"
+                                          : "nowcastOpticalFlow",
                                 )}`
                               : ""
                           }`

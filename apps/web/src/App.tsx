@@ -428,12 +428,15 @@ export default function App() {
                               activeFrame.forecastMethod === "persistence"
                                 ? "nowcastPersistence"
                                 : activeFrame.forecastMethod ===
-                                    "trajectory-speed-corrected"
-                                  ? "nowcastSpeedCorrected"
+                                    "regime-adaptive-ensemble"
+                                  ? "nowcastAdaptiveEnsemble"
                                   : activeFrame.forecastMethod ===
-                                      "trajectory-optical-flow"
-                                    ? "nowcastTrajectory"
-                                    : "nowcastOpticalFlow",
+                                      "trajectory-speed-corrected"
+                                    ? "nowcastSpeedCorrected"
+                                    : activeFrame.forecastMethod ===
+                                        "trajectory-optical-flow"
+                                      ? "nowcastTrajectory"
+                                      : "nowcastOpticalFlow",
                             )}`
                           : ""}
                       </span>

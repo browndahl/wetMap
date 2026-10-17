@@ -26,6 +26,13 @@ SPEED_CANDIDATE_METHOD = "trajectory-speed-corrected"
 SPEED_CANDIDATE_CUBE_KEY = "trajectorySpeedCorrected"
 SPEED_BASELINE_CUBE_KEY = "speedCorrectedBaseline"
 SPEED_CORRECTION_FACTOR = 1.1
+REGIME_CANDIDATE_ID = "regime-adaptive-ensemble-v3"
+REGIME_CANDIDATE_METHOD = "regime-adaptive-ensemble"
+REGIME_CANDIDATE_CUBE_KEY = "regimeAdaptiveEnsemble"
+REGIME_BASELINE_CUBE_KEY = "regimeAdaptiveBaseline"
+REGIME_PROBABILITY_CUBE_KEY = "regimeRainProbability"
+REGIME_SELECTOR_MINIMUM_EVENT_PIXELS = 25
+REGIME_SELECTOR_MINIMUM_CSI_GAIN = 0.02
 SHADOW_MINIMUM_LEAD_MINUTES = 40
 SHADOW_VERIFICATION_LEAD_MINUTES = (40, 50, 60)
 LEAD_MINUTES = tuple(range(5, 61, 5))
@@ -255,6 +262,134 @@ def _reflectivity_grid(
     ).astype(np.uint8)
 
 
+def _alpha_threshold(threshold_dbz: int) -> int:
+    return round(45 + (threshold_dbz + 10) * (175 / 60))
+
+
+def _hindcast_csi(
+    predicted_alpha: np.ndarray,
+    actual_alpha: np.ndarray,
+    threshold_dbz: int,
+) -> tuple[float | None, int]:
+    """Score a past-only prediction using the same rain boundary as verification."""
+    valid = (predicted_alpha > 0) & (actual_alpha > 0)
+    threshold = _alpha_threshold(threshold_dbz)
+    predicted_echo = (predicted_alpha >= threshold) & valid
+    actual_echo = (actual_alpha >= threshold) & valid
+    hits = int(np.count_nonzero(predicted_echo & actual_echo))
+    misses = int(np.count_nonzero(~predicted_echo & actual_echo & valid))
+    false_alarms = int(np.count_nonzero(predicted_echo & ~actual_echo & valid))
+    event_pixels = hits + misses + false_alarms
+    return ((hits / event_pixels) if event_pixels else None, event_pixels)
+
+
+def _regime_selector(
+    images: list[np.ndarray],
+    intervals_minutes: list[float],
+    rain_threshold_dbz: int,
+) -> dict[str, Any]:
+    """Select a forecast member from a one-step hindcast with no future leakage."""
+    member_names = ("persistence", "optical-flow", "trajectory", "speed-corrected")
+    if len(images) < 3 or len(intervals_minutes) < 2:
+        return {
+            "selectedMember": "persistence",
+            "eventPixelCount": 0,
+            "scores": {name: None for name in member_names},
+            "weights": {"persistence": 1.0},
+        }
+
+    hindcast_images = images[:-1]
+    hindcast_intervals = intervals_minutes[:-1]
+    target_interval = intervals_minutes[-1]
+    flow = _dense_motion(hindcast_images, hindcast_intervals)
+    trajectory_flow = _dense_motion(
+        hindcast_images,
+        hindcast_intervals,
+        recency_weighted=True,
+    )
+    predictions = {
+        "persistence": images[-2],
+        "optical-flow": _advect(images[-2], flow, target_interval),
+        "trajectory": _advect_trajectory(images[-2], trajectory_flow, target_interval),
+        "speed-corrected": _advect_trajectory(
+            images[-2], trajectory_flow * SPEED_CORRECTION_FACTOR, target_interval
+        ),
+    }
+    scored = {
+        name: _hindcast_csi(prediction[..., 3], images[-1][..., 3], rain_threshold_dbz)
+        for name, prediction in predictions.items()
+    }
+    scores = {name: score for name, (score, _event_pixels) in scored.items()}
+    event_pixels = max(event_pixels for _score, event_pixels in scored.values())
+    persistence_score = scores["persistence"]
+    selected_member = "persistence"
+    eligible = [
+        (name, score)
+        for name, score in scores.items()
+        if name != "persistence" and isinstance(score, (int, float))
+    ]
+    if event_pixels >= REGIME_SELECTOR_MINIMUM_EVENT_PIXELS and eligible:
+        best_member, best_score = max(eligible, key=lambda item: float(item[1]))
+        persistence_floor = float(persistence_score or 0.0)
+        if float(best_score) >= persistence_floor + REGIME_SELECTOR_MINIMUM_CSI_GAIN:
+            selected_member = best_member
+
+    # A soft member vote produces a probabilistic rain shadow field. Live Brier
+    # verification decides whether it is calibrated well enough for promotion.
+    # Persistence receives a small prior because it is the hard safety baseline.
+    raw_weights = {
+        name: max(0.05, float(score or 0.0) + (0.1 if name == "persistence" else 0.0))
+        for name, score in scores.items()
+    }
+    weight_total = sum(raw_weights.values())
+    weights = {name: round(weight / weight_total, 6) for name, weight in raw_weights.items()}
+    return {
+        "selectedMember": selected_member,
+        "eventPixelCount": event_pixels,
+        "scores": {
+            name: round(score, 4) if isinstance(score, (int, float)) else None
+            for name, score in scores.items()
+        },
+        "weights": weights,
+    }
+
+
+def _regime_prediction(
+    latest: np.ndarray,
+    optical_flow_prediction: np.ndarray,
+    trajectory_prediction: np.ndarray,
+    speed_prediction: np.ndarray,
+    selected_member: str,
+) -> np.ndarray:
+    return {
+        "persistence": latest,
+        "optical-flow": optical_flow_prediction,
+        "trajectory": trajectory_prediction,
+        "speed-corrected": speed_prediction,
+    }.get(selected_member, latest)
+
+
+def _regime_rain_probability(
+    latest: np.ndarray,
+    optical_flow_prediction: np.ndarray,
+    trajectory_prediction: np.ndarray,
+    speed_prediction: np.ndarray,
+    weights: dict[str, float],
+    rain_threshold_dbz: int,
+) -> np.ndarray:
+    threshold = _alpha_threshold(rain_threshold_dbz)
+    members = {
+        "persistence": latest,
+        "optical-flow": optical_flow_prediction,
+        "trajectory": trajectory_prediction,
+        "speed-corrected": speed_prediction,
+    }
+    probability = np.zeros(latest.shape[:2], dtype=np.float32)
+    for name, prediction in members.items():
+        probability += float(weights.get(name, 0.0)) * (prediction[..., 3] >= threshold)
+    return np.rint(np.clip(probability, 0, 1) * 100).astype(np.uint8)
+
+
 def generate_nowcast(
     source_paths: list[Path],
     source_frames: list[Frame],
@@ -279,6 +414,7 @@ def generate_nowcast(
     ]
     flow = _dense_motion(images, intervals_minutes)
     trajectory_flow = _dense_motion(images, intervals_minutes, recency_weighted=True)
+    regime_selector = _regime_selector(images, intervals_minutes, rain_threshold_dbz)
     generated_at = datetime.now(latest_time.tzinfo).isoformat().replace("+00:00", "Z")
     output_directory.mkdir(parents=True, exist_ok=True)
 
@@ -304,6 +440,15 @@ def generate_nowcast(
     baseline_verification_frames = [verification_frames[0]]
     speed_candidate_verification_frames = [verification_frames[0]]
     speed_baseline_verification_frames = [verification_frames[0]]
+    regime_candidate_verification_frames = [verification_frames[0]]
+    regime_baseline_verification_frames = [verification_frames[0]]
+    regime_probability_frames = [
+        cv2.resize(
+            (latest[..., 3] >= _alpha_threshold(rain_threshold_dbz)).astype(np.uint8) * 100,
+            (VERIFICATION_GRID_WIDTH, VERIFICATION_GRID_HEIGHT),
+            interpolation=cv2.INTER_NEAREST,
+        )
+    ]
     point_frame_entries: list[dict[str, Any]] = [
         {
             "leadMinutes": 0,
@@ -328,6 +473,25 @@ def generate_nowcast(
             if lead_minutes >= SHADOW_MINIMUM_LEAD_MINUTES
             else optical_flow_prediction
         )
+        regime_prediction = (
+            _regime_prediction(
+                latest,
+                optical_flow_prediction,
+                trajectory_prediction,
+                speed_candidate_prediction,
+                str(regime_selector["selectedMember"]),
+            )
+            if lead_minutes >= SHADOW_MINIMUM_LEAD_MINUTES
+            else optical_flow_prediction
+        )
+        regime_probability = _regime_rain_probability(
+            latest,
+            optical_flow_prediction,
+            trajectory_prediction,
+            speed_candidate_prediction,
+            regime_selector["weights"],
+            rain_threshold_dbz,
+        )
         quality = (quality_by_lead or {}).get(lead_minutes, {})
         trajectory_quality = _shadow_candidate_evidence(
             quality_by_lead or {},
@@ -341,8 +505,15 @@ def generate_nowcast(
             SPEED_CANDIDATE_ID,
             SPEED_CANDIDATE_METHOD,
         )
+        regime_candidate_quality = _shadow_candidate_evidence(
+            quality_by_lead or {},
+            lead_minutes,
+            REGIME_CANDIDATE_ID,
+            REGIME_CANDIDATE_METHOD,
+        )
         use_trajectory_candidate = trajectory_quality.get("safeToPromote") is True
         use_speed_candidate = speed_candidate_quality.get("safeToPromote") is True
+        use_regime_candidate = regime_candidate_quality.get("safeToPromote") is True
         operational_status = quality.get("operationalStatus")
         raw_validation_samples = int(
             quality.get("opticalFlowSampleCount", quality.get("sampleCount", 0)) or 0
@@ -379,6 +550,11 @@ def generate_nowcast(
             raw_prediction = incumbent_prediction
             forecast_method = incumbent_method
             active_candidate_quality = incumbent_quality
+        regime_baseline_prediction = raw_prediction
+        if use_regime_candidate:
+            raw_prediction = regime_prediction
+            forecast_method = REGIME_CANDIDATE_METHOD
+            active_candidate_quality = regime_candidate_quality
         if active_candidate_quality is not None:
             validation_samples = int(active_candidate_quality.get("sampleCount", 0) or 0)
             skill = active_candidate_quality.get("meanCriticalSuccessIndexSkill")
@@ -472,6 +648,27 @@ def generate_nowcast(
                 VERIFICATION_GRID_WIDTH,
                 VERIFICATION_GRID_HEIGHT,
             )
+        )
+        regime_candidate_verification_frames.append(
+            _reflectivity_grid(
+                regime_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        regime_baseline_verification_frames.append(
+            _reflectivity_grid(
+                regime_baseline_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        regime_probability_frames.append(
+            cv2.resize(
+                regime_probability,
+                (VERIFICATION_GRID_WIDTH, VERIFICATION_GRID_HEIGHT),
+                interpolation=cv2.INTER_AREA,
+            ).astype(np.uint8)
         )
         identifier = f"{latest_frame.id}-plus-{lead_minutes:02d}m"
         target = output_directory / f"{identifier}.webp"
@@ -599,6 +796,15 @@ def generate_nowcast(
             SPEED_BASELINE_CUBE_KEY: np.stack(
                 speed_baseline_verification_frames, axis=-1
             ),
+            REGIME_CANDIDATE_CUBE_KEY: np.stack(
+                regime_candidate_verification_frames, axis=-1
+            ),
+            REGIME_BASELINE_CUBE_KEY: np.stack(
+                regime_baseline_verification_frames, axis=-1
+            ),
+            REGIME_PROBABILITY_CUBE_KEY: np.stack(
+                regime_probability_frames, axis=-1
+            ),
         },
     )
     verification_slot = int(latest_time.timestamp() // 300) % VERIFICATION_RING_SLOTS
@@ -636,6 +842,25 @@ def generate_nowcast(
                 "minimumLeadMinutes": SHADOW_MINIMUM_LEAD_MINUTES,
                 "frames": [
                     {**frame, "cubeFrameIndex": index}
+                    for index, frame in enumerate(point_frame_entries)
+                    if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES
+                ],
+            },
+            {
+                "candidateId": REGIME_CANDIDATE_ID,
+                "forecastMethod": REGIME_CANDIDATE_METHOD,
+                "cubeKey": REGIME_CANDIDATE_CUBE_KEY,
+                "baselineCubeKey": REGIME_BASELINE_CUBE_KEY,
+                "probabilityCubeKey": REGIME_PROBABILITY_CUBE_KEY,
+                "probabilityThresholdDbz": rain_threshold_dbz,
+                "minimumLeadMinutes": SHADOW_MINIMUM_LEAD_MINUTES,
+                "selector": regime_selector,
+                "frames": [
+                    {
+                        **frame,
+                        "cubeFrameIndex": index,
+                        "selectedMember": regime_selector["selectedMember"],
+                    }
                     for index, frame in enumerate(point_frame_entries)
                     if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES
                 ],
