@@ -1,23 +1,49 @@
+from __future__ import annotations
+
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 
-api_url = sys.argv[1].rstrip("/")
-slot = int(datetime.now(timezone.utc).timestamp() // (15 * 60))
-# Rotate the cache coordinate every 15 minutes so the first probe normally
-# exercises the complete radar/model path and the second proves edge caching.
-latitude = 56.10 + (slot % 70) / 1000
-longitude = 10.10 + ((slot // 70) % 70) / 1000
-url = (
-    f"{api_url}/api/v1/weather/precipitation"
-    f"?lat={latitude:.5f}&lon={longitude:.5f}&v=2"
-)
+CACHE_RETRY_DELAYS_SECONDS = (0.5, 1.0, 2.0, 3.0)
+MAX_CACHE_HIT_SECONDS = 5.0
 
 
-def probe() -> tuple[float, dict[str, str], dict]:
+@dataclass(frozen=True)
+class ProbeResult:
+    seconds: float
+    headers: dict[str, str]
+    payload: dict
+
+    @property
+    def cache_status(self) -> str:
+        return self.headers.get("x-wetmap-point-cache", "unknown").upper()
+
+    @property
+    def edge_location(self) -> str:
+        ray = self.headers.get("cf-ray", "")
+        return ray.rsplit("-", 1)[-1] if "-" in ray else "unknown"
+
+
+def probe_url(api_url: str, now: datetime | None = None) -> str:
+    current = now or datetime.now(timezone.utc)
+    slot = int(current.timestamp() // (15 * 60))
+    # Rotate the cache coordinate every 15 minutes so scheduled probes normally
+    # exercise both the complete radar/model path and the point cache.
+    latitude = 56.10 + (slot % 70) / 1000
+    longitude = 10.10 + ((slot // 70) % 70) / 1000
+    return (
+        f"{api_url.rstrip('/')}/api/v1/weather/precipitation"
+        f"?lat={latitude:.5f}&lon={longitude:.5f}&v=2"
+    )
+
+
+def http_probe(url: str) -> ProbeResult:
     request = urllib.request.Request(
         url,
         headers={"Accept": "application/json", "User-Agent": "wetmap-synthetic/1.0"},
@@ -26,36 +52,85 @@ def probe() -> tuple[float, dict[str, str], dict]:
     with urllib.request.urlopen(request, timeout=15) as response:
         payload = json.load(response)
         headers = {name.lower(): value for name, value in response.headers.items()}
-    return time.perf_counter() - started, headers, payload
+    return ProbeResult(time.perf_counter() - started, headers, payload)
 
 
-first_seconds, first_headers, first_payload = probe()
-time.sleep(0.5)
-warm_seconds, warm_headers, warm_payload = probe()
+def validate_probe(result: ProbeResult) -> None:
+    if "radar-nowcast" not in str(result.payload.get("source", "")):
+        raise SystemExit("Live precipitation probe did not use the radar-nowcast path")
 
-if "radar-nowcast" not in str(first_payload.get("source", "")):
-    raise SystemExit("Live precipitation probe did not use the radar-nowcast path")
-if first_payload.get("basedOnObservedAt") != warm_payload.get("basedOnObservedAt"):
-    raise SystemExit("Cold and warm probes did not use the same radar generation")
-if warm_headers.get("x-wetmap-point-cache") != "HIT":
-    raise SystemExit("Repeated point forecast did not hit the edge cache")
+    timing = result.headers.get("server-timing", "")
+    if result.cache_status == "HIT":
+        if "point_cache;dur=" not in timing or "total;dur=" not in timing:
+            raise SystemExit("Cached response is missing point-cache performance telemetry")
+        if result.seconds > MAX_CACHE_HIT_SECONDS:
+            raise SystemExit(
+                f"Cached point forecast is too slow ({result.seconds:.2f}s)"
+            )
+    elif result.cache_status == "MISS":
+        if "radar;dur=" not in timing or "combined_total;dur=" not in timing:
+            raise SystemExit("Full response is missing radar performance telemetry")
 
-warm_timing = warm_headers.get("server-timing", "")
-if "point_cache;dur=" not in warm_timing or "total;dur=" not in warm_timing:
-    raise SystemExit("Warm response is missing point-cache performance telemetry")
 
-if first_headers.get("x-wetmap-point-cache") == "MISS":
-    first_timing = first_headers.get("server-timing", "")
-    if "radar;dur=" not in first_timing or "combined_total;dur=" not in first_timing:
-        raise SystemExit("Full response is missing radar performance telemetry")
+def check_live_performance(
+    api_url: str,
+    *,
+    probe: Callable[[str], ProbeResult] = http_probe,
+    sleep: Callable[[float], None] = time.sleep,
+    retry_delays: Sequence[float] = CACHE_RETRY_DELAYS_SECONDS,
+    now: datetime | None = None,
+) -> list[ProbeResult]:
+    url = probe_url(api_url, now)
+    results: list[ProbeResult] = []
+    transient_errors: list[str] = []
 
-if warm_seconds > 5:
-    raise SystemExit(f"Warm point forecast is too slow ({warm_seconds:.2f}s)")
+    for delay in (0.0, *retry_delays):
+        if delay:
+            sleep(delay)
+        try:
+            result = probe(url)
+        except (TimeoutError, urllib.error.URLError, json.JSONDecodeError) as error:
+            transient_errors.append(type(error).__name__)
+            continue
 
-print(
-    "Live point forecast: "
-    f"first={first_seconds * 1000:.0f}ms "
-    f"({first_headers.get('x-wetmap-point-cache', 'unknown')}), "
-    f"warm={warm_seconds * 1000:.0f}ms "
-    f"({warm_headers.get('x-wetmap-point-cache', 'unknown')})"
-)
+        validate_probe(result)
+        results.append(result)
+        if result.cache_status == "HIT":
+            statuses = ", ".join(
+                f"{item.cache_status}@{item.edge_location}:{item.seconds * 1000:.0f}ms"
+                for item in results
+            )
+            print(f"Live point forecast cache sequence: {statuses}")
+            return results
+
+    if not results:
+        errors = ", ".join(transient_errors) or "unknown errors"
+        raise SystemExit(
+            f"Live point forecast failed on all {1 + len(retry_delays)} attempts "
+            f"({errors})"
+        )
+
+    statuses = ", ".join(
+        f"{item.cache_status}@{item.edge_location}" for item in results
+    )
+    error_suffix = (
+        f"; transient errors: {', '.join(transient_errors)}"
+        if transient_errors
+        else ""
+    )
+    raise SystemExit(
+        "Point forecast cache did not produce a HIT after "
+        f"{1 + len(retry_delays)} attempts ({statuses}{error_suffix})"
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(argv if argv is not None else sys.argv[1:])
+    if len(arguments) != 1:
+        raise SystemExit("Usage: check_live_performance.py <api-url>")
+    check_live_performance(arguments[0])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

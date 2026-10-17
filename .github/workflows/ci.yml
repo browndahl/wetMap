@@ -28,6 +28,8 @@ jobs:
       - run: pip install -e 'apps/worker[dev]'
       - run: ruff check apps/worker
       - run: pytest apps/worker/tests
+      - name: Test synthetic monitoring checks
+        run: python -m unittest discover -s .github/scripts -p 'test_*.py'
   api:
     runs-on: ubuntu-latest
     steps:
