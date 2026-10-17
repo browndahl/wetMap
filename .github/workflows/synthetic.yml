@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Check web application
         run: curl --fail --retry 2 --retry-all-errors --max-time 15 "$PUBLIC_URL/"
         env: { PUBLIC_URL: "${{ vars.PUBLIC_URL }}" }
