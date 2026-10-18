@@ -6,6 +6,8 @@ from PIL import Image
 
 from wetmap_worker.nowcast import (
     ALGORITHM_VERSION,
+    PROBABILITY_GATE_CANDIDATE_ID,
+    PROBABILITY_GATE_CANDIDATE_METHOD,
     REGIME_CANDIDATE_ID,
     REGIME_CANDIDATE_METHOD,
     POINT_GRID_HEIGHT,
@@ -300,6 +302,40 @@ def test_republishes_a_new_verification_contract_for_the_same_observation() -> N
         ],
     }
     assert verification_forecast_changed({"forecasts": [upgraded]}, changed_anchors) is True
+    gated = {
+        **upgraded,
+        "shadowCandidates": [
+            {
+                "candidateId": PROBABILITY_GATE_CANDIDATE_ID,
+                "cubeKey": "probabilityGatedEnsemble",
+                "baselineCubeKey": "probabilityGatedBaseline",
+                "probabilityCubeKey": "regimeRainProbability",
+                "minimumLeadMinutes": 40,
+                "probabilityGateByLeadMinutes": {"40": 0.5, "50": 0.6, "60": 0.65},
+                "frames": [
+                    {"leadMinutes": 40, "minimumRainProbability": 0.5},
+                    {"leadMinutes": 50, "minimumRainProbability": 0.6},
+                    {"leadMinutes": 60, "minimumRainProbability": 0.65},
+                ],
+            }
+        ],
+    }
+    changed_gate = {
+        **gated,
+        "shadowCandidates": [
+            {
+                **gated["shadowCandidates"][0],
+                "probabilityGateByLeadMinutes": {"40": 0.55, "50": 0.6, "60": 0.65},
+                "frames": [
+                    {"leadMinutes": 40, "minimumRainProbability": 0.55},
+                    {"leadMinutes": 50, "minimumRainProbability": 0.6},
+                    {"leadMinutes": 60, "minimumRainProbability": 0.65},
+                ],
+            }
+        ],
+    }
+    assert verification_forecast_changed({"forecasts": [gated]}, gated) is False
+    assert verification_forecast_changed({"forecasts": [gated]}, changed_gate) is True
 
 
 def test_keeps_algorithm_versions_in_separate_quality_cohorts(tmp_path: Path) -> None:
@@ -394,6 +430,8 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
         regimeAdaptiveBaseline=baseline_cube,
         regimeAdaptiveEnsemble=candidate_cube,
         regimeRainProbability=np.where(candidate_cube >= 52, 85, 10).astype(np.uint8),
+        probabilityGatedBaseline=baseline_cube,
+        probabilityGatedEnsemble=candidate_cube,
     )
     metadata = {
         "schemaVersion": 2,
@@ -453,6 +491,22 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
                     }
                 ],
             },
+            {
+                "candidateId": PROBABILITY_GATE_CANDIDATE_ID,
+                "forecastMethod": PROBABILITY_GATE_CANDIDATE_METHOD,
+                "cubeKey": "probabilityGatedEnsemble",
+                "baselineCubeKey": "probabilityGatedBaseline",
+                "probabilityCubeKey": "regimeRainProbability",
+                "probabilityThresholdDbz": 20,
+                "frames": [
+                    {
+                        "leadMinutes": 45,
+                        "predictedAt": "2026-10-11T12:00:00Z",
+                        "cubeFrameIndex": 1,
+                        "minimumRainProbability": 0.6,
+                    }
+                ],
+            },
         ],
     }
 
@@ -461,7 +515,7 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
     )
 
     assert result is not None
-    assert len(result["shadowCandidateScores"]) == 3
+    assert len(result["shadowCandidateScores"]) == 4
     candidate = result["shadowCandidateScores"][0]
     assert candidate["candidateId"] == SHADOW_CANDIDATE_ID
     assert candidate["criticalSuccessIndex"] == result["criticalSuccessIndex"]
@@ -477,6 +531,12 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
     assert regime_candidate["forecastMethod"] == REGIME_CANDIDATE_METHOD
     assert regime_candidate["brierScore"] < regime_candidate["persistenceBrierScore"]
     assert regime_candidate["brierSkillScore"] > 0
+    probability_gate_candidate = result["shadowCandidateScores"][3]
+    assert probability_gate_candidate["candidateId"] == PROBABILITY_GATE_CANDIDATE_ID
+    assert probability_gate_candidate["forecastMethod"] == PROBABILITY_GATE_CANDIDATE_METHOD
+    assert probability_gate_candidate["criticalSuccessIndexImprovement"] > 0
+    assert probability_gate_candidate["brierSkillScore"] > 0
+    assert probability_gate_candidate["minimumRainProbability"] == 0.6
 
 
 def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path) -> None:

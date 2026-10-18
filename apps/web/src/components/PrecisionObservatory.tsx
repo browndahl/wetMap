@@ -241,12 +241,15 @@ export default function PrecisionObservatory({ locale }: Props) {
                         {t("precisionShadowTitle")} ·{" "}
                         {t(
                           shadowCandidate.forecastMethod ===
-                            "regime-adaptive-ensemble"
-                            ? "nowcastAdaptiveEnsemble"
+                            "probability-gated-ensemble"
+                            ? "nowcastProbabilityGated"
                             : shadowCandidate.forecastMethod ===
-                                "trajectory-speed-corrected"
-                              ? "nowcastSpeedCorrected"
-                              : "nowcastTrajectory",
+                                "regime-adaptive-ensemble"
+                              ? "nowcastAdaptiveEnsemble"
+                              : shadowCandidate.forecastMethod ===
+                                  "trajectory-speed-corrected"
+                                ? "nowcastSpeedCorrected"
+                                : "nowcastTrajectory",
                         )}
                       </strong>
                     </span>
@@ -294,6 +297,9 @@ export default function PrecisionObservatory({ locale }: Props) {
                           {lead.sampleCount}/
                           {shadowCandidate.promotionGate.minimumSamples}{" "}
                           {t("precisionSamples")}
+                          {lead.minimumRainProbability != null
+                            ? ` · ≥${Math.round(lead.minimumRainProbability * 100)}% ${t("precisionRainProbability")}`
+                            : ""}
                         </small>
                       </article>
                     ))}

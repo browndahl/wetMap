@@ -98,6 +98,7 @@ for candidate in report.get("shadowCandidates", []):
         "trajectory-recency-flow-v1",
         "trajectory-speed-bias-v2",
         "regime-adaptive-ensemble-v3",
+        "probability-gated-ensemble-v4",
     }:
         raise SystemExit(f"Unknown shadow nowcast candidate {candidate.get('candidateId')}")
     lead_entries = candidate.get("byLeadMinutes", [])
@@ -127,7 +128,8 @@ for candidate in report.get("shadowCandidates", []):
         if float(entry.get("falseAlarmRateIncrease", 1)) > 0.02:
             raise SystemExit("Shadow candidate promoted with too many additional false alarms")
         if (
-            candidate_id == "regime-adaptive-ensemble-v3"
+            candidate_id
+            in {"regime-adaptive-ensemble-v3", "probability-gated-ensemble-v4"}
             and float(entry.get("meanBrierSkillScore", -1)) < 0
         ):
             raise SystemExit("Adaptive ensemble promoted below persistence Brier skill")

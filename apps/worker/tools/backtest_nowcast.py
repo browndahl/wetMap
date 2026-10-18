@@ -19,7 +19,10 @@ from wetmap_worker.nowcast import (
     _advect,
     _advect_trajectory,
     _dense_motion,
+    _probability_gate_for_lead,
+    _probability_gated_prediction,
     _regime_prediction,
+    _regime_rain_probability,
     _regime_selector,
     _reflectivity_grid,
 )
@@ -96,17 +99,32 @@ def backtest(frame_directory: Path) -> dict[int, dict[str, dict[str, int | float
                 trajectory_flow * SPEED_CORRECTION_FACTOR,
                 lead_minutes,
             )
+            regime_prediction = _regime_prediction(
+                source[-1],
+                optical_prediction,
+                trajectory_prediction,
+                speed_prediction,
+                str(regime_selector["selectedMember"]),
+            )
+            regime_probability = _regime_rain_probability(
+                source[-1],
+                optical_prediction,
+                trajectory_prediction,
+                speed_prediction,
+                regime_selector["weights"],
+                20,
+            )
             predictions = {
                 "persistence": source[-1],
                 "optical-flow": optical_prediction,
                 "trajectory-recency-flow-v1": trajectory_prediction,
                 "trajectory-speed-bias-v2": speed_prediction,
-                "regime-adaptive-ensemble-v3": _regime_prediction(
-                    source[-1],
-                    optical_prediction,
-                    trajectory_prediction,
-                    speed_prediction,
-                    str(regime_selector["selectedMember"]),
+                "regime-adaptive-ensemble-v3": regime_prediction,
+                "probability-gated-ensemble-v4": _probability_gated_prediction(
+                    regime_prediction,
+                    regime_probability,
+                    _probability_gate_for_lead(lead_minutes),
+                    20,
                 ),
             }
             for name, prediction in predictions.items():
@@ -129,6 +147,7 @@ def backtest(frame_directory: Path) -> dict[int, dict[str, dict[str, int | float
                 "trajectory-recency-flow-v1",
                 "trajectory-speed-bias-v2",
                 "regime-adaptive-ensemble-v3",
+                "probability-gated-ensemble-v4",
             )
         }
         for lead_minutes in SHADOW_VERIFICATION_LEAD_MINUTES

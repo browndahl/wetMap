@@ -42,7 +42,8 @@ export interface NowcastFrame {
     | "persistence"
     | "trajectory-optical-flow"
     | "trajectory-speed-corrected"
-    | "regime-adaptive-ensemble";
+    | "regime-adaptive-ensemble"
+    | "probability-gated-ensemble";
   validationSamples?: number;
   verificationCsi?: number | null;
   skillOverPersistence?: number | null;
@@ -129,6 +130,7 @@ export interface ShadowCandidateLeadQuality extends VerificationSummary {
   falseAlarmRateIncrease: number | null;
   baselineCriticalSuccessIndex: number | null;
   criticalSuccessIndexImprovement: number | null;
+  minimumRainProbability?: number | null;
 }
 
 export interface ShadowCandidateQuality {
@@ -300,6 +302,7 @@ export interface RainForecastPoint {
     | "trajectory-optical-flow"
     | "trajectory-speed-corrected"
     | "regime-adaptive-ensemble"
+    | "probability-gated-ensemble"
     | null;
 }
 

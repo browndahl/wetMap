@@ -33,6 +33,11 @@ REGIME_BASELINE_CUBE_KEY = "regimeAdaptiveBaseline"
 REGIME_PROBABILITY_CUBE_KEY = "regimeRainProbability"
 REGIME_SELECTOR_MINIMUM_EVENT_PIXELS = 25
 REGIME_SELECTOR_MINIMUM_CSI_GAIN = 0.02
+PROBABILITY_GATE_CANDIDATE_ID = "probability-gated-ensemble-v4"
+PROBABILITY_GATE_CANDIDATE_METHOD = "probability-gated-ensemble"
+PROBABILITY_GATE_CANDIDATE_CUBE_KEY = "probabilityGatedEnsemble"
+PROBABILITY_GATE_BASELINE_CUBE_KEY = "probabilityGatedBaseline"
+PROBABILITY_GATE_BY_LEAD = {40: 0.5, 50: 0.6, 60: 0.65}
 SHADOW_MINIMUM_LEAD_MINUTES = 40
 SHADOW_VERIFICATION_LEAD_MINUTES = (40, 50, 60)
 LEAD_MINUTES = tuple(range(5, 61, 5))
@@ -390,6 +395,35 @@ def _regime_rain_probability(
     return np.rint(np.clip(probability, 0, 1) * 100).astype(np.uint8)
 
 
+def _probability_gate_for_lead(lead_minutes: int) -> float:
+    anchors = sorted(PROBABILITY_GATE_BY_LEAD)
+    return float(
+        np.interp(
+            lead_minutes,
+            anchors,
+            [PROBABILITY_GATE_BY_LEAD[lead] for lead in anchors],
+        )
+    )
+
+
+def _probability_gated_prediction(
+    prediction: np.ndarray,
+    rain_probability: np.ndarray,
+    minimum_probability: float,
+    rain_threshold_dbz: int,
+) -> np.ndarray:
+    """Remove deterministic rain where the ensemble lacks enough agreement."""
+    if prediction.shape[:2] != rain_probability.shape:
+        raise ValueError("Rain probability and prediction must have identical dimensions")
+    gated = prediction.copy()
+    predicted_rain = gated[..., 3] >= _alpha_threshold(rain_threshold_dbz)
+    insufficient_probability = rain_probability < round(minimum_probability * 100)
+    remove = predicted_rain & insufficient_probability
+    gated[remove, :3] = 0
+    gated[remove, 3] = np.where(gated[remove, 3] > 0, 1, 0)
+    return gated
+
+
 def generate_nowcast(
     source_paths: list[Path],
     source_frames: list[Frame],
@@ -442,6 +476,8 @@ def generate_nowcast(
     speed_baseline_verification_frames = [verification_frames[0]]
     regime_candidate_verification_frames = [verification_frames[0]]
     regime_baseline_verification_frames = [verification_frames[0]]
+    probability_gate_candidate_verification_frames = [verification_frames[0]]
+    probability_gate_baseline_verification_frames = [verification_frames[0]]
     regime_probability_frames = [
         cv2.resize(
             (latest[..., 3] >= _alpha_threshold(rain_threshold_dbz)).astype(np.uint8) * 100,
@@ -492,6 +528,17 @@ def generate_nowcast(
             regime_selector["weights"],
             rain_threshold_dbz,
         )
+        probability_gate = _probability_gate_for_lead(lead_minutes)
+        probability_gate_prediction = (
+            _probability_gated_prediction(
+                regime_prediction,
+                regime_probability,
+                probability_gate,
+                rain_threshold_dbz,
+            )
+            if lead_minutes >= SHADOW_MINIMUM_LEAD_MINUTES
+            else optical_flow_prediction
+        )
         quality = (quality_by_lead or {}).get(lead_minutes, {})
         trajectory_quality = _shadow_candidate_evidence(
             quality_by_lead or {},
@@ -511,9 +558,18 @@ def generate_nowcast(
             REGIME_CANDIDATE_ID,
             REGIME_CANDIDATE_METHOD,
         )
+        probability_gate_candidate_quality = _shadow_candidate_evidence(
+            quality_by_lead or {},
+            lead_minutes,
+            PROBABILITY_GATE_CANDIDATE_ID,
+            PROBABILITY_GATE_CANDIDATE_METHOD,
+        )
         use_trajectory_candidate = trajectory_quality.get("safeToPromote") is True
         use_speed_candidate = speed_candidate_quality.get("safeToPromote") is True
         use_regime_candidate = regime_candidate_quality.get("safeToPromote") is True
+        use_probability_gate_candidate = (
+            probability_gate_candidate_quality.get("safeToPromote") is True
+        )
         operational_status = quality.get("operationalStatus")
         raw_validation_samples = int(
             quality.get("opticalFlowSampleCount", quality.get("sampleCount", 0)) or 0
@@ -555,6 +611,11 @@ def generate_nowcast(
             raw_prediction = regime_prediction
             forecast_method = REGIME_CANDIDATE_METHOD
             active_candidate_quality = regime_candidate_quality
+        probability_gate_baseline_prediction = raw_prediction
+        if use_probability_gate_candidate:
+            raw_prediction = probability_gate_prediction
+            forecast_method = PROBABILITY_GATE_CANDIDATE_METHOD
+            active_candidate_quality = probability_gate_candidate_quality
         if active_candidate_quality is not None:
             validation_samples = int(active_candidate_quality.get("sampleCount", 0) or 0)
             skill = active_candidate_quality.get("meanCriticalSuccessIndexSkill")
@@ -659,6 +720,20 @@ def generate_nowcast(
         regime_baseline_verification_frames.append(
             _reflectivity_grid(
                 regime_baseline_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        probability_gate_candidate_verification_frames.append(
+            _reflectivity_grid(
+                probability_gate_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        probability_gate_baseline_verification_frames.append(
+            _reflectivity_grid(
+                probability_gate_baseline_prediction[..., 3],
                 VERIFICATION_GRID_WIDTH,
                 VERIFICATION_GRID_HEIGHT,
             )
@@ -805,6 +880,12 @@ def generate_nowcast(
             REGIME_PROBABILITY_CUBE_KEY: np.stack(
                 regime_probability_frames, axis=-1
             ),
+            PROBABILITY_GATE_CANDIDATE_CUBE_KEY: np.stack(
+                probability_gate_candidate_verification_frames, axis=-1
+            ),
+            PROBABILITY_GATE_BASELINE_CUBE_KEY: np.stack(
+                probability_gate_baseline_verification_frames, axis=-1
+            ),
         },
     )
     verification_slot = int(latest_time.timestamp() // 300) % VERIFICATION_RING_SLOTS
@@ -860,6 +941,30 @@ def generate_nowcast(
                         **frame,
                         "cubeFrameIndex": index,
                         "selectedMember": regime_selector["selectedMember"],
+                    }
+                    for index, frame in enumerate(point_frame_entries)
+                    if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES
+                ],
+            },
+            {
+                "candidateId": PROBABILITY_GATE_CANDIDATE_ID,
+                "forecastMethod": PROBABILITY_GATE_CANDIDATE_METHOD,
+                "cubeKey": PROBABILITY_GATE_CANDIDATE_CUBE_KEY,
+                "baselineCubeKey": PROBABILITY_GATE_BASELINE_CUBE_KEY,
+                "probabilityCubeKey": REGIME_PROBABILITY_CUBE_KEY,
+                "probabilityThresholdDbz": rain_threshold_dbz,
+                "minimumLeadMinutes": SHADOW_MINIMUM_LEAD_MINUTES,
+                "probabilityGateByLeadMinutes": {
+                    str(lead): threshold
+                    for lead, threshold in PROBABILITY_GATE_BY_LEAD.items()
+                },
+                "frames": [
+                    {
+                        **frame,
+                        "cubeFrameIndex": index,
+                        "minimumRainProbability": _probability_gate_for_lead(
+                            int(frame["leadMinutes"])
+                        ),
                     }
                     for index, frame in enumerate(point_frame_entries)
                     if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES

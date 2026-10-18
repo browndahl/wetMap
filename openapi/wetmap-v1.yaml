@@ -291,6 +291,7 @@ components:
                 trajectory-optical-flow,
                 trajectory-speed-corrected,
                 regime-adaptive-ensemble,
+                probability-gated-ensemble,
               ],
           }
         validationSamples: { type: integer, minimum: 0 }
@@ -401,6 +402,7 @@ components:
                 trajectory-optical-flow,
                 trajectory-speed-corrected,
                 regime-adaptive-ensemble,
+                probability-gated-ensemble,
                 null,
               ],
           }
@@ -517,7 +519,7 @@ components:
                   leadMinutes: { type: integer, minimum: 5, maximum: 60 }
                   byForecastMethod:
                     type: array
-                    maxItems: 4
+                    maxItems: 6
                     items:
                       allOf:
                         - $ref: "#/components/schemas/VerificationSummary"
@@ -534,6 +536,7 @@ components:
                                     trajectory-optical-flow,
                                     trajectory-speed-corrected,
                                     regime-adaptive-ensemble,
+                                    probability-gated-ensemble,
                                   ],
                               }
         byThresholdDbz:
@@ -622,6 +625,7 @@ components:
                       trajectory-optical-flow,
                       trajectory-speed-corrected,
                       regime-adaptive-ensemble,
+                      probability-gated-ensemble,
                     ],
                 }
               thresholdScores:
@@ -673,6 +677,7 @@ components:
                 trajectory-recency-flow-v1,
                 trajectory-speed-bias-v2,
                 regime-adaptive-ensemble-v3,
+                probability-gated-ensemble-v4,
               ],
           }
         forecastMethod:
@@ -683,6 +688,7 @@ components:
                 trajectory-optical-flow,
                 trajectory-speed-corrected,
                 regime-adaptive-ensemble,
+                probability-gated-ensemble,
               ],
           }
         minimumLeadMinutes: { type: integer, const: 40 }
@@ -748,6 +754,8 @@ components:
               { type: [number, "null"], minimum: 0, maximum: 1 }
             criticalSuccessIndexImprovement:
               { type: [number, "null"], minimum: -1, maximum: 1 }
+            minimumRainProbability:
+              { type: [number, "null"], minimum: 0, maximum: 1 }
     GeographicConsistencyQuality:
       type: object
       required:

@@ -11,6 +11,10 @@ from wetmap_worker.nowcast import (
     LEAD_MINUTES,
     POINT_GRID_HEIGHT,
     POINT_GRID_WIDTH,
+    PROBABILITY_GATE_BASELINE_CUBE_KEY,
+    PROBABILITY_GATE_CANDIDATE_CUBE_KEY,
+    PROBABILITY_GATE_CANDIDATE_ID,
+    PROBABILITY_GATE_CANDIDATE_METHOD,
     REGIME_BASELINE_CUBE_KEY,
     REGIME_CANDIDATE_CUBE_KEY,
     REGIME_CANDIDATE_ID,
@@ -26,6 +30,7 @@ from wetmap_worker.nowcast import (
     SPEED_CANDIDATE_CUBE_KEY,
     SPEED_CANDIDATE_ID,
     SPEED_CANDIDATE_METHOD,
+    _probability_gated_prediction,
     _regime_selector,
     generate_nowcast,
 )
@@ -67,6 +72,20 @@ def test_regime_selector_fails_closed_to_persistence_without_motion_gain() -> No
 
     assert selector["selectedMember"] == "persistence"
     assert selector["scores"]["persistence"] == 1.0
+
+
+def test_probability_gate_removes_only_low_agreement_rain() -> None:
+    prediction = _radar_array(24)
+    probability = np.zeros(prediction.shape[:2], dtype=np.uint8)
+    probability[25:45, 24:34] = 80
+    probability[25:45, 34:44] = 40
+
+    gated = _probability_gated_prediction(prediction, probability, 0.6, 20)
+
+    assert np.all(gated[25:45, 24:34, 3] == 180)
+    assert np.all(gated[25:45, 34:44, 3] == 1)
+    assert np.all(gated[25:45, 34:44, :3] == 0)
+    assert np.all(prediction[25:45, 34:44, 3] == 180)
 
 
 def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: Path) -> None:
@@ -138,7 +157,9 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     )
     assert verification_metadata["schemaVersion"] == 2
     assert verification_metadata["dataKey"].startswith("nowcast/verification-cubes/cube-")
-    trajectory, speed, regime = verification_metadata["shadowCandidates"]
+    trajectory, speed, regime, probability_gate = verification_metadata[
+        "shadowCandidates"
+    ]
     assert trajectory["candidateId"] == SHADOW_CANDIDATE_ID
     assert trajectory["forecastMethod"] == SHADOW_CANDIDATE_METHOD
     assert trajectory["baselineCubeKey"] == SHADOW_BASELINE_CUBE_KEY
@@ -160,6 +181,20 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     }
     assert abs(sum(regime["selector"]["weights"].values()) - 1) < 0.00001
     assert [frame["leadMinutes"] for frame in regime["frames"]] == [40, 50, 60]
+    assert probability_gate["candidateId"] == PROBABILITY_GATE_CANDIDATE_ID
+    assert probability_gate["forecastMethod"] == PROBABILITY_GATE_CANDIDATE_METHOD
+    assert probability_gate["baselineCubeKey"] == PROBABILITY_GATE_BASELINE_CUBE_KEY
+    assert probability_gate["probabilityCubeKey"] == REGIME_PROBABILITY_CUBE_KEY
+    assert probability_gate["probabilityGateByLeadMinutes"] == {
+        "40": 0.5,
+        "50": 0.6,
+        "60": 0.65,
+    }
+    assert [frame["minimumRainProbability"] for frame in probability_gate["frames"]] == [
+        0.5,
+        0.6,
+        0.65,
+    ]
     with np.load(tmp_path / "nowcast/verification-cube.npz") as archive:
         assert archive["cube"].shape[-1] == len(LEAD_MINUTES) + 1
         assert archive[SHADOW_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
@@ -171,6 +206,8 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
         assert archive[REGIME_PROBABILITY_CUBE_KEY].shape == archive["cube"].shape
         assert int(archive[REGIME_PROBABILITY_CUBE_KEY].min()) >= 0
         assert int(archive[REGIME_PROBABILITY_CUBE_KEY].max()) <= 100
+        assert archive[PROBABILITY_GATE_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[PROBABILITY_GATE_BASELINE_CUBE_KEY].shape == archive["cube"].shape
 
 
 def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Path) -> None:
@@ -261,6 +298,13 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
         "criticalSuccessIndex": 0.52,
         "meanCriticalSuccessIndexSkill": 0.14,
     }
+    probability_gate_candidate_quality = {
+        **candidate_quality,
+        "candidateId": PROBABILITY_GATE_CANDIDATE_ID,
+        "forecastMethod": PROBABILITY_GATE_CANDIDATE_METHOD,
+        "criticalSuccessIndex": 0.56,
+        "meanCriticalSuccessIndexSkill": 0.18,
+    }
 
     manifest, risk, _outputs = generate_nowcast(
         paths,
@@ -270,7 +314,11 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
             40: {
                 "operationalStatus": "degraded",
                 "operationalCriticalSuccessIndex": 0.3,
-                "shadowCandidates": [candidate_quality, speed_candidate_quality],
+                "shadowCandidates": [
+                    candidate_quality,
+                    speed_candidate_quality,
+                    probability_gate_candidate_quality,
+                ],
             },
             50: {
                 "shadowCandidates": [
@@ -286,18 +334,24 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
                         "criticalSuccessIndex": 0.51,
                         "meanCriticalSuccessIndexSkill": 0.12,
                     },
+                    {
+                        **probability_gate_candidate_quality,
+                        "sampleCount": 52,
+                        "criticalSuccessIndex": 0.55,
+                        "meanCriticalSuccessIndexSkill": 0.16,
+                    },
                 ]
             },
         },
     )
 
     by_lead = {frame["leadMinutes"]: frame for frame in manifest["frames"]}
-    assert by_lead[40]["forecastMethod"] == SPEED_CANDIDATE_METHOD
-    assert by_lead[45]["forecastMethod"] == SPEED_CANDIDATE_METHOD
-    assert by_lead[45]["verificationCsi"] == 0.51
-    assert by_lead[45]["skillOverPersistence"] == 0.12
+    assert by_lead[40]["forecastMethod"] == PROBABILITY_GATE_CANDIDATE_METHOD
+    assert by_lead[45]["forecastMethod"] == PROBABILITY_GATE_CANDIDATE_METHOD
+    assert by_lead[45]["verificationCsi"] == 0.55
+    assert by_lead[45]["skillOverPersistence"] == 0.16
     assert by_lead[45]["validationSamples"] == 48
-    assert by_lead[50]["forecastMethod"] == SPEED_CANDIDATE_METHOD
+    assert by_lead[50]["forecastMethod"] == PROBABILITY_GATE_CANDIDATE_METHOD
     assert by_lead[55]["forecastMethod"] == "optical-flow"
     assert risk["frames"][9]["alertEligible"] is True
     with np.load(tmp_path / "promoted/verification-cube.npz") as archive:
@@ -308,4 +362,8 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
         assert not np.array_equal(
             archive["cube"][..., 10],
             archive[SPEED_BASELINE_CUBE_KEY][..., 10],
+        )
+        assert np.array_equal(
+            archive[PROBABILITY_GATE_BASELINE_CUBE_KEY][..., 10],
+            archive[SPEED_CANDIDATE_CUBE_KEY][..., 10],
         )

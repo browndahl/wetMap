@@ -266,6 +266,15 @@ def verify_previous_nowcast(
                 **{key: value for key, value in shadow_primary.items() if key != "thresholdDbz"},
                 "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
                 "thresholdScores": shadow_threshold_scores,
+                **(
+                    {
+                        "minimumRainProbability": float(
+                            shadow_frame["minimumRainProbability"]
+                        )
+                    }
+                    if shadow_frame.get("minimumRainProbability") is not None
+                    else {}
+                ),
                 **probability_metrics,
             }
         )
@@ -449,6 +458,14 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
                 "falseAlarmRateIncrease": false_alarm_rate_increase,
                 "baselineCriticalSuccessIndex": operational_csi,
                 "criticalSuccessIndexImprovement": csi_improvement,
+                "minimumRainProbability": next(
+                    (
+                        float(candidate["minimumRainProbability"])
+                        for candidate, _operational in reversed(pairs)
+                        if candidate.get("minimumRainProbability") is not None
+                    ),
+                    None,
+                ),
                 **candidate_summary,
             }
         )
@@ -819,7 +836,25 @@ def verification_forecast_changed(
                     candidate.get("probabilityThresholdDbz"),
                     candidate.get("minimumLeadMinutes"),
                     tuple(
-                        int(frame.get("leadMinutes", 0))
+                        sorted(
+                            (
+                                int(lead),
+                                float(probability),
+                            )
+                            for lead, probability in candidate.get(
+                                "probabilityGateByLeadMinutes", {}
+                            ).items()
+                        )
+                    ),
+                    tuple(
+                        (
+                            int(frame.get("leadMinutes", 0)),
+                            (
+                                float(frame["minimumRainProbability"])
+                                if frame.get("minimumRainProbability") is not None
+                                else None
+                            ),
+                        )
                         for frame in candidate.get("frames", [])
                     ),
                 )
