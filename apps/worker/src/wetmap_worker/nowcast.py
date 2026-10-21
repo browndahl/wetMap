@@ -38,6 +38,28 @@ PROBABILITY_GATE_CANDIDATE_METHOD = "probability-gated-ensemble"
 PROBABILITY_GATE_CANDIDATE_CUBE_KEY = "probabilityGatedEnsemble"
 PROBABILITY_GATE_BASELINE_CUBE_KEY = "probabilityGatedBaseline"
 PROBABILITY_GATE_BY_LEAD = {40: 0.5, 50: 0.6, 60: 0.65}
+CALIBRATED_GATE_CANDIDATE_ID = "recall-calibrated-ensemble-v5"
+CALIBRATED_GATE_CANDIDATE_METHOD = "recall-calibrated-ensemble"
+CALIBRATED_GATE_CANDIDATE_CUBE_KEY = "recallCalibratedEnsemble"
+CALIBRATED_GATE_BASELINE_CUBE_KEY = "recallCalibratedBaseline"
+CALIBRATION_POLICY_VERSION = "rolling-recall-floor-v1"
+CALIBRATION_PROBABILITY_THRESHOLDS = (
+    0.0,
+    0.15,
+    0.2,
+    0.25,
+    0.3,
+    0.35,
+    0.4,
+    0.45,
+    0.5,
+)
+CALIBRATION_INITIAL_GATE_BY_LEAD = {40: 0.25, 50: 0.25, 60: 0.25}
+CALIBRATION_MINIMUM_SAMPLES = 48
+CALIBRATION_MINIMUM_EVENT_PIXELS = 1_000
+CALIBRATION_MINIMUM_ABSOLUTE_RECALL = 0.3
+CALIBRATION_MINIMUM_RECALL_RETENTION = 0.85
+CALIBRATION_MINIMUM_CSI_GAIN = 0.005
 SHADOW_MINIMUM_LEAD_MINUTES = 40
 SHADOW_VERIFICATION_LEAD_MINUTES = (40, 50, 60)
 LEAD_MINUTES = tuple(range(5, 61, 5))
@@ -163,9 +185,7 @@ def _advect_trajectory(rgba: np.ndarray, flow: np.ndarray, steps: float) -> np.n
     )
 
 
-def _shadow_candidate_quality(
-    quality: dict[str, Any], candidate_id: str
-) -> dict[str, Any]:
+def _shadow_candidate_quality(quality: dict[str, Any], candidate_id: str) -> dict[str, Any]:
     return next(
         (
             candidate
@@ -190,9 +210,7 @@ def _shadow_candidate_evidence(
     """
     if lead_minutes < SHADOW_MINIMUM_LEAD_MINUTES:
         return {}
-    direct = _shadow_candidate_quality(
-        quality_by_lead.get(lead_minutes, {}), candidate_id
-    )
+    direct = _shadow_candidate_quality(quality_by_lead.get(lead_minutes, {}), candidate_id)
     if direct.get("safeToPromote") is True:
         return {**direct, "promotionEvidenceLeadMinutes": [lead_minutes]}
     lower_leads = [lead for lead in SHADOW_VERIFICATION_LEAD_MINUTES if lead < lead_minutes]
@@ -201,16 +219,9 @@ def _shadow_candidate_evidence(
         return direct
     lower_lead = max(lower_leads)
     upper_lead = min(upper_leads)
-    lower = _shadow_candidate_quality(
-        quality_by_lead.get(lower_lead, {}), candidate_id
-    )
-    upper = _shadow_candidate_quality(
-        quality_by_lead.get(upper_lead, {}), candidate_id
-    )
-    if not (
-        lower.get("safeToPromote") is True
-        and upper.get("safeToPromote") is True
-    ):
+    lower = _shadow_candidate_quality(quality_by_lead.get(lower_lead, {}), candidate_id)
+    upper = _shadow_candidate_quality(quality_by_lead.get(upper_lead, {}), candidate_id)
+    if not (lower.get("safeToPromote") is True and upper.get("safeToPromote") is True):
         return direct
     return {
         "candidateId": candidate_id,
@@ -236,9 +247,7 @@ def _risk_bucket(alpha: np.ndarray, rain_threshold_dbz: int = 20) -> str:
     reduced = cv2.resize(alpha, (RISK_WIDTH, RISK_HEIGHT), interpolation=cv2.INTER_AREA)
     categories = np.zeros(reduced.shape, dtype=np.uint8)
     intermediate_threshold_dbz = min(10, max(1, rain_threshold_dbz - 5))
-    intermediate_threshold_alpha = round(
-        45 + (intermediate_threshold_dbz + 10) * (175 / 60)
-    )
+    intermediate_threshold_alpha = round(45 + (intermediate_threshold_dbz + 10) * (175 / 60))
     rain_threshold_alpha = round(45 + (rain_threshold_dbz + 10) * (175 / 60))
     # Processor alpha is monotonic in dBZ. Bucket 3 is the calibrated rain boundary.
     categories[reduced >= 74] = 1
@@ -406,6 +415,63 @@ def _probability_gate_for_lead(lead_minutes: int) -> float:
     )
 
 
+def _initial_calibrated_gate_for_lead(lead_minutes: int) -> float:
+    anchors = sorted(CALIBRATION_INITIAL_GATE_BY_LEAD)
+    return float(
+        np.interp(
+            lead_minutes,
+            anchors,
+            [CALIBRATION_INITIAL_GATE_BY_LEAD[lead] for lead in anchors],
+        )
+    )
+
+
+def _calibrated_gate_anchor(
+    quality_by_lead: dict[int, dict[str, Any]], lead_minutes: int
+) -> tuple[float, str, int]:
+    candidate = _shadow_candidate_quality(
+        quality_by_lead.get(lead_minutes, {}), CALIBRATED_GATE_CANDIDATE_ID
+    )
+    calibration = candidate.get("probabilityCalibration", {})
+    selected = calibration.get("selectedMinimumRainProbability")
+    if calibration.get("status") == "calibrated" and isinstance(selected, (int, float)):
+        return (
+            float(selected),
+            "rolling-calibration",
+            int(calibration.get("sampleCount", 0) or 0),
+        )
+    return _initial_calibrated_gate_for_lead(lead_minutes), "cold-start", 0
+
+
+def _calibrated_probability_gate_for_lead(
+    quality_by_lead: dict[int, dict[str, Any]], lead_minutes: int
+) -> tuple[float, str, int]:
+    """Choose a threshold trained only on observations available before this forecast."""
+    if lead_minutes in SHADOW_VERIFICATION_LEAD_MINUTES:
+        return _calibrated_gate_anchor(quality_by_lead, lead_minutes)
+    lower_leads = [lead for lead in SHADOW_VERIFICATION_LEAD_MINUTES if lead < lead_minutes]
+    upper_leads = [lead for lead in SHADOW_VERIFICATION_LEAD_MINUTES if lead > lead_minutes]
+    if not lower_leads or not upper_leads:
+        return (
+            _initial_calibrated_gate_for_lead(lead_minutes),
+            "cold-start",
+            0,
+        )
+    lower = max(lower_leads)
+    upper = min(upper_leads)
+    lower_gate, lower_source, lower_samples = _calibrated_gate_anchor(quality_by_lead, lower)
+    upper_gate, upper_source, upper_samples = _calibrated_gate_anchor(quality_by_lead, upper)
+    fraction = (lead_minutes - lower) / (upper - lower)
+    threshold = lower_gate + (upper_gate - lower_gate) * fraction
+    source = (
+        "rolling-calibration"
+        if lower_source == upper_source == "rolling-calibration"
+        else "cold-start"
+    )
+    samples = min(lower_samples, upper_samples) if source == "rolling-calibration" else 0
+    return round(threshold, 4), source, samples
+
+
 def _probability_gated_prediction(
     prediction: np.ndarray,
     rain_probability: np.ndarray,
@@ -478,6 +544,8 @@ def generate_nowcast(
     regime_baseline_verification_frames = [verification_frames[0]]
     probability_gate_candidate_verification_frames = [verification_frames[0]]
     probability_gate_baseline_verification_frames = [verification_frames[0]]
+    calibrated_gate_candidate_verification_frames = [verification_frames[0]]
+    calibrated_gate_baseline_verification_frames = [verification_frames[0]]
     regime_probability_frames = [
         cv2.resize(
             (latest[..., 3] >= _alpha_threshold(rain_threshold_dbz)).astype(np.uint8) * 100,
@@ -493,6 +561,7 @@ def generate_nowcast(
         }
     ]
     output_paths: list[Path] = []
+    calibration_by_lead: dict[int, tuple[float, str, int]] = {}
     for lead_minutes in LEAD_MINUTES:
         optical_flow_prediction = _advect(latest, flow, lead_minutes)
         trajectory_prediction = (
@@ -539,6 +608,24 @@ def generate_nowcast(
             if lead_minutes >= SHADOW_MINIMUM_LEAD_MINUTES
             else optical_flow_prediction
         )
+        calibrated_gate, calibration_source, calibration_sample_count = (
+            _calibrated_probability_gate_for_lead(quality_by_lead or {}, lead_minutes)
+        )
+        calibration_by_lead[lead_minutes] = (
+            calibrated_gate,
+            calibration_source,
+            calibration_sample_count,
+        )
+        calibrated_gate_prediction = (
+            _probability_gated_prediction(
+                regime_prediction,
+                regime_probability,
+                calibrated_gate,
+                rain_threshold_dbz,
+            )
+            if lead_minutes >= SHADOW_MINIMUM_LEAD_MINUTES
+            else optical_flow_prediction
+        )
         quality = (quality_by_lead or {}).get(lead_minutes, {})
         trajectory_quality = _shadow_candidate_evidence(
             quality_by_lead or {},
@@ -564,11 +651,20 @@ def generate_nowcast(
             PROBABILITY_GATE_CANDIDATE_ID,
             PROBABILITY_GATE_CANDIDATE_METHOD,
         )
+        calibrated_gate_candidate_quality = _shadow_candidate_evidence(
+            quality_by_lead or {},
+            lead_minutes,
+            CALIBRATED_GATE_CANDIDATE_ID,
+            CALIBRATED_GATE_CANDIDATE_METHOD,
+        )
         use_trajectory_candidate = trajectory_quality.get("safeToPromote") is True
         use_speed_candidate = speed_candidate_quality.get("safeToPromote") is True
         use_regime_candidate = regime_candidate_quality.get("safeToPromote") is True
         use_probability_gate_candidate = (
             probability_gate_candidate_quality.get("safeToPromote") is True
+        )
+        use_calibrated_gate_candidate = (
+            calibrated_gate_candidate_quality.get("safeToPromote") is True
         )
         operational_status = quality.get("operationalStatus")
         raw_validation_samples = int(
@@ -616,6 +712,11 @@ def generate_nowcast(
             raw_prediction = probability_gate_prediction
             forecast_method = PROBABILITY_GATE_CANDIDATE_METHOD
             active_candidate_quality = probability_gate_candidate_quality
+        calibrated_gate_baseline_prediction = raw_prediction
+        if use_calibrated_gate_candidate:
+            raw_prediction = calibrated_gate_prediction
+            forecast_method = CALIBRATED_GATE_CANDIDATE_METHOD
+            active_candidate_quality = calibrated_gate_candidate_quality
         if active_candidate_quality is not None:
             validation_samples = int(active_candidate_quality.get("sampleCount", 0) or 0)
             skill = active_candidate_quality.get("meanCriticalSuccessIndexSkill")
@@ -734,6 +835,20 @@ def generate_nowcast(
         probability_gate_baseline_verification_frames.append(
             _reflectivity_grid(
                 probability_gate_baseline_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        calibrated_gate_candidate_verification_frames.append(
+            _reflectivity_grid(
+                calibrated_gate_prediction[..., 3],
+                VERIFICATION_GRID_WIDTH,
+                VERIFICATION_GRID_HEIGHT,
+            )
+        )
+        calibrated_gate_baseline_verification_frames.append(
+            _reflectivity_grid(
+                calibrated_gate_baseline_prediction[..., 3],
                 VERIFICATION_GRID_WIDTH,
                 VERIFICATION_GRID_HEIGHT,
             )
@@ -859,32 +974,24 @@ def generate_nowcast(
         verification_cube_path,
         cube=np.stack(verification_frames, axis=-1),
         **{
-            SHADOW_BASELINE_CUBE_KEY: np.stack(
-                baseline_verification_frames, axis=-1
-            ),
-            SHADOW_CANDIDATE_CUBE_KEY: np.stack(
-                trajectory_verification_frames, axis=-1
-            ),
-            SPEED_CANDIDATE_CUBE_KEY: np.stack(
-                speed_candidate_verification_frames, axis=-1
-            ),
-            SPEED_BASELINE_CUBE_KEY: np.stack(
-                speed_baseline_verification_frames, axis=-1
-            ),
-            REGIME_CANDIDATE_CUBE_KEY: np.stack(
-                regime_candidate_verification_frames, axis=-1
-            ),
-            REGIME_BASELINE_CUBE_KEY: np.stack(
-                regime_baseline_verification_frames, axis=-1
-            ),
-            REGIME_PROBABILITY_CUBE_KEY: np.stack(
-                regime_probability_frames, axis=-1
-            ),
+            SHADOW_BASELINE_CUBE_KEY: np.stack(baseline_verification_frames, axis=-1),
+            SHADOW_CANDIDATE_CUBE_KEY: np.stack(trajectory_verification_frames, axis=-1),
+            SPEED_CANDIDATE_CUBE_KEY: np.stack(speed_candidate_verification_frames, axis=-1),
+            SPEED_BASELINE_CUBE_KEY: np.stack(speed_baseline_verification_frames, axis=-1),
+            REGIME_CANDIDATE_CUBE_KEY: np.stack(regime_candidate_verification_frames, axis=-1),
+            REGIME_BASELINE_CUBE_KEY: np.stack(regime_baseline_verification_frames, axis=-1),
+            REGIME_PROBABILITY_CUBE_KEY: np.stack(regime_probability_frames, axis=-1),
             PROBABILITY_GATE_CANDIDATE_CUBE_KEY: np.stack(
                 probability_gate_candidate_verification_frames, axis=-1
             ),
             PROBABILITY_GATE_BASELINE_CUBE_KEY: np.stack(
                 probability_gate_baseline_verification_frames, axis=-1
+            ),
+            CALIBRATED_GATE_CANDIDATE_CUBE_KEY: np.stack(
+                calibrated_gate_candidate_verification_frames, axis=-1
+            ),
+            CALIBRATED_GATE_BASELINE_CUBE_KEY: np.stack(
+                calibrated_gate_baseline_verification_frames, axis=-1
             ),
         },
     )
@@ -955,8 +1062,7 @@ def generate_nowcast(
                 "probabilityThresholdDbz": rain_threshold_dbz,
                 "minimumLeadMinutes": SHADOW_MINIMUM_LEAD_MINUTES,
                 "probabilityGateByLeadMinutes": {
-                    str(lead): threshold
-                    for lead, threshold in PROBABILITY_GATE_BY_LEAD.items()
+                    str(lead): threshold for lead, threshold in PROBABILITY_GATE_BY_LEAD.items()
                 },
                 "frames": [
                     {
@@ -965,6 +1071,34 @@ def generate_nowcast(
                         "minimumRainProbability": _probability_gate_for_lead(
                             int(frame["leadMinutes"])
                         ),
+                    }
+                    for index, frame in enumerate(point_frame_entries)
+                    if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES
+                ],
+            },
+            {
+                "candidateId": CALIBRATED_GATE_CANDIDATE_ID,
+                "forecastMethod": CALIBRATED_GATE_CANDIDATE_METHOD,
+                "cubeKey": CALIBRATED_GATE_CANDIDATE_CUBE_KEY,
+                "baselineCubeKey": CALIBRATED_GATE_BASELINE_CUBE_KEY,
+                "calibrationBaseCubeKey": REGIME_CANDIDATE_CUBE_KEY,
+                "probabilityCubeKey": REGIME_PROBABILITY_CUBE_KEY,
+                "probabilityThresholdDbz": rain_threshold_dbz,
+                "minimumLeadMinutes": SHADOW_MINIMUM_LEAD_MINUTES,
+                "calibrationPolicyVersion": CALIBRATION_POLICY_VERSION,
+                "probabilityCalibrationThresholds": list(CALIBRATION_PROBABILITY_THRESHOLDS),
+                "calibrationMinimumSamples": CALIBRATION_MINIMUM_SAMPLES,
+                "calibrationMinimumEventPixels": (CALIBRATION_MINIMUM_EVENT_PIXELS),
+                "calibrationMinimumAbsoluteRecall": (CALIBRATION_MINIMUM_ABSOLUTE_RECALL),
+                "calibrationMinimumRecallRetention": (CALIBRATION_MINIMUM_RECALL_RETENTION),
+                "calibrationMinimumCsiGain": CALIBRATION_MINIMUM_CSI_GAIN,
+                "frames": [
+                    {
+                        **frame,
+                        "cubeFrameIndex": index,
+                        "minimumRainProbability": calibration_by_lead[int(frame["leadMinutes"])][0],
+                        "calibrationSource": calibration_by_lead[int(frame["leadMinutes"])][1],
+                        "calibrationSampleCount": calibration_by_lead[int(frame["leadMinutes"])][2],
                     }
                     for index, frame in enumerate(point_frame_entries)
                     if int(frame["leadMinutes"]) in SHADOW_VERIFICATION_LEAD_MINUTES

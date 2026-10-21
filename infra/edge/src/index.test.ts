@@ -876,8 +876,10 @@ describe("next-hour precipitation edge endpoint", () => {
         leadIndex >= 10
           ? ("persistence" as const)
           : leadIndex >= 8
-            ? ("trajectory-speed-corrected" as const)
-            : ("optical-flow" as const),
+            ? ("recall-calibrated-ensemble" as const)
+            : leadIndex >= 6
+              ? ("trajectory-speed-corrected" as const)
+              : ("optical-flow" as const),
     }));
     r2.values.set(
       "nowcast/point-risk.json",
@@ -959,6 +961,11 @@ describe("next-hour precipitation edge endpoint", () => {
     expect(
       body.points.some(
         (point) => point.forecastMethod === "trajectory-speed-corrected",
+      ),
+    ).toBe(true);
+    expect(
+      body.points.some(
+        (point) => point.forecastMethod === "recall-calibrated-ensemble",
       ),
     ).toBe(true);
     expect(body.rainEta).toMatchObject({

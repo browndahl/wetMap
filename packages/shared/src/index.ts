@@ -43,7 +43,8 @@ export interface NowcastFrame {
     | "trajectory-optical-flow"
     | "trajectory-speed-corrected"
     | "regime-adaptive-ensemble"
-    | "probability-gated-ensemble";
+    | "probability-gated-ensemble"
+    | "recall-calibrated-ensemble";
   validationSamples?: number;
   verificationCsi?: number | null;
   skillOverPersistence?: number | null;
@@ -131,6 +132,35 @@ export interface ShadowCandidateLeadQuality extends VerificationSummary {
   baselineCriticalSuccessIndex: number | null;
   criticalSuccessIndexImprovement: number | null;
   minimumRainProbability?: number | null;
+  probabilityCalibration?: ProbabilityCalibrationQuality;
+}
+
+export interface ProbabilityCalibrationThresholdQuality
+  extends VerificationSummary {
+  minimumRainProbability: number;
+  eventPixelCount: number;
+  recallFloor: number;
+  recallEligible: boolean;
+  criticalSuccessIndexImprovementOverUnfiltered: number | null;
+  eligible: boolean;
+}
+
+export interface ProbabilityCalibrationQuality {
+  policyVersion: string;
+  status: "collecting" | "awaiting-rain" | "calibrated";
+  sampleCount: number;
+  eventPixelCount: number;
+  minimumSamples: number;
+  minimumEventPixels: number;
+  minimumAbsoluteRecall: number;
+  minimumRecallRetention: number;
+  minimumCriticalSuccessIndexGain: number;
+  unfilteredRecall: number | null;
+  recallFloor: number;
+  unfilteredCriticalSuccessIndex: number | null;
+  selectedMinimumRainProbability: number;
+  selectedCriticalSuccessIndex: number | null;
+  byMinimumRainProbability: ProbabilityCalibrationThresholdQuality[];
 }
 
 export interface ShadowCandidateQuality {
@@ -145,6 +175,8 @@ export interface ShadowCandidateQuality {
     minimumSkillOverPersistence: number;
     maximumFalseAlarmRateIncrease: number;
     minimumBrierSkillOverPersistence?: number | null;
+    minimumCalibratedRecallRetention?: number;
+    minimumCalibratedAbsoluteRecall?: number;
   };
   safeToPromoteLeadMinutes: number[];
   byLeadMinutes: ShadowCandidateLeadQuality[];
@@ -303,6 +335,7 @@ export interface RainForecastPoint {
     | "trajectory-speed-corrected"
     | "regime-adaptive-ensemble"
     | "probability-gated-ensemble"
+    | "recall-calibrated-ensemble"
     | null;
 }
 

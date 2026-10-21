@@ -243,6 +243,15 @@ interface RainNextHourPayload {
   points: RainForecastPoint[];
 }
 
+type NowcastForecastMethod =
+  | "optical-flow"
+  | "persistence"
+  | "trajectory-optical-flow"
+  | "trajectory-speed-corrected"
+  | "regime-adaptive-ensemble"
+  | "probability-gated-ensemble"
+  | "recall-calibrated-ensemble";
+
 interface PointRiskMetadata {
   schemaVersion: 1;
   generatedAt: string;
@@ -262,11 +271,7 @@ interface PointRiskMetadata {
     leadMinutes: number;
     predictedAt: string;
     confidence: number;
-    forecastMethod?:
-      | "optical-flow"
-      | "persistence"
-      | "trajectory-optical-flow"
-      | "trajectory-speed-corrected";
+    forecastMethod?: NowcastForecastMethod;
     validationSamples?: number;
   }>;
 }
@@ -275,11 +280,7 @@ interface RadarPointSample {
   leadMinutes: number;
   predictedAt: string;
   confidence: number;
-  forecastMethod?:
-    | "optical-flow"
-    | "persistence"
-    | "trajectory-optical-flow"
-    | "trajectory-speed-corrected";
+  forecastMethod?: NowcastForecastMethod;
   validationSamples?: number;
   reflectivityDbz: number | null;
 }
@@ -1489,24 +1490,20 @@ function combineRadarAndModel(
             coveredSamples.length) *
             100,
         ) / 100,
-      forecastMethod: coveredSamples.some(
-        (sample) => sample.forecastMethod === "persistence",
-      )
-        ? ("persistence" as const)
-        : coveredSamples.some(
-              (sample) =>
-                sample.forecastMethod === "trajectory-speed-corrected",
-            )
-          ? ("trajectory-speed-corrected" as const)
-          : coveredSamples.some(
-                (sample) => sample.forecastMethod === "trajectory-optical-flow",
-              )
-            ? ("trajectory-optical-flow" as const)
-            : coveredSamples.some(
-                  (sample) => sample.forecastMethod === "optical-flow",
-                )
-              ? ("optical-flow" as const)
-              : null,
+      forecastMethod:
+        (
+          [
+            "persistence",
+            "recall-calibrated-ensemble",
+            "probability-gated-ensemble",
+            "regime-adaptive-ensemble",
+            "trajectory-speed-corrected",
+            "trajectory-optical-flow",
+            "optical-flow",
+          ] as const satisfies readonly NowcastForecastMethod[]
+        ).find((method) =>
+          coveredSamples.some((sample) => sample.forecastMethod === method),
+        ) ?? null,
     };
   });
   if (!radarPointCount)

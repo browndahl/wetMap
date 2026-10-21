@@ -292,6 +292,7 @@ components:
                 trajectory-speed-corrected,
                 regime-adaptive-ensemble,
                 probability-gated-ensemble,
+                recall-calibrated-ensemble,
               ],
           }
         validationSamples: { type: integer, minimum: 0 }
@@ -403,6 +404,7 @@ components:
                 trajectory-speed-corrected,
                 regime-adaptive-ensemble,
                 probability-gated-ensemble,
+                recall-calibrated-ensemble,
                 null,
               ],
           }
@@ -519,7 +521,7 @@ components:
                   leadMinutes: { type: integer, minimum: 5, maximum: 60 }
                   byForecastMethod:
                     type: array
-                    maxItems: 6
+                    maxItems: 7
                     items:
                       allOf:
                         - $ref: "#/components/schemas/VerificationSummary"
@@ -537,6 +539,7 @@ components:
                                     trajectory-speed-corrected,
                                     regime-adaptive-ensemble,
                                     probability-gated-ensemble,
+                                    recall-calibrated-ensemble,
                                   ],
                               }
         byThresholdDbz:
@@ -626,6 +629,7 @@ components:
                       trajectory-speed-corrected,
                       regime-adaptive-ensemble,
                       probability-gated-ensemble,
+                      recall-calibrated-ensemble,
                     ],
                 }
               thresholdScores:
@@ -678,6 +682,7 @@ components:
                 trajectory-speed-bias-v2,
                 regime-adaptive-ensemble-v3,
                 probability-gated-ensemble-v4,
+                recall-calibrated-ensemble-v5,
               ],
           }
         forecastMethod:
@@ -689,6 +694,7 @@ components:
                 trajectory-speed-corrected,
                 regime-adaptive-ensemble,
                 probability-gated-ensemble,
+                recall-calibrated-ensemble,
               ],
           }
         minimumLeadMinutes: { type: integer, const: 40 }
@@ -714,6 +720,10 @@ components:
               { type: number, minimum: -1, maximum: 1 }
             minimumBrierSkillOverPersistence:
               { type: [number, "null"], minimum: -1, maximum: 1 }
+            minimumCalibratedRecallRetention:
+              { type: number, minimum: 0, maximum: 1 }
+            minimumCalibratedAbsoluteRecall:
+              { type: number, minimum: 0, maximum: 1 }
         safeToPromoteLeadMinutes:
           type: array
           maxItems: 4
@@ -756,6 +766,67 @@ components:
               { type: [number, "null"], minimum: -1, maximum: 1 }
             minimumRainProbability:
               { type: [number, "null"], minimum: 0, maximum: 1 }
+            probabilityCalibration:
+              { $ref: "#/components/schemas/ProbabilityCalibrationQuality" }
+    ProbabilityCalibrationQuality:
+      type: object
+      required:
+        - policyVersion
+        - status
+        - sampleCount
+        - eventPixelCount
+        - minimumSamples
+        - minimumEventPixels
+        - minimumAbsoluteRecall
+        - minimumRecallRetention
+        - minimumCriticalSuccessIndexGain
+        - unfilteredRecall
+        - recallFloor
+        - unfilteredCriticalSuccessIndex
+        - selectedMinimumRainProbability
+        - selectedCriticalSuccessIndex
+        - byMinimumRainProbability
+      properties:
+        policyVersion: { type: string }
+        status: { type: string, enum: [collecting, awaiting-rain, calibrated] }
+        sampleCount: { type: integer, minimum: 0 }
+        eventPixelCount: { type: integer, minimum: 0 }
+        minimumSamples: { type: integer, minimum: 1 }
+        minimumEventPixels: { type: integer, minimum: 1 }
+        minimumAbsoluteRecall: { type: number, minimum: 0, maximum: 1 }
+        minimumRecallRetention: { type: number, minimum: 0, maximum: 1 }
+        minimumCriticalSuccessIndexGain:
+          { type: number, minimum: 0, maximum: 1 }
+        unfilteredRecall: { type: [number, "null"], minimum: 0, maximum: 1 }
+        recallFloor: { type: number, minimum: 0, maximum: 1 }
+        unfilteredCriticalSuccessIndex:
+          { type: [number, "null"], minimum: 0, maximum: 1 }
+        selectedMinimumRainProbability: { type: number, minimum: 0, maximum: 1 }
+        selectedCriticalSuccessIndex:
+          { type: [number, "null"], minimum: 0, maximum: 1 }
+        byMinimumRainProbability:
+          type: array
+          maxItems: 9
+          items:
+            allOf:
+              - $ref: "#/components/schemas/VerificationSummary"
+              - type: object
+                required:
+                  - minimumRainProbability
+                  - eventPixelCount
+                  - recallFloor
+                  - recallEligible
+                  - criticalSuccessIndexImprovementOverUnfiltered
+                  - eligible
+                properties:
+                  minimumRainProbability:
+                    { type: number, minimum: 0, maximum: 1 }
+                  eventPixelCount: { type: integer, minimum: 0 }
+                  recallFloor: { type: number, minimum: 0, maximum: 1 }
+                  recallEligible: { type: boolean }
+                  criticalSuccessIndexImprovementOverUnfiltered:
+                    { type: [number, "null"], minimum: -1, maximum: 1 }
+                  eligible: { type: boolean }
     GeographicConsistencyQuality:
       type: object
       required:

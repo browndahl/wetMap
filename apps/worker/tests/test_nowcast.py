@@ -8,6 +8,11 @@ from PIL import Image
 from wetmap_worker.model import Frame
 from wetmap_worker.nowcast import (
     ALGORITHM_VERSION,
+    CALIBRATED_GATE_BASELINE_CUBE_KEY,
+    CALIBRATED_GATE_CANDIDATE_CUBE_KEY,
+    CALIBRATED_GATE_CANDIDATE_ID,
+    CALIBRATED_GATE_CANDIDATE_METHOD,
+    CALIBRATION_POLICY_VERSION,
     LEAD_MINUTES,
     POINT_GRID_HEIGHT,
     POINT_GRID_WIDTH,
@@ -31,6 +36,7 @@ from wetmap_worker.nowcast import (
     SPEED_CANDIDATE_ID,
     SPEED_CANDIDATE_METHOD,
     _probability_gated_prediction,
+    _calibrated_probability_gate_for_lead,
     _regime_selector,
     generate_nowcast,
 )
@@ -86,6 +92,48 @@ def test_probability_gate_removes_only_low_agreement_rain() -> None:
     assert np.all(gated[25:45, 34:44, 3] == 1)
     assert np.all(gated[25:45, 34:44, :3] == 0)
     assert np.all(prediction[25:45, 34:44, 3] == 180)
+
+
+def test_calibrated_gate_uses_only_completed_prior_calibration() -> None:
+    cold = _calibrated_probability_gate_for_lead({}, 40)
+    calibrated_quality = {
+        40: {
+            "shadowCandidates": [
+                {
+                    "candidateId": CALIBRATED_GATE_CANDIDATE_ID,
+                    "probabilityCalibration": {
+                        "status": "calibrated",
+                        "sampleCount": 64,
+                        "selectedMinimumRainProbability": 0.2,
+                    },
+                }
+            ]
+        },
+        50: {
+            "shadowCandidates": [
+                {
+                    "candidateId": CALIBRATED_GATE_CANDIDATE_ID,
+                    "probabilityCalibration": {
+                        "status": "calibrated",
+                        "sampleCount": 60,
+                        "selectedMinimumRainProbability": 0.3,
+                    },
+                }
+            ]
+        },
+    }
+
+    assert cold == (0.25, "cold-start", 0)
+    assert _calibrated_probability_gate_for_lead(calibrated_quality, 40) == (
+        0.2,
+        "rolling-calibration",
+        64,
+    )
+    assert _calibrated_probability_gate_for_lead(calibrated_quality, 45) == (
+        0.25,
+        "rolling-calibration",
+        60,
+    )
 
 
 def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: Path) -> None:
@@ -145,9 +193,7 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     assert consistency["status"] == "verified"
     assert consistency["locationCount"] >= 18
     assert consistency["frameCount"] == len(LEAD_MINUTES) + 1
-    assert consistency["comparisonCount"] == consistency["locationCount"] * (
-        len(LEAD_MINUTES) + 1
-    )
+    assert consistency["comparisonCount"] == consistency["locationCount"] * (len(LEAD_MINUTES) + 1)
     assert consistency["valueMismatchCount"] == 0
     assert consistency["rainClassificationMismatchCount"] == 0
     assert consistency["rainThresholdDbz"] == 15
@@ -157,7 +203,7 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
     )
     assert verification_metadata["schemaVersion"] == 2
     assert verification_metadata["dataKey"].startswith("nowcast/verification-cubes/cube-")
-    trajectory, speed, regime, probability_gate = verification_metadata[
+    trajectory, speed, regime, probability_gate, calibrated_gate = verification_metadata[
         "shadowCandidates"
     ]
     assert trajectory["candidateId"] == SHADOW_CANDIDATE_ID
@@ -195,6 +241,19 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
         0.6,
         0.65,
     ]
+    assert calibrated_gate["candidateId"] == CALIBRATED_GATE_CANDIDATE_ID
+    assert calibrated_gate["forecastMethod"] == CALIBRATED_GATE_CANDIDATE_METHOD
+    assert calibrated_gate["baselineCubeKey"] == CALIBRATED_GATE_BASELINE_CUBE_KEY
+    assert calibrated_gate["calibrationBaseCubeKey"] == REGIME_CANDIDATE_CUBE_KEY
+    assert calibrated_gate["probabilityCubeKey"] == REGIME_PROBABILITY_CUBE_KEY
+    assert calibrated_gate["calibrationPolicyVersion"] == CALIBRATION_POLICY_VERSION
+    assert calibrated_gate["probabilityCalibrationThresholds"][0] == 0
+    assert [frame["minimumRainProbability"] for frame in calibrated_gate["frames"]] == [
+        0.25,
+        0.25,
+        0.25,
+    ]
+    assert all(frame["calibrationSource"] == "cold-start" for frame in calibrated_gate["frames"])
     with np.load(tmp_path / "nowcast/verification-cube.npz") as archive:
         assert archive["cube"].shape[-1] == len(LEAD_MINUTES) + 1
         assert archive[SHADOW_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
@@ -208,6 +267,8 @@ def test_generates_hour_of_optical_flow_frames_and_compact_risk_grid(tmp_path: P
         assert int(archive[REGIME_PROBABILITY_CUBE_KEY].max()) <= 100
         assert archive[PROBABILITY_GATE_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
         assert archive[PROBABILITY_GATE_BASELINE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[CALIBRATED_GATE_CANDIDATE_CUBE_KEY].shape == archive["cube"].shape
+        assert archive[CALIBRATED_GATE_BASELINE_CUBE_KEY].shape == archive["cube"].shape
 
 
 def test_uses_verified_persistence_without_attenuating_reflectivity(tmp_path: Path) -> None:
@@ -305,6 +366,13 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
         "criticalSuccessIndex": 0.56,
         "meanCriticalSuccessIndexSkill": 0.18,
     }
+    calibrated_gate_candidate_quality = {
+        **candidate_quality,
+        "candidateId": CALIBRATED_GATE_CANDIDATE_ID,
+        "forecastMethod": CALIBRATED_GATE_CANDIDATE_METHOD,
+        "criticalSuccessIndex": 0.59,
+        "meanCriticalSuccessIndexSkill": 0.2,
+    }
 
     manifest, risk, _outputs = generate_nowcast(
         paths,
@@ -318,6 +386,7 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
                     candidate_quality,
                     speed_candidate_quality,
                     probability_gate_candidate_quality,
+                    calibrated_gate_candidate_quality,
                 ],
             },
             50: {
@@ -340,18 +409,24 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
                         "criticalSuccessIndex": 0.55,
                         "meanCriticalSuccessIndexSkill": 0.16,
                     },
+                    {
+                        **calibrated_gate_candidate_quality,
+                        "sampleCount": 52,
+                        "criticalSuccessIndex": 0.58,
+                        "meanCriticalSuccessIndexSkill": 0.19,
+                    },
                 ]
             },
         },
     )
 
     by_lead = {frame["leadMinutes"]: frame for frame in manifest["frames"]}
-    assert by_lead[40]["forecastMethod"] == PROBABILITY_GATE_CANDIDATE_METHOD
-    assert by_lead[45]["forecastMethod"] == PROBABILITY_GATE_CANDIDATE_METHOD
-    assert by_lead[45]["verificationCsi"] == 0.55
-    assert by_lead[45]["skillOverPersistence"] == 0.16
+    assert by_lead[40]["forecastMethod"] == CALIBRATED_GATE_CANDIDATE_METHOD
+    assert by_lead[45]["forecastMethod"] == CALIBRATED_GATE_CANDIDATE_METHOD
+    assert by_lead[45]["verificationCsi"] == 0.58
+    assert by_lead[45]["skillOverPersistence"] == 0.19
     assert by_lead[45]["validationSamples"] == 48
-    assert by_lead[50]["forecastMethod"] == PROBABILITY_GATE_CANDIDATE_METHOD
+    assert by_lead[50]["forecastMethod"] == CALIBRATED_GATE_CANDIDATE_METHOD
     assert by_lead[55]["forecastMethod"] == "optical-flow"
     assert risk["frames"][9]["alertEligible"] is True
     with np.load(tmp_path / "promoted/verification-cube.npz") as archive:
@@ -366,4 +441,8 @@ def test_promotes_verified_anchors_and_only_safe_intermediate_long_horizons(
         assert np.array_equal(
             archive[PROBABILITY_GATE_BASELINE_CUBE_KEY][..., 10],
             archive[SPEED_CANDIDATE_CUBE_KEY][..., 10],
+        )
+        assert np.array_equal(
+            archive[CALIBRATED_GATE_BASELINE_CUBE_KEY][..., 10],
+            archive[PROBABILITY_GATE_CANDIDATE_CUBE_KEY][..., 10],
         )

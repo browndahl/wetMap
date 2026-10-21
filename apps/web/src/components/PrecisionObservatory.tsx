@@ -241,15 +241,18 @@ export default function PrecisionObservatory({ locale }: Props) {
                         {t("precisionShadowTitle")} ·{" "}
                         {t(
                           shadowCandidate.forecastMethod ===
-                            "probability-gated-ensemble"
-                            ? "nowcastProbabilityGated"
+                            "recall-calibrated-ensemble"
+                            ? "nowcastRecallCalibrated"
                             : shadowCandidate.forecastMethod ===
-                                "regime-adaptive-ensemble"
-                              ? "nowcastAdaptiveEnsemble"
+                                "probability-gated-ensemble"
+                              ? "nowcastProbabilityGated"
                               : shadowCandidate.forecastMethod ===
-                                  "trajectory-speed-corrected"
-                                ? "nowcastSpeedCorrected"
-                                : "nowcastTrajectory",
+                                  "regime-adaptive-ensemble"
+                                ? "nowcastAdaptiveEnsemble"
+                                : shadowCandidate.forecastMethod ===
+                                    "trajectory-speed-corrected"
+                                  ? "nowcastSpeedCorrected"
+                                  : "nowcastTrajectory",
                         )}
                       </strong>
                     </span>
@@ -299,6 +302,9 @@ export default function PrecisionObservatory({ locale }: Props) {
                           {t("precisionSamples")}
                           {lead.minimumRainProbability != null
                             ? ` · ≥${Math.round(lead.minimumRainProbability * 100)}% ${t("precisionRainProbability")}`
+                            : ""}
+                          {lead.probabilityCalibration
+                            ? ` · ${lead.probabilityCalibration.sampleCount}/${lead.probabilityCalibration.minimumSamples} ${t("precisionCalibrationSamples")}`
                             : ""}
                         </small>
                       </article>

@@ -78,7 +78,9 @@ if consistency:
     if int(consistency.get("locationCount", 0)) < 18:
         raise SystemExit("Geographic consistency covers too few Danish test locations")
     if int(consistency.get("frameCount", 0)) != 13:
-        raise SystemExit("Geographic consistency does not cover observation plus 60-minute nowcast")
+        raise SystemExit(
+            "Geographic consistency does not cover observation plus 60-minute nowcast"
+        )
     expected_comparisons = int(consistency["locationCount"]) * int(
         consistency["frameCount"]
     )
@@ -99,12 +101,17 @@ for candidate in report.get("shadowCandidates", []):
         "trajectory-speed-bias-v2",
         "regime-adaptive-ensemble-v3",
         "probability-gated-ensemble-v4",
+        "recall-calibrated-ensemble-v5",
     }:
-        raise SystemExit(f"Unknown shadow nowcast candidate {candidate.get('candidateId')}")
+        raise SystemExit(
+            f"Unknown shadow nowcast candidate {candidate.get('candidateId')}"
+        )
     lead_entries = candidate.get("byLeadMinutes", [])
     candidate_leads = {int(entry["leadMinutes"]) for entry in lead_entries}
     if not candidate_leads.issubset({40, 50, 60}):
-        raise SystemExit(f"Shadow candidate has invalid leads {sorted(candidate_leads)}")
+        raise SystemExit(
+            f"Shadow candidate has invalid leads {sorted(candidate_leads)}"
+        )
     for entry in lead_entries:
         if entry.get("status") not in {
             "collecting",
@@ -126,13 +133,25 @@ for candidate in report.get("shadowCandidates", []):
         if float(entry.get("meanCriticalSuccessIndexSkill", -1)) < 0:
             raise SystemExit("Shadow candidate promoted below persistence skill")
         if float(entry.get("falseAlarmRateIncrease", 1)) > 0.02:
-            raise SystemExit("Shadow candidate promoted with too many additional false alarms")
+            raise SystemExit(
+                "Shadow candidate promoted with too many additional false alarms"
+            )
         if (
             candidate_id
-            in {"regime-adaptive-ensemble-v3", "probability-gated-ensemble-v4"}
+            in {
+                "regime-adaptive-ensemble-v3",
+                "probability-gated-ensemble-v4",
+                "recall-calibrated-ensemble-v5",
+            }
             and float(entry.get("meanBrierSkillScore", -1)) < 0
         ):
             raise SystemExit("Adaptive ensemble promoted below persistence Brier skill")
+        if candidate_id == "recall-calibrated-ensemble-v5":
+            calibration = entry.get("probabilityCalibration", {})
+            if calibration.get("status") != "calibrated":
+                raise SystemExit("V5 promoted before probability calibration completed")
+            if float(entry.get("recall", 0)) < float(calibration.get("recallFloor", 1)):
+                raise SystemExit("V5 promoted below its calibrated recall floor")
     print(
         f"Shadow nowcast candidate {candidate_id} measured at leads "
         f"{sorted(candidate_leads)}; promoted "

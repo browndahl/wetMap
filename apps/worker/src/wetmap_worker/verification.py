@@ -15,6 +15,13 @@ from .nowcast import (
     ALERT_MINIMUM_SKILL,
     ALERT_MINIMUM_VALIDATION_SAMPLES,
     ALGORITHM_VERSION,
+    CALIBRATION_MINIMUM_ABSOLUTE_RECALL,
+    CALIBRATION_MINIMUM_CSI_GAIN,
+    CALIBRATION_MINIMUM_EVENT_PIXELS,
+    CALIBRATION_MINIMUM_RECALL_RETENTION,
+    CALIBRATION_MINIMUM_SAMPLES,
+    CALIBRATION_POLICY_VERSION,
+    CALIBRATED_GATE_CANDIDATE_ID,
     SHADOW_MINIMUM_LEAD_MINUTES,
     SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE,
     SHADOW_PROMOTION_MINIMUM_CSI_IMPROVEMENT,
@@ -78,6 +85,19 @@ def _categorical_scores(
     }
 
 
+def _probability_gated_grid(
+    predicted: np.ndarray,
+    probability: np.ndarray,
+    minimum_probability: float,
+    threshold_dbz: int,
+) -> np.ndarray:
+    """Apply a probability gate to the compact verification grid."""
+    gated = predicted.copy()
+    remove = (gated >= threshold_dbz + 32) & (probability < round(minimum_probability * 100))
+    gated[remove] = np.where(gated[remove] > 0, 14, 0)
+    return gated
+
+
 def verification_candidates(state: dict[str, Any], observed_at: str) -> list[dict[str, Any]]:
     """Return archived forecasts with an exact lead frame for this observation."""
     observed_time = _parse_time(observed_at)
@@ -129,7 +149,12 @@ def verify_previous_nowcast(
         with np.load(cube_path, allow_pickle=False) as archive:
             cube = archive["cube"]
             for shadow_candidate in metadata.get("shadowCandidates", []):
-                for key_name in ("cubeKey", "baselineCubeKey", "probabilityCubeKey"):
+                for key_name in (
+                    "cubeKey",
+                    "baselineCubeKey",
+                    "calibrationBaseCubeKey",
+                    "probabilityCubeKey",
+                ):
                     cube_key = str(shadow_candidate.get(key_name, ""))
                     if cube_key and cube_key in archive:
                         shadow_cubes[cube_key] = archive[cube_key]
@@ -176,11 +201,10 @@ def verify_previous_nowcast(
             None,
         )
         candidate_cube = shadow_cubes.get(str(shadow_candidate.get("cubeKey", "")))
-        baseline_cube = shadow_cubes.get(
-            str(shadow_candidate.get("baselineCubeKey", "")), cube
-        )
-        probability_cube = shadow_cubes.get(
-            str(shadow_candidate.get("probabilityCubeKey", ""))
+        baseline_cube = shadow_cubes.get(str(shadow_candidate.get("baselineCubeKey", "")), cube)
+        probability_cube = shadow_cubes.get(str(shadow_candidate.get("probabilityCubeKey", "")))
+        calibration_base_cube = shadow_cubes.get(
+            str(shadow_candidate.get("calibrationBaseCubeKey", ""))
         )
         if shadow_frame is None or candidate_cube is None:
             continue
@@ -221,14 +245,13 @@ def verify_previous_nowcast(
             if score["thresholdDbz"] == SIGNIFICANT_ECHO_DBZ
         )
         probability_metrics: dict[str, float | None] = {}
+        probability_calibration_scores: list[dict[str, Any]] = []
         if probability_cube is not None:
             if (
                 probability_cube.shape != (height, width, frame_count)
                 or probability_cube.dtype != np.uint8
             ):
-                raise ValueError(
-                    "Archived shadow probability cube has an unexpected shape or type"
-                )
+                raise ValueError("Archived shadow probability cube has an unexpected shape or type")
             probability_threshold = int(
                 shadow_candidate.get("probabilityThresholdDbz", SIGNIFICANT_ECHO_DBZ)
             )
@@ -239,15 +262,11 @@ def verify_previous_nowcast(
                 0,
                 1,
             )
-            persistence_probability = (
-                persistence >= probability_threshold + 32
-            ).astype(np.float32)
+            persistence_probability = (persistence >= probability_threshold + 32).astype(np.float32)
             if np.any(valid):
                 brier_score = float(np.mean((probability[valid] - observed_echo[valid]) ** 2))
                 persistence_brier_score = float(
-                    np.mean(
-                        (persistence_probability[valid] - observed_echo[valid]) ** 2
-                    )
+                    np.mean((persistence_probability[valid] - observed_echo[valid]) ** 2)
                 )
                 probability_metrics = {
                     "brierScore": round(brier_score, 6),
@@ -258,6 +277,41 @@ def verify_previous_nowcast(
                         else None
                     ),
                 }
+            if calibration_base_cube is not None:
+                if (
+                    calibration_base_cube.shape != (height, width, frame_count)
+                    or calibration_base_cube.dtype != np.uint8
+                ):
+                    raise ValueError(
+                        "Archived calibration base cube has an unexpected shape or type"
+                    )
+                for minimum_probability in shadow_candidate.get(
+                    "probabilityCalibrationThresholds", []
+                ):
+                    gated_grid = _probability_gated_grid(
+                        calibration_base_cube[..., shadow_index],
+                        probability_cube[..., shadow_index],
+                        float(minimum_probability),
+                        probability_threshold,
+                    )
+                    calibration_score = _categorical_scores(
+                        gated_grid, actual, probability_threshold
+                    )
+                    probability_calibration_scores.append(
+                        {
+                            "minimumRainProbability": float(minimum_probability),
+                            **{
+                                key: calibration_score[key]
+                                for key in (
+                                    "validPixels",
+                                    "hits",
+                                    "misses",
+                                    "falseAlarms",
+                                    "dbzMeanAbsoluteError",
+                                )
+                            },
+                        }
+                    )
         shadow_candidate_scores.append(
             {
                 "candidateId": shadow_candidate["candidateId"],
@@ -267,15 +321,21 @@ def verify_previous_nowcast(
                 "thresholdDbz": SIGNIFICANT_ECHO_DBZ,
                 "thresholdScores": shadow_threshold_scores,
                 **(
-                    {
-                        "minimumRainProbability": float(
-                            shadow_frame["minimumRainProbability"]
-                        )
-                    }
+                    {"minimumRainProbability": float(shadow_frame["minimumRainProbability"])}
                     if shadow_frame.get("minimumRainProbability") is not None
                     else {}
                 ),
                 **probability_metrics,
+                **(
+                    {
+                        "calibrationPolicyVersion": shadow_candidate.get(
+                            "calibrationPolicyVersion"
+                        ),
+                        "probabilityCalibrationScores": (probability_calibration_scores),
+                    }
+                    if probability_calibration_scores
+                    else {}
+                ),
             }
         )
     result = {
@@ -317,9 +377,7 @@ def _aggregate_scores(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
         if entry.get("persistenceCriticalSuccessIndex") is not None
     ]
     brier_scores = [
-        float(entry["brierScore"])
-        for entry in entries
-        if entry.get("brierScore") is not None
+        float(entry["brierScore"]) for entry in entries if entry.get("brierScore") is not None
     ]
     persistence_brier_scores = [
         float(entry["persistenceBrierScore"])
@@ -368,9 +426,111 @@ def _algorithm_version(entry: dict[str, Any]) -> str:
     return str(value) if value else LEGACY_ALGORITHM_VERSION
 
 
+def _probability_calibration_summary(
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+) -> dict[str, Any] | None:
+    grouped: dict[float, list[dict[str, Any]]] = defaultdict(list)
+    for candidate, _operational in pairs:
+        for score in candidate.get("probabilityCalibrationScores", []):
+            grouped[float(score["minimumRainProbability"])].append(score)
+    if not grouped:
+        return None
+
+    summaries: list[dict[str, Any]] = []
+    for minimum_probability, entries in sorted(grouped.items()):
+        summary = _aggregate_scores(entries)
+        summaries.append(
+            {
+                "minimumRainProbability": minimum_probability,
+                "eventPixelCount": (summary["hits"] + summary["misses"] + summary["falseAlarms"]),
+                **summary,
+            }
+        )
+
+    control = next(
+        (row for row in summaries if row["minimumRainProbability"] == 0.0),
+        summaries[0],
+    )
+    sample_count = int(control["sampleCount"])
+    event_pixel_count = int(control["eventPixelCount"])
+    control_recall = control.get("recall")
+    recall_floor = (
+        max(
+            CALIBRATION_MINIMUM_ABSOLUTE_RECALL,
+            float(control_recall) * CALIBRATION_MINIMUM_RECALL_RETENTION,
+        )
+        if isinstance(control_recall, (int, float))
+        else CALIBRATION_MINIMUM_ABSOLUTE_RECALL
+    )
+    enough_samples = sample_count >= CALIBRATION_MINIMUM_SAMPLES
+    enough_events = event_pixel_count >= CALIBRATION_MINIMUM_EVENT_PIXELS
+    control_csi = control.get("criticalSuccessIndex")
+
+    for row in summaries:
+        recall = row.get("recall")
+        csi = row.get("criticalSuccessIndex")
+        row["recallFloor"] = round(recall_floor, 4)
+        row["recallEligible"] = bool(isinstance(recall, (int, float)) and recall >= recall_floor)
+        row["criticalSuccessIndexImprovementOverUnfiltered"] = (
+            round(float(csi) - float(control_csi), 4)
+            if isinstance(csi, (int, float)) and isinstance(control_csi, (int, float))
+            else None
+        )
+        row["eligible"] = bool(
+            enough_samples
+            and enough_events
+            and row["recallEligible"]
+            and isinstance(csi, (int, float))
+        )
+
+    selected = control
+    if enough_samples and enough_events and isinstance(control_csi, (int, float)):
+        improved = [
+            row
+            for row in summaries
+            if row["minimumRainProbability"] > 0
+            and row["eligible"]
+            and isinstance(row.get("criticalSuccessIndex"), (int, float))
+            and float(row["criticalSuccessIndex"])
+            >= float(control_csi) + CALIBRATION_MINIMUM_CSI_GAIN
+        ]
+        if improved:
+            selected = max(
+                improved,
+                key=lambda row: (
+                    float(row["criticalSuccessIndex"]),
+                    float(row["minimumRainProbability"]),
+                ),
+            )
+
+    if not enough_samples:
+        status = "collecting"
+    elif not enough_events or not isinstance(control_recall, (int, float)):
+        status = "awaiting-rain"
+    else:
+        status = "calibrated"
+    return {
+        "policyVersion": CALIBRATION_POLICY_VERSION,
+        "status": status,
+        "sampleCount": sample_count,
+        "eventPixelCount": event_pixel_count,
+        "minimumSamples": CALIBRATION_MINIMUM_SAMPLES,
+        "minimumEventPixels": CALIBRATION_MINIMUM_EVENT_PIXELS,
+        "minimumAbsoluteRecall": CALIBRATION_MINIMUM_ABSOLUTE_RECALL,
+        "minimumRecallRetention": CALIBRATION_MINIMUM_RECALL_RETENTION,
+        "minimumCriticalSuccessIndexGain": CALIBRATION_MINIMUM_CSI_GAIN,
+        "unfilteredRecall": control_recall,
+        "recallFloor": round(recall_floor, 4),
+        "unfilteredCriticalSuccessIndex": control_csi,
+        "selectedMinimumRainProbability": float(selected["minimumRainProbability"]),
+        "selectedCriticalSuccessIndex": selected.get("criticalSuccessIndex"),
+        "byMinimumRainProbability": summaries,
+    }
+
+
 def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[tuple[str, str, int], list[tuple[dict[str, Any], dict[str, Any]]]] = (
-        defaultdict(list)
+    grouped: dict[tuple[str, str, int], list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(
+        list
     )
     for operational_entry in history:
         for candidate_entry in operational_entry.get("shadowCandidateScores", []):
@@ -387,15 +547,13 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
     for (candidate_id, forecast_method, lead_minutes), pairs in sorted(grouped.items()):
         candidate_summary = _aggregate_scores(candidate for candidate, _operational in pairs)
         operational_summary = _aggregate_scores(
-            candidate.get("baselineScore", operational)
-            for candidate, operational in pairs
+            candidate.get("baselineScore", operational) for candidate, operational in pairs
         )
         candidate_csi = candidate_summary["criticalSuccessIndex"]
         operational_csi = operational_summary["criticalSuccessIndex"]
         csi_improvement = (
             round(candidate_csi - operational_csi, 4)
-            if isinstance(candidate_csi, (int, float))
-            and isinstance(operational_csi, (int, float))
+            if isinstance(candidate_csi, (int, float)) and isinstance(operational_csi, (int, float))
             else None
         )
         event_pixel_count = (
@@ -423,6 +581,17 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
             candidate.get("brierScore") is not None for candidate, _operational in pairs
         )
         brier_skill = candidate_summary["meanBrierSkillScore"]
+        probability_calibration = _probability_calibration_summary(pairs)
+        meets_calibrated_recall_gate = bool(
+            candidate_id != CALIBRATED_GATE_CANDIDATE_ID
+            or (
+                probability_calibration is not None
+                and probability_calibration.get("status") == "calibrated"
+                and isinstance(candidate_summary.get("recall"), (int, float))
+                and float(candidate_summary["recall"])
+                >= float(probability_calibration["recallFloor"])
+            )
+        )
         meets_quality_gate = bool(
             enough_samples
             and enough_events
@@ -438,6 +607,7 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
                 not has_probability_scores
                 or (isinstance(brier_skill, (int, float)) and brier_skill >= 0)
             )
+            and meets_calibrated_recall_gate
         )
         if not enough_samples:
             status = "collecting"
@@ -466,6 +636,11 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
                     ),
                     None,
                 ),
+                **(
+                    {"probabilityCalibration": probability_calibration}
+                    if probability_calibration is not None
+                    else {}
+                ),
                 **candidate_summary,
             }
         )
@@ -483,11 +658,17 @@ def _shadow_candidate_summaries(history: list[dict[str, Any]]) -> list[dict[str,
                     SHADOW_PROMOTION_MINIMUM_CSI_IMPROVEMENT
                 ),
                 "minimumSkillOverPersistence": ALERT_MINIMUM_SKILL,
-                "maximumFalseAlarmRateIncrease": (
-                    SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE
-                ),
+                "maximumFalseAlarmRateIncrease": (SHADOW_PROMOTION_MAX_FALSE_ALARM_RATE_INCREASE),
                 "minimumBrierSkillOverPersistence": (
                     0.0 if any(entry.get("meanBrierScore") is not None for entry in leads) else None
+                ),
+                **(
+                    {
+                        "minimumCalibratedRecallRetention": (CALIBRATION_MINIMUM_RECALL_RETENTION),
+                        "minimumCalibratedAbsoluteRecall": (CALIBRATION_MINIMUM_ABSOLUTE_RECALL),
+                    }
+                    if candidate_id == CALIBRATED_GATE_CANDIDATE_ID
+                    else {}
                 ),
             },
             "safeToPromoteLeadMinutes": [
@@ -832,9 +1013,20 @@ def verification_forecast_changed(
                     candidate.get("candidateId"),
                     candidate.get("cubeKey"),
                     candidate.get("baselineCubeKey"),
+                    candidate.get("calibrationBaseCubeKey"),
                     candidate.get("probabilityCubeKey"),
                     candidate.get("probabilityThresholdDbz"),
                     candidate.get("minimumLeadMinutes"),
+                    candidate.get("calibrationPolicyVersion"),
+                    tuple(
+                        float(value)
+                        for value in candidate.get("probabilityCalibrationThresholds", [])
+                    ),
+                    candidate.get("calibrationMinimumSamples"),
+                    candidate.get("calibrationMinimumEventPixels"),
+                    candidate.get("calibrationMinimumAbsoluteRecall"),
+                    candidate.get("calibrationMinimumRecallRetention"),
+                    candidate.get("calibrationMinimumCsiGain"),
                     tuple(
                         sorted(
                             (

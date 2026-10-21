@@ -6,6 +6,9 @@ from PIL import Image
 
 from wetmap_worker.nowcast import (
     ALGORITHM_VERSION,
+    CALIBRATED_GATE_CANDIDATE_ID,
+    CALIBRATED_GATE_CANDIDATE_METHOD,
+    CALIBRATION_POLICY_VERSION,
     PROBABILITY_GATE_CANDIDATE_ID,
     PROBABILITY_GATE_CANDIDATE_METHOD,
     REGIME_CANDIDATE_ID,
@@ -336,6 +339,35 @@ def test_republishes_a_new_verification_contract_for_the_same_observation() -> N
     }
     assert verification_forecast_changed({"forecasts": [gated]}, gated) is False
     assert verification_forecast_changed({"forecasts": [gated]}, changed_gate) is True
+    calibrated = {
+        **upgraded,
+        "shadowCandidates": [
+            {
+                "candidateId": CALIBRATED_GATE_CANDIDATE_ID,
+                "cubeKey": "recallCalibratedEnsemble",
+                "baselineCubeKey": "recallCalibratedBaseline",
+                "calibrationBaseCubeKey": "regimeAdaptiveEnsemble",
+                "probabilityCubeKey": "regimeRainProbability",
+                "calibrationPolicyVersion": CALIBRATION_POLICY_VERSION,
+                "probabilityCalibrationThresholds": [0, 0.25, 0.5],
+                "calibrationMinimumSamples": 48,
+                "frames": [{"leadMinutes": 40, "minimumRainProbability": 0.25}],
+            }
+        ],
+    }
+    changed_calibration_grid = {
+        **calibrated,
+        "shadowCandidates": [
+            {
+                **calibrated["shadowCandidates"][0],
+                "probabilityCalibrationThresholds": [0, 0.2, 0.5],
+            }
+        ],
+    }
+    assert verification_forecast_changed({"forecasts": [calibrated]}, calibrated) is False
+    assert (
+        verification_forecast_changed({"forecasts": [calibrated]}, changed_calibration_grid) is True
+    )
 
 
 def test_keeps_algorithm_versions_in_separate_quality_cohorts(tmp_path: Path) -> None:
@@ -415,9 +447,7 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
     actual = np.full((6, 8), 14, dtype=np.uint8)
     actual[2:4, 3:6] = 52
     operational_cube = np.stack([np.full_like(actual, 14), actual], axis=-1)
-    baseline_cube = np.stack(
-        [np.full_like(actual, 14), np.full_like(actual, 14)], axis=-1
-    )
+    baseline_cube = np.stack([np.full_like(actual, 14), np.full_like(actual, 14)], axis=-1)
     candidate_cube = np.stack([np.full_like(actual, 14), actual], axis=-1)
     cube_path = tmp_path / "verification-cube.npz"
     np.savez_compressed(
@@ -432,6 +462,8 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
         regimeRainProbability=np.where(candidate_cube >= 52, 85, 10).astype(np.uint8),
         probabilityGatedBaseline=baseline_cube,
         probabilityGatedEnsemble=candidate_cube,
+        recallCalibratedBaseline=baseline_cube,
+        recallCalibratedEnsemble=candidate_cube,
     )
     metadata = {
         "schemaVersion": 2,
@@ -507,15 +539,34 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
                     }
                 ],
             },
+            {
+                "candidateId": CALIBRATED_GATE_CANDIDATE_ID,
+                "forecastMethod": CALIBRATED_GATE_CANDIDATE_METHOD,
+                "cubeKey": "recallCalibratedEnsemble",
+                "baselineCubeKey": "recallCalibratedBaseline",
+                "calibrationBaseCubeKey": "regimeAdaptiveEnsemble",
+                "probabilityCubeKey": "regimeRainProbability",
+                "probabilityThresholdDbz": 20,
+                "calibrationPolicyVersion": CALIBRATION_POLICY_VERSION,
+                "probabilityCalibrationThresholds": [0, 0.25, 0.5],
+                "frames": [
+                    {
+                        "leadMinutes": 45,
+                        "predictedAt": "2026-10-11T12:00:00Z",
+                        "cubeFrameIndex": 1,
+                        "minimumRainProbability": 0.25,
+                        "calibrationSource": "cold-start",
+                        "calibrationSampleCount": 0,
+                    }
+                ],
+            },
         ],
     }
 
-    result = verify_previous_nowcast(
-        metadata, cube_path, observed_path, "2026-10-11T12:00:00Z"
-    )
+    result = verify_previous_nowcast(metadata, cube_path, observed_path, "2026-10-11T12:00:00Z")
 
     assert result is not None
-    assert len(result["shadowCandidateScores"]) == 4
+    assert len(result["shadowCandidateScores"]) == 5
     candidate = result["shadowCandidateScores"][0]
     assert candidate["candidateId"] == SHADOW_CANDIDATE_ID
     assert candidate["criticalSuccessIndex"] == result["criticalSuccessIndex"]
@@ -537,6 +588,15 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
     assert probability_gate_candidate["criticalSuccessIndexImprovement"] > 0
     assert probability_gate_candidate["brierSkillScore"] > 0
     assert probability_gate_candidate["minimumRainProbability"] == 0.6
+    calibrated_candidate = result["shadowCandidateScores"][4]
+    assert calibrated_candidate["candidateId"] == CALIBRATED_GATE_CANDIDATE_ID
+    assert calibrated_candidate["forecastMethod"] == CALIBRATED_GATE_CANDIDATE_METHOD
+    assert calibrated_candidate["minimumRainProbability"] == 0.25
+    assert calibrated_candidate["calibrationPolicyVersion"] == CALIBRATION_POLICY_VERSION
+    assert [
+        score["minimumRainProbability"]
+        for score in calibrated_candidate["probabilityCalibrationScores"]
+    ] == [0.0, 0.25, 0.5]
 
 
 def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path) -> None:
@@ -628,9 +688,7 @@ def test_promotes_shadow_candidate_only_after_paired_quality_gate(tmp_path: Path
         "criticalSuccessIndexSkill": 0.2667,
         "criticalSuccessIndexImprovement": 0.1667,
     }
-    noisy_results = [
-        {**entry, "shadowCandidateScores": [noisy_candidate]} for entry in results
-    ]
+    noisy_results = [{**entry, "shadowCandidateScores": [noisy_candidate]} for entry in results]
     noisy_report = append_verification_history(tmp_path / "noisy-shadow.json", noisy_results)
     noisy_lead = noisy_report["shadowCandidates"][0]["byLeadMinutes"][0]
     assert noisy_lead["criticalSuccessIndexImprovement"] > 0.02
@@ -720,3 +778,124 @@ def test_requires_non_negative_probability_skill_for_ensemble_promotion(
     assert improved_lead["meanBrierSkillScore"] == 0.1
     assert improved_lead["status"] == "promotable"
     assert improved_lead["safeToPromote"] is True
+
+
+def test_recall_calibration_selects_csi_gain_without_sacrificing_recall(
+    tmp_path: Path,
+) -> None:
+    operational = {
+        "validPixels": 1000,
+        "hits": 60,
+        "misses": 40,
+        "falseAlarms": 30,
+        "correctNegatives": 870,
+        "precision": 0.6667,
+        "recall": 0.6,
+        "criticalSuccessIndex": 0.4615,
+        "dbzMeanAbsoluteError": 4.0,
+        "persistenceCriticalSuccessIndex": 0.4,
+        "criticalSuccessIndexSkill": 0.0615,
+    }
+    calibration_scores = [
+        {
+            "minimumRainProbability": 0.0,
+            "validPixels": 1000,
+            "hits": 70,
+            "misses": 30,
+            "falseAlarms": 40,
+            "correctNegatives": 860,
+            "precision": 0.6364,
+            "recall": 0.7,
+            "criticalSuccessIndex": 0.5,
+            "dbzMeanAbsoluteError": 3.0,
+        },
+        {
+            "minimumRainProbability": 0.25,
+            "validPixels": 1000,
+            "hits": 65,
+            "misses": 35,
+            "falseAlarms": 20,
+            "correctNegatives": 880,
+            "precision": 0.7647,
+            "recall": 0.65,
+            "criticalSuccessIndex": 0.5417,
+            "dbzMeanAbsoluteError": 3.0,
+        },
+        {
+            "minimumRainProbability": 0.5,
+            "validPixels": 1000,
+            "hits": 40,
+            "misses": 60,
+            "falseAlarms": 5,
+            "correctNegatives": 895,
+            "precision": 0.8889,
+            "recall": 0.4,
+            "criticalSuccessIndex": 0.381,
+            "dbzMeanAbsoluteError": 3.0,
+        },
+    ]
+    candidate = {
+        "candidateId": CALIBRATED_GATE_CANDIDATE_ID,
+        "forecastMethod": CALIBRATED_GATE_CANDIDATE_METHOD,
+        "leadMinutes": 60,
+        **calibration_scores[1],
+        "persistenceCriticalSuccessIndex": 0.4,
+        "criticalSuccessIndexSkill": 0.1417,
+        "baselineCriticalSuccessIndex": 0.4615,
+        "criticalSuccessIndexImprovement": 0.0802,
+        "thresholdDbz": 20,
+        "thresholdScores": [],
+        "minimumRainProbability": 0.25,
+        "brierScore": 0.18,
+        "persistenceBrierScore": 0.2,
+        "brierSkillScore": 0.1,
+        "calibrationPolicyVersion": CALIBRATION_POLICY_VERSION,
+        "probabilityCalibrationScores": calibration_scores,
+    }
+    results = [
+        {
+            "verifiedAt": "2026-10-12T13:01:00Z",
+            "basedOnObservedAt": f"2026-10-12T{index // 12:02d}:{(index % 12) * 5:02d}:00Z",
+            "predictedAt": "2026-10-12T13:00:00Z",
+            "observedAt": f"2026-10-12T{(index // 12) + 1:02d}:{(index % 12) * 5:02d}:00Z",
+            "leadMinutes": 60,
+            "forecastMethod": "optical-flow",
+            "algorithmVersion": ALGORITHM_VERSION,
+            "thresholdDbz": 20,
+            "thresholdScores": [],
+            "shadowCandidateScores": [candidate],
+            **operational,
+        }
+        for index in range(48)
+    ]
+
+    report = append_verification_history(tmp_path / "calibrated.json", results)
+    lead = report["shadowCandidates"][0]["byLeadMinutes"][0]
+    calibration = lead["probabilityCalibration"]
+
+    assert calibration["status"] == "calibrated"
+    assert calibration["recallFloor"] == 0.595
+    assert calibration["selectedMinimumRainProbability"] == 0.25
+    assert calibration["byMinimumRainProbability"][1]["eligible"] is True
+    assert calibration["byMinimumRainProbability"][2]["recallEligible"] is False
+    assert lead["status"] == "promotable"
+    assert lead["safeToPromote"] is True
+
+    low_recall_candidate = {
+        **candidate,
+        "hits": 58,
+        "misses": 42,
+        "falseAlarms": 0,
+        "precision": 1.0,
+        "recall": 0.58,
+        "criticalSuccessIndex": 0.58,
+        "criticalSuccessIndexSkill": 0.18,
+        "criticalSuccessIndexImprovement": 0.1185,
+    }
+    held = append_verification_history(
+        tmp_path / "calibrated-held.json",
+        [{**entry, "shadowCandidateScores": [low_recall_candidate]} for entry in results],
+    )
+    held_lead = held["shadowCandidates"][0]["byLeadMinutes"][0]
+    assert held_lead["status"] == "held-back"
+    assert held_lead["safeToPromote"] is False
