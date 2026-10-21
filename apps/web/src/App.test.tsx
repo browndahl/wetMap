@@ -701,6 +701,8 @@ it("creates a server-backed push subscription from a user gesture", async () => 
     "da",
   );
   expect(
-    screen.getByText("Virker også, når WetMap er lukket."),
+    screen.getByText(
+      "Virker også, når WetMap er lukket. Forsinkede varsler kasseres automatisk.",
+    ),
   ).toBeInTheDocument();
 });

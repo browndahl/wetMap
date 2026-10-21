@@ -1231,6 +1231,32 @@ describe("radar freshness scheduler", () => {
     );
   });
 
+  it("does not dispatch duplicate recovery workflows during the cooldown", async () => {
+    const { env, context, r2, waits } = setup();
+    Object.assign(env, {
+      GITHUB_DISPATCH_TOKEN: "test-token",
+      GITHUB_REPOSITORY: "browndahl/wetMap",
+      GITHUB_RADAR_WORKFLOW: "radar.yml",
+      GITHUB_REF: "main",
+    });
+    r2.values.set(
+      "frames/frames.json",
+      JSON.stringify({
+        frames: [{ observedAt: "2026-10-11T05:50:00Z" }],
+      }),
+    );
+    const upstream = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", upstream);
+
+    await worker.scheduled({} as ScheduledController, env, context);
+    await Promise.all(waits);
+    await worker.scheduled({} as ScheduledController, env, context);
+    await Promise.all(waits);
+
+    expect(upstream).toHaveBeenCalledOnce();
+    expect(r2.values.has("scheduler/radar-dispatch.json")).toBe(true);
+  });
+
   it("fails closed when the dispatch secret is missing", async () => {
     const { env, context, waits } = setup();
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);

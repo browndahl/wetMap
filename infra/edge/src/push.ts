@@ -13,7 +13,7 @@ export interface PushEnv {
   VAPID_SUBJECT?: string;
 }
 
-interface StoredSubscription {
+export interface StoredSubscription {
   schemaVersion: 1;
   subscription: PushSubscriptionPayload;
   latitude: number;
@@ -48,10 +48,20 @@ interface RiskManifest {
   }>;
 }
 
+export interface RainRiskHit {
+  leadMinutes: number;
+  predictedAt: string;
+  intensity: number;
+  kind: "observed" | "forecast";
+}
+
 const prefix = "push/subscriptions/";
 const scanStateKey = "push/scan-state.json";
 const subscriptionsPerInvocation = 40;
-const maximumRiskAgeMs = 30 * 60_000;
+const maximumRiskAgeMs = 20 * 60_000;
+const maximumObservedAlertAgeMs = 15 * 60_000;
+const maximumNotificationLatenessMs = 2 * 60_000;
+const observedNotificationLifetimeMs = 5 * 60_000;
 // Bucket 3 begins at the calibrated boundary declared by the worker.
 const minimumAlertIntensity = 3;
 
@@ -216,7 +226,8 @@ export function riskAtLocation(
   risk: RiskManifest,
   latitude: number,
   longitude: number,
-): { leadMinutes: number; predictedAt: string; intensity: number } | null {
+  now = Date.now(),
+): RainRiskHit | null {
   const [west, south, east, north] = risk.bounds;
   if (
     longitude < west ||
@@ -243,13 +254,25 @@ export function riskAtLocation(
     ),
   );
   const index = y * risk.width + x;
+  const observedAt = Date.parse(risk.basedOnObservedAt);
   for (const frame of risk.frames) {
+    const predictedAt = Date.parse(frame.predictedAt);
+    if (!Number.isFinite(predictedAt)) continue;
+    const kind = frame.leadMinutes === 0 ? "observed" : "forecast";
+    if (
+      (kind === "observed" &&
+        (!Number.isFinite(observedAt) ||
+          now - observedAt > maximumObservedAlertAgeMs)) ||
+      (kind === "forecast" && predictedAt < now)
+    )
+      continue;
     const intensity = decodeBase64(frame.intensity)[index] ?? 0;
     if (frame.alertEligible === true && intensity >= minimumAlertIntensity)
       return {
         leadMinutes: frame.leadMinutes,
         predictedAt: frame.predictedAt,
         intensity,
+        kind,
       };
   }
   return null;
@@ -281,9 +304,18 @@ async function listSubscriptionKeys(bucket: R2Bucket): Promise<string[]> {
   return page.objects.map((object) => object.key);
 }
 
-function notificationPayload(
+function notificationExpiry(hit: RainRiskHit, sentAt: number): number {
+  if (hit.kind === "observed") return sentAt + observedNotificationLifetimeMs;
+  return Math.max(
+    sentAt + 60_000,
+    Date.parse(hit.predictedAt) + maximumNotificationLatenessMs,
+  );
+}
+
+export function notificationPayload(
   subscription: StoredSubscription,
-  hit: NonNullable<ReturnType<typeof riskAtLocation>>,
+  hit: RainRiskHit,
+  sentAt = Date.now(),
 ) {
   const time = new Intl.DateTimeFormat(
     subscription.locale === "da" ? "da-DK" : "en-GB",
@@ -293,14 +325,30 @@ function notificationPayload(
     subscription.locale === "da"
       ? ["", "mulig", "meget svag", "let"][hit.intensity]
       : ["", "possible", "very light", "light"][hit.intensity];
+  const observed = hit.kind === "observed";
   return JSON.stringify({
-    title: subscription.locale === "da" ? "Regn på vej" : "Rain on the way",
+    title:
+      subscription.locale === "da"
+        ? observed
+          ? "Regn registreret"
+          : "Regn på vej"
+        : observed
+          ? "Rain detected"
+          : "Rain on the way",
     body:
       subscription.locale === "da"
-        ? `${intensity} regn ventes ved ${subscription.locationName} omkring ${time}.`
-        : `${intensity} rain is expected near ${subscription.locationName} around ${time}.`,
+        ? observed
+          ? `DMI-radar har registreret ${intensity} regn ved ${subscription.locationName}.`
+          : `${intensity} regn ventes ved ${subscription.locationName} omkring ${time}.`
+        : observed
+          ? `DMI radar has detected ${intensity} rain near ${subscription.locationName}.`
+          : `${intensity} rain is expected near ${subscription.locationName} around ${time}.`,
     tag: "wetmap-rain",
     url: "/",
+    kind: hit.kind,
+    sentAt: new Date(sentAt).toISOString(),
+    predictedAt: hit.predictedAt,
+    expiresAt: new Date(notificationExpiry(hit, sentAt)).toISOString(),
   });
 }
 
@@ -316,6 +364,7 @@ export async function sendRainAlerts(env: PushEnv): Promise<void> {
   }
   if (
     risk.encoding !== "uint8-base64" ||
+    !Number.isFinite(Date.parse(risk.basedOnObservedAt)) ||
     Date.now() - Date.parse(risk.basedOnObservedAt) > maximumRiskAgeMs
   )
     return;
@@ -348,15 +397,30 @@ export async function sendRainAlerts(env: PushEnv): Promise<void> {
       }
       if (stored.activeRainEvent) return;
       try {
+        const sentAt = Date.now();
+        const expiresAt = notificationExpiry(hit, sentAt);
         await webpush.sendNotification(
           stored.subscription as webpush.PushSubscription,
-          notificationPayload(stored, hit),
-          { TTL: Math.max(60, hit.leadMinutes * 60), urgency: "high" },
+          notificationPayload(stored, hit, sentAt),
+          {
+            TTL: Math.max(60, Math.ceil((expiresAt - sentAt) / 1_000)),
+            urgency: "high",
+          },
         );
         stored.activeRainEvent = true;
         stored.lastAlertedAt = new Date().toISOString();
         stored.updatedAt = stored.lastAlertedAt;
         await env.RADAR.put(key, JSON.stringify(stored));
+        console.log("push.send.succeeded", {
+          kind: hit.kind,
+          leadMinutes: hit.leadMinutes,
+          etaMinutes: Math.round(
+            (Date.parse(hit.predictedAt) - sentAt) / 60_000,
+          ),
+          radarAgeMinutes: Math.round(
+            (sentAt - Date.parse(risk.basedOnObservedAt)) / 60_000,
+          ),
+        });
       } catch (error) {
         const statusCode = (error as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) {

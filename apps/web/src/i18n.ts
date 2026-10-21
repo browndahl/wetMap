@@ -97,7 +97,8 @@ const messages = {
     notifyRain: "Varsl mig",
     rainAlertOn: "Regnvarsel slået til",
     rainAlertWorking: "Arbejder…",
-    rainAlertBackground: "Virker også, når WetMap er lukket.",
+    rainAlertBackground:
+      "Virker også, når WetMap er lukket. Forsinkede varsler kasseres automatisk.",
     rainAlertDenied:
       "Baggrundsvarsler kunne ikke aktiveres. Kontrollér browserens notifikationstilladelse.",
     rainAlertTitle: "Regn på vej",
@@ -276,7 +277,8 @@ const messages = {
     notifyRain: "Notify me",
     rainAlertOn: "Rain alert enabled",
     rainAlertWorking: "Working…",
-    rainAlertBackground: "Also works while WetMap is closed.",
+    rainAlertBackground:
+      "Also works while WetMap is closed. Delayed alerts are discarded automatically.",
     rainAlertDenied:
       "Background alerts could not be enabled. Check the browser notification permission.",
     rainAlertTitle: "Rain on the way",

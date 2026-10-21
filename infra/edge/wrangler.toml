@@ -19,7 +19,7 @@ GITHUB_REF = "main"
 VAPID_SUBJECT = "https://wetmap.pages.dev"
 
 [triggers]
-crons = ["1-59/5 * * * *"]
+crons = ["* * * * *"]
 
 [observability.logs]
 enabled = true

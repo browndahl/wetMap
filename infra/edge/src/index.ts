@@ -28,6 +28,8 @@ const forecastStaleSeconds = 6 * 60 * 60;
 const precipitationCacheSeconds = 5 * 60;
 const precipitationStaleSeconds = 30 * 60;
 const radarDispatchAgeMs = 20 * 60 * 1000;
+const radarDispatchCooldownMs = 8 * 60 * 1000;
+const radarDispatchStateKey = "scheduler/radar-dispatch.json";
 const locationCacheSeconds = 24 * 60 * 60;
 const reverseLocationCacheSeconds = 7 * 24 * 60 * 60;
 const dmiPrimaryHeadStartMs = 1_500;
@@ -754,10 +756,10 @@ async function nowcastFrame(
   return new Response(object.body, { headers });
 }
 
-async function dispatchRadarIngestion(env: Env): Promise<void> {
+async function dispatchRadarIngestion(env: Env): Promise<boolean> {
   if (!env.GITHUB_DISPATCH_TOKEN) {
     console.error("radar.scheduler.missing-token");
-    return;
+    return false;
   }
   const repository = env.GITHUB_REPOSITORY ?? "browndahl/wetMap";
   const workflow = env.GITHUB_RADAR_WORKFLOW ?? "radar.yml";
@@ -779,6 +781,7 @@ async function dispatchRadarIngestion(env: Env): Promise<void> {
   if (!response.ok)
     throw new Error(`GitHub workflow dispatch returned ${response.status}`);
   console.log("radar.scheduler.dispatched", { repository, workflow, ref });
+  return true;
 }
 
 async function ensureFreshRadar(env: Env): Promise<void> {
@@ -799,7 +802,25 @@ async function ensureFreshRadar(env: Env): Promise<void> {
       console.error("radar.scheduler.invalid-manifest", { error });
     }
   }
-  await dispatchRadarIngestion(env);
+  try {
+    const state = await env.RADAR.get(radarDispatchStateKey);
+    const lastDispatchedAt = Date.parse(
+      (await state?.json<{ lastDispatchedAt?: string }>())?.lastDispatchedAt ??
+        "",
+    );
+    if (
+      Number.isFinite(lastDispatchedAt) &&
+      Date.now() - lastDispatchedAt < radarDispatchCooldownMs
+    )
+      return;
+  } catch (error) {
+    console.error("radar.scheduler.invalid-state", { error });
+  }
+  if (await dispatchRadarIngestion(env))
+    await env.RADAR.put(
+      radarDispatchStateKey,
+      JSON.stringify({ lastDispatchedAt: new Date().toISOString() }),
+    );
 }
 
 function forecastHeaders(

@@ -6,7 +6,7 @@ Start Docker Desktop and wait until its engine reports ready before running `doc
 
 ## 1. Radar stale (>25 minutes)
 
-Check the Cloudflare `wetmap-api` cron logs first, then the latest worker workflow, DMI status, 429/retry logs, R2 manifest `generatedAt`, and frame object HEAD. The Cloudflare cron checks every five minutes and dispatches `radar.yml` when the newest observation is over 20 minutes old; verify the `GITHUB_DISPATCH_TOKEN` Worker secret if no dispatch appears. The synthetic workflow also calls the reusable radar workflow as a recovery path. Keep serving the last good manifest with a stale banner. Rerun one workflow only; do not fan out retries against DMI. Roll back worker if schema validation began failing after a deploy.
+Check the Cloudflare `wetmap-api` cron logs first, then the latest worker workflow, DMI status, 429/retry logs, R2 manifest `generatedAt`, and frame object HEAD. The Cloudflare cron scans alerts every minute and dispatches `radar.yml` when the newest observation is over 20 minutes old; an R2-backed eight-minute cooldown prevents duplicate recovery runs while ingestion catches up. Verify the `GITHUB_DISPATCH_TOKEN` Worker secret if no dispatch appears. The synthetic workflow also calls the reusable radar workflow as a recovery path. Keep serving the last good manifest with a stale banner. Rerun one workflow only; do not fan out retries against DMI. Roll back worker if schema validation began failing after a deploy.
 
 ## 2. DMI unavailable or rate-limiting
 
