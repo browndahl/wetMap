@@ -2,6 +2,17 @@
 
 Verified against official documentation on **2026-10-10**. “Free” never means unlimited or an SLA. Set provider spend limits to zero where supported and do not attach automatic paid upgrades.
 
+Owner constraint reaffirmed **2026-10-22: free only**. Do not activate paid plans,
+paid runners, automatic paid upgrades or additional metered archive storage on an
+estimate alone. V6 historical acquisition will use selected DMI event windows on local disk; the
+proposed 400-day R2 archive remains disabled. See
+[ADR 0005](adr/0005-compact-backtest-archive.md). Existing R2 remains a metered service;
+this decision does not install a provider billing cap or guarantee that existing
+traffic cannot generate overage. Check account-wide storage and operation totals
+before any future archive expansion. R2 Standard's included 10 GB-month, 1 million
+Class A and 10 million Class B operations were rechecked against
+[official pricing](https://developers.cloudflare.com/r2/pricing/) on 22 October 2026.
+
 | Component                       |                                                                                       Current included limit | Card?                                                                       |                                                                                                 Expected v1 use | Exceeded / risk                                                                                                                                                                                                                                                                                                                       |
 | ------------------------------- | -----------------------------------------------------------------------------------------------------------: | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Cloudflare Pages Free           |                   500 builds/month, 1 concurrent build, 20,000 files/site, 25 MiB/file, 100 projects/account | Account required; Pages itself free                                         |                                                                                    ~30 production deploys/month | Builds stop at limit; preview-per-commit can exhaust 500. [Official limits](https://developers.cloudflare.com/pages/platform/limits/)                                                                                                                                                                                                 |

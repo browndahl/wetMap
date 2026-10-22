@@ -91,15 +91,18 @@ Status: **in progress — offline backtest foundation**
   that can exceed the free storage allowance, no retention change has been made.
 - A local lossless resize of the same frames to the harness grid measured 13,560 bytes
   per WebP on average, or about 1.33 GiB/year. Compressed NPZ measured 1.56 GiB/year.
-  [`ADR 0005`](adr/0005-compact-backtest-archive.md) proposes a 400-day compact archive
-  but is deliberately not accepted or deployed pending explicit owner approval.
+  [`ADR 0005`](adr/0005-compact-backtest-archive.md) records the measurement. Following
+  the owner's free-only instruction on 22 October, its cloud-retention proposal is
+  deferred. Bounded local event downloads are the next implementation step.
 
 ### Open Phase 1 work
 
 - Extend the runner to emit auditable JSON per split, lead, event regime and region.
 - Curate and review the event catalogue; snow/sleet remains seasonally unavailable.
-- Request explicit owner approval for ADR 0005 before any R2 lifecycle, archive upload,
-  historical backfill or cost-risk change.
+- Build bounded local event acquisition and replay within the owner's free-only
+  constraint. Additional R2 archival and the 400-day lifecycle remain disabled.
+- Measure account-wide R2 usage before considering any future cloud archive. A storage
+  projection is not a billing cap, and no new billing cap has been configured.
 - This is implementation work, not the independent acceptance run.
 
 ### Current evidence
