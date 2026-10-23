@@ -206,6 +206,7 @@ vi.mock("./api", () => ({
 }));
 
 beforeEach(() => {
+  window.matchMedia = vi.fn().mockReturnValue({ matches: false });
   window.localStorage.clear();
   apiMocks.manifest.frames = [];
   apiMocks.nowcast.frames = [];
@@ -230,6 +231,33 @@ beforeEach(() => {
     },
     favoriteLocations: [],
   });
+});
+
+it("starts compact on phones and keeps forecast and timeline expansion exclusive", async () => {
+  window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  const forecast = await screen.findByRole("button", {
+    name: "Vis prognosedetaljer",
+  });
+  expect(forecast).toHaveAttribute("aria-expanded", "false");
+  const timeline = screen.getByRole("button", {
+    name: "Vis seneste observation",
+  });
+  expect(timeline).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(forecast);
+  expect(forecast).toHaveAttribute("aria-expanded", "true");
+  fireEvent.click(timeline);
+  expect(forecast).toHaveAttribute("aria-expanded", "false");
+  expect(timeline).toHaveAttribute("aria-expanded", "true");
+  view.unmount();
+  client.clear();
 });
 
 it("labels future optical-flow frames as nowcasts with confidence", async () => {
@@ -445,9 +473,17 @@ it("automatically plays recent radar history and finishes on the latest observat
   );
   expect(screen.getByText("Seneste observation")).toBeInTheDocument();
 
+  fireEvent.click(screen.getByRole("button", { name: "Afspil radar" }));
+  expect(useWeatherStore.getState().playing).toBe(true);
+  fireEvent.change(screen.getByRole("slider", { name: "Radar-tidspunkt" }), {
+    target: { value: "1" },
+  });
+  expect(useWeatherStore.getState().playing).toBe(false);
+
   fireEvent.change(screen.getByRole("slider", { name: "Radar-tidspunkt" }), {
     target: { value: "0" },
   });
+  expect(useWeatherStore.getState().playing).toBe(false);
   await waitFor(() =>
     expect(screen.getByTestId("active-frame")).toHaveTextContent("older"),
   );

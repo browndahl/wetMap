@@ -14,6 +14,7 @@ import {
 } from "../api";
 
 interface Props {
+  compact?: boolean;
   data?: RainNextHourResponse;
   isLoading: boolean;
   isFetching: boolean;
@@ -160,6 +161,7 @@ const intensityKey = (intensity: RainIntensity) =>
     | "intensityHeavy";
 
 export default function RainNextHour({
+  compact = false,
   data,
   isLoading,
   isFetching,
@@ -372,120 +374,130 @@ export default function RainNextHour({
               </span>
               <span>{t(sourceKey)}</span>
             </div>
-            <details className="rain-eta-details">
-              <summary>{t("rainEtaWhy")}</summary>
-              <p>{t(hasRadar ? "rainRadarMethod" : "rainMethod")}</p>
-              {data && (
-                <time dateTime={data.basedOnObservedAt ?? data.fetchedAt}>
-                  {t("rainEtaUpdated")}{" "}
-                  {formatTime(data.basedOnObservedAt ?? data.fetchedAt, locale)}
-                </time>
-              )}
-            </details>
-          </div>
-          <div className="rain-chart" aria-label={t("rainNextHour")}>
-            {points.map((point) => (
-              <div className="rain-column" key={point.startsAt}>
-                <div
-                  className={`rain-bar-track is-${point.intensity}`}
-                  aria-hidden="true"
-                >
-                  <strong className="rain-amount">
-                    {point.precipitationMm.toLocaleString(
-                      locale === "da" ? "da-DK" : "en-GB",
-                      {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      },
+            {!compact && (
+              <details className="rain-eta-details">
+                <summary>{t("rainEtaWhy")}</summary>
+                <p>{t(hasRadar ? "rainRadarMethod" : "rainMethod")}</p>
+                {data && (
+                  <time dateTime={data.basedOnObservedAt ?? data.fetchedAt}>
+                    {t("rainEtaUpdated")}{" "}
+                    {formatTime(
+                      data.basedOnObservedAt ?? data.fetchedAt,
+                      locale,
                     )}
-                    <small> mm</small>
-                  </strong>
-                  <span className="rain-intensity">
-                    {t(intensityKey(point.intensity))}
-                  </span>
-                  <span
-                    className={`rain-source is-${point.source ?? "harmonie"}`}
-                    title={
-                      point.source === "radar-nowcast"
-                        ? `${t("radarSource")}${
-                            point.reflectivityDbz == null
-                              ? ""
-                              : ` · ${point.reflectivityDbz} dBZ`
-                          }${
-                            point.forecastMethod
-                              ? ` · ${t(
-                                  point.forecastMethod === "persistence"
-                                    ? "nowcastPersistence"
-                                    : point.forecastMethod ===
-                                        "recall-calibrated-ensemble"
-                                      ? "nowcastRecallCalibrated"
-                                      : point.forecastMethod ===
-                                          "probability-gated-ensemble"
-                                        ? "nowcastProbabilityGated"
-                                        : point.forecastMethod ===
-                                            "regime-adaptive-ensemble"
-                                          ? "nowcastAdaptiveEnsemble"
-                                          : point.forecastMethod ===
-                                              "trajectory-speed-corrected"
-                                            ? "nowcastSpeedCorrected"
-                                            : point.forecastMethod ===
-                                                "trajectory-optical-flow"
-                                              ? "nowcastTrajectory"
-                                              : "nowcastOpticalFlow",
-                                )}`
-                              : ""
-                          }`
-                        : t("modelSource")
-                    }
-                  >
-                    {point.source === "radar-nowcast"
-                      ? `${t("radarSource")}${
-                          point.reflectivityDbz == null
-                            ? ""
-                            : ` · ${point.reflectivityDbz}`
-                        }`
-                      : t("modelSource")}
-                  </span>
-                  <span
-                    className={`rain-bar is-${point.intensity}`}
-                    style={{
-                      height: `${Math.max(
-                        point.intensity === "none" ? 4 : 16,
-                        (point.precipitationMm / max) * 62,
-                      )}%`,
-                    }}
-                  />
-                </div>
-                <time dateTime={point.startsAt}>
-                  {formatTime(point.startsAt, locale)}
-                </time>
-                <span className="sr-only">
-                  {t(intensityKey(point.intensity))}: {point.precipitationMm} mm
-                </span>
-              </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            className={`rain-alert ${alertsEnabled ? "is-active" : ""}`}
-            onClick={toggleAlerts}
-            aria-pressed={alertsEnabled}
-            disabled={alertBusy}
-          >
-            {alertsEnabled ? (
-              <BellRing size={14} aria-hidden="true" />
-            ) : (
-              <Bell size={14} aria-hidden="true" />
+                  </time>
+                )}
+              </details>
             )}
-            {alertBusy
-              ? t("rainAlertWorking")
-              : alertsEnabled
-                ? t("rainAlertOn")
-                : t("notifyRain")}
-          </button>
-          <p className={`rain-alert-note ${alertError ? "is-error" : ""}`}>
-            {alertError ? t("rainAlertDenied") : t("rainAlertBackground")}
-          </p>
+          </div>
+          {!compact && (
+            <>
+              <div className="rain-chart" aria-label={t("rainNextHour")}>
+                {points.map((point) => (
+                  <div className="rain-column" key={point.startsAt}>
+                    <div
+                      className={`rain-bar-track is-${point.intensity}`}
+                      aria-hidden="true"
+                    >
+                      <strong className="rain-amount">
+                        {point.precipitationMm.toLocaleString(
+                          locale === "da" ? "da-DK" : "en-GB",
+                          {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          },
+                        )}
+                        <small> mm</small>
+                      </strong>
+                      <span className="rain-intensity">
+                        {t(intensityKey(point.intensity))}
+                      </span>
+                      <span
+                        className={`rain-source is-${point.source ?? "harmonie"}`}
+                        title={
+                          point.source === "radar-nowcast"
+                            ? `${t("radarSource")}${
+                                point.reflectivityDbz == null
+                                  ? ""
+                                  : ` · ${point.reflectivityDbz} dBZ`
+                              }${
+                                point.forecastMethod
+                                  ? ` · ${t(
+                                      point.forecastMethod === "persistence"
+                                        ? "nowcastPersistence"
+                                        : point.forecastMethod ===
+                                            "recall-calibrated-ensemble"
+                                          ? "nowcastRecallCalibrated"
+                                          : point.forecastMethod ===
+                                              "probability-gated-ensemble"
+                                            ? "nowcastProbabilityGated"
+                                            : point.forecastMethod ===
+                                                "regime-adaptive-ensemble"
+                                              ? "nowcastAdaptiveEnsemble"
+                                              : point.forecastMethod ===
+                                                  "trajectory-speed-corrected"
+                                                ? "nowcastSpeedCorrected"
+                                                : point.forecastMethod ===
+                                                    "trajectory-optical-flow"
+                                                  ? "nowcastTrajectory"
+                                                  : "nowcastOpticalFlow",
+                                    )}`
+                                  : ""
+                              }`
+                            : t("modelSource")
+                        }
+                      >
+                        {point.source === "radar-nowcast"
+                          ? `${t("radarSource")}${
+                              point.reflectivityDbz == null
+                                ? ""
+                                : ` · ${point.reflectivityDbz}`
+                            }`
+                          : t("modelSource")}
+                      </span>
+                      <span
+                        className={`rain-bar is-${point.intensity}`}
+                        style={{
+                          height: `${Math.max(
+                            point.intensity === "none" ? 4 : 16,
+                            (point.precipitationMm / max) * 62,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <time dateTime={point.startsAt}>
+                      {formatTime(point.startsAt, locale)}
+                    </time>
+                    <span className="sr-only">
+                      {t(intensityKey(point.intensity))}:{" "}
+                      {point.precipitationMm} mm
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={`rain-alert ${alertsEnabled ? "is-active" : ""}`}
+                onClick={toggleAlerts}
+                aria-pressed={alertsEnabled}
+                disabled={alertBusy}
+              >
+                {alertsEnabled ? (
+                  <BellRing size={14} aria-hidden="true" />
+                ) : (
+                  <Bell size={14} aria-hidden="true" />
+                )}
+                {alertBusy
+                  ? t("rainAlertWorking")
+                  : alertsEnabled
+                    ? t("rainAlertOn")
+                    : t("notifyRain")}
+              </button>
+              <p className={`rain-alert-note ${alertError ? "is-error" : ""}`}>
+                {alertError ? t("rainAlertDenied") : t("rainAlertBackground")}
+              </p>
+            </>
+          )}
         </>
       )}
     </section>

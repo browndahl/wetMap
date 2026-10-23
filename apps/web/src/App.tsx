@@ -30,6 +30,7 @@ import { useWeatherStore } from "./store";
 import LocationSearch from "./components/LocationSearch";
 import PrecisionObservatory from "./components/PrecisionObservatory";
 import RainNextHour from "./components/RainNextHour";
+import { useCompactLayout } from "./useCompactLayout";
 
 const WeatherMap = lazy(() => import("./components/WeatherMap"));
 const radarDelayBudgetMinutes = 25;
@@ -55,14 +56,18 @@ const formatAge = (minutes: number, locale: "da" | "en") => {
 
 const timelineStartsCollapsed = () => {
   try {
-    return window.localStorage.getItem("wetmap:timeline-collapsed") === "true";
+    const stored = window.localStorage.getItem("wetmap:timeline-collapsed");
+    if (stored !== null) return stored === "true";
   } catch {
-    return false;
+    // Use the layout default if browser storage is unavailable.
   }
+  return window.matchMedia?.("(max-width: 850px)").matches ?? false;
 };
 
 export default function App() {
   const state = useWeatherStore();
+  const compactLayout = useCompactLayout();
+  const [forecastExpanded, setForecastExpanded] = useState(false);
   const initialRadarPlaybackStarted = useRef(false);
   const [now, setNow] = useState(() => Date.now());
   const [timelineCollapsed, setTimelineCollapsed] = useState(
@@ -278,271 +283,315 @@ export default function App() {
       <LocationSearch />
       <PrecisionObservatory locale={state.locale} />
 
-      <section
-        id="weather-panel"
-        className="weather-card glass"
-        aria-labelledby="forecast-title"
-      >
-        <div className="eyebrow">
-          <Wind size={15} aria-hidden="true" /> DMI HARMONIE
-          {forecast.isFetching && !forecast.isLoading && (
-            <span role="status"> · {t("updatingForecast")}</span>
-          )}
-        </div>
-        <h2 id="forecast-title">{t("forecast")}</h2>
-        {forecast.isLoading && (
-          <p className="muted" role="status">
-            {t("loadingForecast")}
-          </p>
-        )}
-        {forecast.isError && (
-          <p className="muted">{t("forecastUnavailable")}</p>
-        )}
-        {!forecast.isLoading &&
-          !forecast.isError &&
-          forecastPoints.length === 0 && (
-            <p className="muted">{t("forecastUnavailable")}</p>
-          )}
-        {forecastPoints.map((point) => (
-          <div className="forecast-row" key={point.step}>
-            <time dateTime={point.step}>
-              {new Date(point.step).getTime() <
-              currentHour.getTime() + 3_600_000
-                ? t("now")
-                : formatTime(point.step, state.locale)}
-            </time>
-            <strong>
-              {point.temperatureC == null
-                ? "–"
-                : `${Math.round(point.temperatureC)}°`}
-            </strong>
-            <span>
-              {point.windSpeedMs == null
-                ? "–"
-                : `${point.windSpeedMs.toFixed(1)} m/s`}
-            </span>
-          </div>
-        ))}
-        <RainNextHour
-          data={rain.data}
-          isLoading={rain.isLoading}
-          isFetching={rain.isFetching}
-          isError={rain.isError}
-          locale={state.locale}
-          locationName={state.selectedLocation.name}
-          latitude={state.selectedLocation.latitude}
-          longitude={state.selectedLocation.longitude}
-        />
-      </section>
-
-      <aside className="legend glass" aria-label={t("reflectivity")}>
-        <strong>{t("reflectivity")}</strong>
-        <div className="legend-scale" aria-hidden="true">
-          {RADAR_SCALE.map((entry) => (
-            <span key={entry.min} style={{ backgroundColor: entry.color }} />
-          ))}
-        </div>
-        <div className="legend-labels">
-          <span>−10</span>
-          <span>20</span>
-          <span>50+</span>
-        </div>
-      </aside>
-
-      <section
-        className={`timeline glass ${timelineCollapsed ? "is-collapsed" : ""}`}
-        aria-labelledby="timeline-title"
-      >
-        <div className="timeline-heading">
-          <div>
-            <span className="eyebrow">
-              {activeIsNowcast
-                ? `${t("nowcast")} · +${activeFrame.leadMinutes} min`
-                : safeIndex === latestObservationIndex
-                  ? t("latestObservation")
-                  : t("observed")}
-            </span>
-            <h1 id="timeline-title">
-              {activeFrameTime
-                ? formatTime(activeFrameTime, state.locale)
-                : t("radar")}
-            </h1>
-          </div>
-          <div className="timeline-actions">
+      <div className="weather-dock">
+        <section
+          id="weather-panel"
+          className="weather-card glass"
+          aria-labelledby={
+            compactLayout ? "mobile-forecast-title" : "forecast-title"
+          }
+          tabIndex={-1}
+        >
+          {compactLayout && (
             <button
-              className="timeline-toggle"
-              onClick={() => setTimelineCollapsed((collapsed) => !collapsed)}
+              className="forecast-toggle"
               aria-label={
-                timelineCollapsed ? t("expandTimeline") : t("collapseTimeline")
+                forecastExpanded ? t("collapseForecast") : t("expandForecast")
               }
-              aria-expanded={!timelineCollapsed}
-              aria-controls="timeline-details"
+              aria-expanded={forecastExpanded}
+              aria-controls="forecast-details"
+              onClick={() => {
+                setForecastExpanded(!forecastExpanded);
+                if (!forecastExpanded) setTimelineCollapsed(true);
+              }}
             >
-              {timelineCollapsed ? (
-                <ChevronUp aria-hidden="true" />
-              ) : (
+              <span>
+                <strong id="mobile-forecast-title">
+                  {state.selectedLocation.name}
+                </strong>
+                <span>{t("rainNextHour")}</span>
+              </span>
+              {forecastExpanded ? (
                 <ChevronDown aria-hidden="true" />
-              )}
-            </button>
-            <div className="live-clock">
-              <span>{t("now")}</span>
-              <time dateTime={new Date(now).toISOString()}>
-                {formatTime(now, state.locale)}
-              </time>
-            </div>
-            <button
-              className="play-button"
-              onClick={togglePlayback}
-              aria-label={state.playing ? t("pause") : t("play")}
-              disabled={radarFrames.length < 2}
-            >
-              {state.playing ? (
-                <Pause aria-hidden="true" />
               ) : (
-                <Play aria-hidden="true" />
+                <ChevronUp aria-hidden="true" />
               )}
             </button>
-          </div>
-        </div>
-
-        {!timelineCollapsed && (
-          <div id="timeline-details">
-            {radarFrames.length ? (
-              <>
-                <div className="timeline-context">
-                  {activeIsNowcast ? (
-                    <>
-                      <span>
-                        <Clock3 size={14} aria-hidden="true" />
-                        {t("nowcastBasedOn")}{" "}
-                        {formatTime(
-                          activeFrame.basedOnObservedAt,
-                          state.locale,
-                        )}
-                      </span>
-                      <span className="timeline-gap">
-                        {t("nowcastConfidence")}{" "}
-                        {Math.round(activeFrame.confidence * 100)}%
-                        {activeFrame.forecastMethod
-                          ? ` · ${t(
-                              activeFrame.forecastMethod === "persistence"
-                                ? "nowcastPersistence"
-                                : activeFrame.forecastMethod ===
-                                    "recall-calibrated-ensemble"
-                                  ? "nowcastRecallCalibrated"
-                                  : activeFrame.forecastMethod ===
-                                      "probability-gated-ensemble"
-                                    ? "nowcastProbabilityGated"
-                                    : activeFrame.forecastMethod ===
-                                        "regime-adaptive-ensemble"
-                                      ? "nowcastAdaptiveEnsemble"
-                                      : activeFrame.forecastMethod ===
-                                          "trajectory-speed-corrected"
-                                        ? "nowcastSpeedCorrected"
-                                        : activeFrame.forecastMethod ===
-                                            "trajectory-optical-flow"
-                                          ? "nowcastTrajectory"
-                                          : "nowcastOpticalFlow",
-                            )}`
-                          : ""}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span>
-                        <Clock3 size={14} aria-hidden="true" />
-                        {t("measured")}{" "}
-                        {formatTime(activeFrame.observedAt, state.locale)}
-                      </span>
-                      <span className="timeline-gap">
-                        {activeAgeMinutes} {t("minutesBehindNow")}
-                      </span>
-                    </>
-                  )}
-                  {safeIndex !== latestObservationIndex && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        state.setSelectedFrame(latestObservationIndex)
-                      }
-                    >
-                      <SkipForward size={14} aria-hidden="true" />
-                      {t("jumpToLatest")}
-                    </button>
-                  )}
-                </div>
-                <input
-                  className="scrubber"
-                  type="range"
-                  min="0"
-                  max={Math.max(radarFrames.length - 1, 0)}
-                  value={safeIndex}
-                  onChange={(event) =>
-                    state.setSelectedFrame(Number(event.target.value))
-                  }
-                  aria-label={t("radarTime")}
-                  aria-valuetext={
-                    activeFrameTime
-                      ? formatTime(activeFrameTime, state.locale)
-                      : undefined
-                  }
-                />
-                <div className="timeline-ticks">
-                  <time dateTime={frames[0].observedAt}>
-                    {formatTime(frames[0].observedAt, state.locale)}
-                  </time>
-                  <span>
-                    {nowcastFrames.length
-                      ? t("nowcastTimeline")
-                      : t("observedHistory")}
-                  </span>
-                  <time dateTime={radarFrameTime(radarFrames.at(-1)!)}>
-                    {formatTime(
-                      radarFrameTime(radarFrames.at(-1)!),
-                      state.locale,
-                    )}
-                  </time>
-                </div>
-                <p className="timeline-note">
-                  {nowcastFrames.length
-                    ? t("nowcastNote")
-                    : t("futureRadarNote")}
-                </p>
-              </>
-            ) : (
-              <div className="empty-state" role="status">
-                <strong>{t("noData")}</strong>
-                <span>{t("noDataDetail")}</span>
-              </div>
+          )}
+          <div
+            id="forecast-details"
+            hidden={compactLayout && !forecastExpanded}
+          >
+            <div className="eyebrow">
+              <Wind size={15} aria-hidden="true" /> DMI HARMONIE
+              {forecast.isFetching && !forecast.isLoading && (
+                <span role="status"> · {t("updatingForecast")}</span>
+              )}
+            </div>
+            <h2 id="forecast-title">{t("forecast")}</h2>
+            {forecast.isLoading && (
+              <p className="muted" role="status">
+                {t("loadingForecast")}
+              </p>
             )}
-
-            <div className="control-grid">
-              <label>
+            {forecast.isError && (
+              <p className="muted">{t("forecastUnavailable")}</p>
+            )}
+            {!forecast.isLoading &&
+              !forecast.isError &&
+              forecastPoints.length === 0 && (
+                <p className="muted">{t("forecastUnavailable")}</p>
+              )}
+            {forecastPoints.map((point) => (
+              <div className="forecast-row" key={point.step}>
+                <time dateTime={point.step}>
+                  {new Date(point.step).getTime() <
+                  currentHour.getTime() + 3_600_000
+                    ? t("now")
+                    : formatTime(point.step, state.locale)}
+                </time>
+                <strong>
+                  {point.temperatureC == null
+                    ? "–"
+                    : `${Math.round(point.temperatureC)}°`}
+                </strong>
                 <span>
-                  {t("opacity")}{" "}
-                  <output>{Math.round(state.opacity * 100)}%</output>
+                  {point.windSpeedMs == null
+                    ? "–"
+                    : `${point.windSpeedMs.toFixed(1)} m/s`}
                 </span>
-                <input
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.05"
-                  value={state.opacity}
-                  onChange={(e) => state.setOpacity(Number(e.target.value))}
-                />
-              </label>
+              </div>
+            ))}
+          </div>
+          <RainNextHour
+            compact={compactLayout && !forecastExpanded}
+            data={rain.data}
+            isLoading={rain.isLoading}
+            isFetching={rain.isFetching}
+            isError={rain.isError}
+            locale={state.locale}
+            locationName={state.selectedLocation.name}
+            latitude={state.selectedLocation.latitude}
+            longitude={state.selectedLocation.longitude}
+          />
+        </section>
+
+        <aside className="legend glass" aria-label={t("reflectivity")}>
+          <strong>{t("reflectivity")}</strong>
+          <div className="legend-scale" aria-hidden="true">
+            {RADAR_SCALE.map((entry) => (
+              <span key={entry.min} style={{ backgroundColor: entry.color }} />
+            ))}
+          </div>
+          <div className="legend-labels">
+            <span>−10</span>
+            <span>20</span>
+            <span>50+</span>
+          </div>
+        </aside>
+
+        <section
+          className={`timeline glass ${timelineCollapsed ? "is-collapsed" : ""}`}
+          aria-labelledby="timeline-title"
+        >
+          <div className="timeline-heading">
+            <div>
+              <span className="eyebrow">
+                {activeIsNowcast
+                  ? `${t("nowcast")} · +${activeFrame.leadMinutes} min`
+                  : safeIndex === latestObservationIndex
+                    ? t("latestObservation")
+                    : t("observed")}
+              </span>
+              <h1 id="timeline-title">
+                {activeFrameTime
+                  ? formatTime(activeFrameTime, state.locale)
+                  : t("radar")}
+              </h1>
+            </div>
+            <div className="timeline-actions">
               <button
-                className={`mode-button ${state.precise2d ? "is-active" : ""}`}
-                onClick={() => state.setPrecise2d(!state.precise2d)}
-                aria-pressed={state.precise2d}
+                className="timeline-toggle"
+                onClick={() => {
+                  setTimelineCollapsed(!timelineCollapsed);
+                  if (compactLayout && timelineCollapsed)
+                    setForecastExpanded(false);
+                }}
+                aria-label={
+                  timelineCollapsed
+                    ? t("expandTimeline")
+                    : t("collapseTimeline")
+                }
+                aria-expanded={!timelineCollapsed}
+                aria-controls="timeline-details"
               >
-                <Layers3 size={17} aria-hidden="true" />{" "}
-                {state.precise2d ? t("precise") : t("buildings")}
+                {timelineCollapsed ? (
+                  <ChevronUp aria-hidden="true" />
+                ) : (
+                  <ChevronDown aria-hidden="true" />
+                )}
+              </button>
+              <div className="live-clock">
+                <span>{t("now")}</span>
+                <time dateTime={new Date(now).toISOString()}>
+                  {formatTime(now, state.locale)}
+                </time>
+              </div>
+              <button
+                className="play-button"
+                onClick={togglePlayback}
+                aria-label={state.playing ? t("pause") : t("play")}
+                disabled={radarFrames.length < 2}
+              >
+                {state.playing ? (
+                  <Pause aria-hidden="true" />
+                ) : (
+                  <Play aria-hidden="true" />
+                )}
               </button>
             </div>
           </div>
-        )}
-      </section>
+
+          {!timelineCollapsed && (
+            <div id="timeline-details">
+              {radarFrames.length ? (
+                <>
+                  <div className="timeline-context">
+                    {activeIsNowcast ? (
+                      <>
+                        <span>
+                          <Clock3 size={14} aria-hidden="true" />
+                          {t("nowcastBasedOn")}{" "}
+                          {formatTime(
+                            activeFrame.basedOnObservedAt,
+                            state.locale,
+                          )}
+                        </span>
+                        <span className="timeline-gap">
+                          {t("nowcastConfidence")}{" "}
+                          {Math.round(activeFrame.confidence * 100)}%
+                          {activeFrame.forecastMethod
+                            ? ` · ${t(
+                                activeFrame.forecastMethod === "persistence"
+                                  ? "nowcastPersistence"
+                                  : activeFrame.forecastMethod ===
+                                      "recall-calibrated-ensemble"
+                                    ? "nowcastRecallCalibrated"
+                                    : activeFrame.forecastMethod ===
+                                        "probability-gated-ensemble"
+                                      ? "nowcastProbabilityGated"
+                                      : activeFrame.forecastMethod ===
+                                          "regime-adaptive-ensemble"
+                                        ? "nowcastAdaptiveEnsemble"
+                                        : activeFrame.forecastMethod ===
+                                            "trajectory-speed-corrected"
+                                          ? "nowcastSpeedCorrected"
+                                          : activeFrame.forecastMethod ===
+                                              "trajectory-optical-flow"
+                                            ? "nowcastTrajectory"
+                                            : "nowcastOpticalFlow",
+                              )}`
+                            : ""}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>
+                          <Clock3 size={14} aria-hidden="true" />
+                          {t("measured")}{" "}
+                          {formatTime(activeFrame.observedAt, state.locale)}
+                        </span>
+                        <span className="timeline-gap">
+                          {activeAgeMinutes} {t("minutesBehindNow")}
+                        </span>
+                      </>
+                    )}
+                    {safeIndex !== latestObservationIndex && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          state.setSelectedFrame(latestObservationIndex)
+                        }
+                      >
+                        <SkipForward size={14} aria-hidden="true" />
+                        {t("jumpToLatest")}
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    className="scrubber"
+                    type="range"
+                    min="0"
+                    max={Math.max(radarFrames.length - 1, 0)}
+                    value={safeIndex}
+                    onChange={(event) => {
+                      state.setPlaying(false);
+                      state.setSelectedFrame(Number(event.target.value));
+                    }}
+                    aria-label={t("radarTime")}
+                    aria-valuetext={
+                      activeFrameTime
+                        ? formatTime(activeFrameTime, state.locale)
+                        : undefined
+                    }
+                  />
+                  <div className="timeline-ticks">
+                    <time dateTime={frames[0].observedAt}>
+                      {formatTime(frames[0].observedAt, state.locale)}
+                    </time>
+                    <span>
+                      {nowcastFrames.length
+                        ? t("nowcastTimeline")
+                        : t("observedHistory")}
+                    </span>
+                    <time dateTime={radarFrameTime(radarFrames.at(-1)!)}>
+                      {formatTime(
+                        radarFrameTime(radarFrames.at(-1)!),
+                        state.locale,
+                      )}
+                    </time>
+                  </div>
+                  <p className="timeline-note">
+                    {nowcastFrames.length
+                      ? t("nowcastNote")
+                      : t("futureRadarNote")}
+                  </p>
+                </>
+              ) : (
+                <div className="empty-state" role="status">
+                  <strong>{t("noData")}</strong>
+                  <span>{t("noDataDetail")}</span>
+                </div>
+              )}
+
+              <div className="control-grid">
+                <label>
+                  <span>
+                    {t("opacity")}{" "}
+                    <output>{Math.round(state.opacity * 100)}%</output>
+                  </span>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1"
+                    step="0.05"
+                    value={state.opacity}
+                    onChange={(e) => state.setOpacity(Number(e.target.value))}
+                  />
+                </label>
+                <button
+                  className={`mode-button ${state.precise2d ? "is-active" : ""}`}
+                  onClick={() => state.setPrecise2d(!state.precise2d)}
+                  aria-pressed={state.precise2d}
+                >
+                  <Layers3 size={17} aria-hidden="true" />{" "}
+                  {state.precise2d ? t("precise") : t("buildings")}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
 
       <footer className="attribution">
         <a href="https://www.dmi.dk/friedata" target="_blank" rel="noreferrer">

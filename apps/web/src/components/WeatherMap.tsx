@@ -92,15 +92,19 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
 
   useEffect(() => {
     if (!container.current || mapRef.current) return;
+    const initial = useWeatherStore.getState();
     const map = new maplibregl.Map({
       container: container.current,
       style: "https://tiles.openfreemap.org/styles/liberty",
-      center: [10.2039, 56.1629],
+      center: [
+        initial.selectedLocation.longitude,
+        initial.selectedLocation.latitude,
+      ],
       zoom: 14.5,
-      pitch: 55,
+      pitch: initial.precise2d ? 0 : 55,
       bearing: 0,
       attributionControl: false,
-      canvasContextAttributes: { antialias: true },
+      canvasContextAttributes: { antialias: !initial.precise2d },
     });
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: true }),
@@ -114,7 +118,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
       "top-right",
     );
     map.on("load", () => {
-      addBuildings(map);
+      if (!useWeatherStore.getState().precise2d) addBuildings(map);
       const location = useWeatherStore.getState().selectedLocation;
       map.addSource("selected-location", {
         type: "geojson",
@@ -187,7 +191,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
 
   useEffect(() => {
     const preloaded = frames
-      .slice(activeIndex, activeIndex + 3)
+      .slice(activeIndex, activeIndex + (precise2d ? 2 : 3))
       .map((frame) => {
         const image = new Image();
         image.crossOrigin = "anonymous";
@@ -200,7 +204,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
         image.onload = null;
         image.onerror = null;
       });
-  }, [activeIndex, frames]);
+  }, [activeIndex, frames, precise2d]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -263,18 +267,26 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const applyBuildings = () => {
+      if (!precise2d) addBuildings(map);
+      if (map.getLayer("wetmap-3d-buildings"))
+        map.setLayoutProperty(
+          "wetmap-3d-buildings",
+          "visibility",
+          precise2d ? "none" : "visible",
+        );
+    };
     map.easeTo({
       pitch: precise2d ? 0 : 55,
       duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches
         ? 0
         : 500,
     });
-    if (map.getLayer("wetmap-3d-buildings"))
-      map.setLayoutProperty(
-        "wetmap-3d-buildings",
-        "visibility",
-        precise2d ? "none" : "visible",
-      );
+    if (map.isStyleLoaded()) applyBuildings();
+    else map.on("load", applyBuildings);
+    return () => {
+      map.off("load", applyBuildings);
+    };
   }, [precise2d]);
 
   useEffect(() => {

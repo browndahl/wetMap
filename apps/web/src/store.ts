@@ -66,19 +66,41 @@ interface WeatherState {
   toggleFavoriteLocation: (location: SelectedLocation) => void;
 }
 
+export const initialPrecise2d = () => {
+  try {
+    const saved = window.localStorage.getItem("wetmap:precise-2d");
+    if (saved === "true" || saved === "false") return saved === "true";
+  } catch {
+    // Private browsing can disable storage; device defaults still apply.
+  }
+  const memory = (navigator as Navigator & { deviceMemory?: number })
+    .deviceMemory;
+  return (
+    (window.matchMedia?.("(max-width: 850px)").matches ?? false) ||
+    (memory !== undefined && memory <= 4)
+  );
+};
+
 export const useWeatherStore = create<WeatherState>((set) => ({
   locale: "da",
   opacity: 0.7,
   selectedFrame: -1,
   playing: false,
-  precise2d: false,
+  precise2d: initialPrecise2d(),
   selectedLocation: defaultLocation,
   favoriteLocations: readFavorites(),
   setLocale: (locale) => set({ locale }),
   setOpacity: (opacity) => set({ opacity }),
   setSelectedFrame: (selectedFrame) => set({ selectedFrame }),
   setPlaying: (playing) => set({ playing }),
-  setPrecise2d: (precise2d) => set({ precise2d }),
+  setPrecise2d: (precise2d) => {
+    try {
+      window.localStorage.setItem("wetmap:precise-2d", String(precise2d));
+    } catch {
+      // The override remains usable for this session when storage is unavailable.
+    }
+    set({ precise2d });
+  },
   setSelectedLocation: (selectedLocation) => set({ selectedLocation }),
   toggleFavoriteLocation: (location) =>
     set((state) => {

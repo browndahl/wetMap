@@ -1,0 +1,48 @@
+{
+  "testedAt": "2026-10-23T14:54:07.545Z",
+  "browser": "installed Chrome headless; emulated viewports, not physical devices",
+  "checks": [
+    {
+      "name": "small",
+      "width": 320,
+      "height": 568,
+      "status": "passed",
+      "errors": []
+    },
+    {
+      "name": "iphone",
+      "width": 390,
+      "height": 844,
+      "status": "passed",
+      "errors": []
+    },
+    {
+      "name": "android",
+      "width": 412,
+      "height": 915,
+      "status": "passed",
+      "errors": []
+    },
+    {
+      "name": "tablet",
+      "width": 768,
+      "height": 1024,
+      "status": "passed",
+      "errors": []
+    },
+    {
+      "name": "landscape",
+      "width": 844,
+      "height": 390,
+      "status": "passed",
+      "errors": []
+    },
+    {
+      "name": "desktop",
+      "width": 1440,
+      "height": 1000,
+      "status": "passed",
+      "errors": []
+    }
+  ]
+}

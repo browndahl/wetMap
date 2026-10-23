@@ -115,6 +115,22 @@ Status: **in progress — offline backtest foundation**
   expected split hash, frame inventory and non-empty +5 through +50 test metrics. This
   smoke sample is plumbing evidence only, not forecast-quality evidence.
 
+## Phone sprint 1 — owner-directed layout and performance work
+
+Status: **implemented; automated and Chrome viewport checks passed** (2026-10-23).
+
+The owner approved starting phone work while Phase 1 forecast work continues. Added
+the responsive bottom weather dock, exclusive detail expansion, 44 px main controls,
+safe-area/dynamic-height layout and landscape arrangement. Added device-aware 2D
+defaults with a remembered override and fixed style-load building visibility and
+manual scrubbing. No additional service or paid dependency was introduced.
+
+[ADR 0006](adr/0006-mobile-weather-dock.md) records scope and rollback.
+[Mobile sprint evidence](MOBILE_SPRINT_1.md) records tests, six viewport sizes and
+screenshots. Physical-device, installation, push delivery and performance measurements
+remain open; the forecast accuracy programme and independent acceptance run are not
+marked complete by this sprint.
+
 ## Earlier completed work relevant to this programme
 
 - `004e129`: delayed/expired rain notification protections.

@@ -69,7 +69,7 @@ beforeEach(() => {
   window.matchMedia = vi
     .fn()
     .mockReturnValue({ matches: false }) as typeof window.matchMedia;
-  useWeatherStore.setState({ opacity: 0.7 });
+  useWeatherStore.setState({ opacity: 0.7, precise2d: false });
 });
 
 it("renders a cached radar frame after the map style finishes loading", () => {
@@ -125,6 +125,23 @@ it("updates opacity without rebuilding the radar source", () => {
     "radar-layer-1",
     "raster-opacity",
     0.45,
+  );
+  view.unmount();
+});
+
+it("keeps buildings off when 2D is selected before the style loads", () => {
+  useWeatherStore.setState({ precise2d: true });
+  const view = render(<WeatherMap frames={[frame]} activeIndex={0} />);
+  map.isStyleLoaded.mockReturnValue(true);
+  act(() => map.loadHandlers.forEach((handler) => handler()));
+  expect(map.addLayer).not.toHaveBeenCalledWith(
+    expect.objectContaining({ id: "wetmap-3d-buildings" }),
+    expect.anything(),
+  );
+  act(() => useWeatherStore.getState().setPrecise2d(false));
+  expect(map.addLayer).toHaveBeenCalledWith(
+    expect.objectContaining({ id: "wetmap-3d-buildings" }),
+    undefined,
   );
   view.unmount();
 });
