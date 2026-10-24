@@ -1,0 +1,39 @@
+{
+  "testedAt": "2026-10-24T09:40:32.505Z",
+  "url": "http://127.0.0.1:5174/",
+  "browser": "Installed Chrome, iPhone user agent and emulated viewport; not Safari or a physical iPhone",
+  "checks": [
+    {
+      "name": "portrait",
+      "width": 390,
+      "height": 844,
+      "simulatedStandalone": false,
+      "status": "passed",
+      "errors": []
+    },
+    {
+      "name": "small",
+      "width": 320,
+      "height": 568,
+      "simulatedStandalone": false,
+      "status": "passed",
+      "errors": []
+    },
+    {
+      "name": "landscape",
+      "width": 844,
+      "height": 390,
+      "simulatedStandalone": false,
+      "status": "passed",
+      "errors": []
+    },
+    {
+      "name": "installed-signal",
+      "width": 390,
+      "height": 844,
+      "simulatedStandalone": true,
+      "status": "passed",
+      "errors": []
+    }
+  ]
+}

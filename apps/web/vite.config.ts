@@ -9,8 +9,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg"],
+      includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
+        id: "/",
+        scope: "/",
         name: "WetMap – DMI radar",
         short_name: "WetMap",
         description: "Tilgængelig 3D-visualisering af DMI radarmålinger",
@@ -21,16 +23,16 @@ export default defineConfig({
         start_url: "/",
         icons: [
           {
-            src: "/pwa-192.svg",
+            src: "/pwa-192.png",
             sizes: "192x192",
-            type: "image/svg+xml",
+            type: "image/png",
             purpose: "any",
           },
           {
-            src: "/pwa-512.svg",
+            src: "/pwa-512.png",
             sizes: "512x512",
-            type: "image/svg+xml",
-            purpose: "any maskable",
+            type: "image/png",
+            purpose: "any",
           },
         ],
       },

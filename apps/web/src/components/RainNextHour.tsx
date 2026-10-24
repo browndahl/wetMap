@@ -7,6 +7,8 @@ import type {
   RainNextHourResponse,
 } from "@wetmap/shared";
 import { translate } from "../i18n";
+import { needsIphoneInstallation } from "../platform";
+import IphoneInstallHelp from "./IphoneInstallHelp";
 import {
   deletePushSubscription,
   getPushConfig,
@@ -175,6 +177,8 @@ export default function RainNextHour({
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [alertBusy, setAlertBusy] = useState(false);
   const [alertError, setAlertError] = useState(false);
+  const [installHelpExpanded, setInstallHelpExpanded] = useState(false);
+  const installNeeded = needsIphoneInstallation();
   const points = useMemo(() => data?.points ?? [], [data?.points]);
   const rainEta = useMemo(
     () => data?.rainEta ?? deriveRainEta(points),
@@ -264,6 +268,10 @@ export default function RainNextHour({
 
   const toggleAlerts = async () => {
     setAlertError(false);
+    if (!alertsEnabled && installNeeded) {
+      setInstallHelpExpanded(true);
+      return;
+    }
     setAlertBusy(true);
     if (alertsEnabled) {
       try {
@@ -498,11 +506,23 @@ export default function RainNextHour({
                   ? t("rainAlertWorking")
                   : alertsEnabled
                     ? t("rainAlertOn")
-                    : t("notifyRain")}
+                    : installNeeded
+                      ? t("iphoneInstallAlerts")
+                      : t("notifyRain")}
               </button>
-              <p className={`rain-alert-note ${alertError ? "is-error" : ""}`}>
-                {alertError ? t("rainAlertDenied") : t("rainAlertBackground")}
-              </p>
+              {installNeeded ? (
+                <IphoneInstallHelp
+                  locale={locale}
+                  expanded={installHelpExpanded}
+                  onExpandedChange={setInstallHelpExpanded}
+                />
+              ) : (
+                <p
+                  className={`rain-alert-note ${alertError ? "is-error" : ""}`}
+                >
+                  {alertError ? t("rainAlertDenied") : t("rainAlertBackground")}
+                </p>
+              )}
             </>
           )}
         </>

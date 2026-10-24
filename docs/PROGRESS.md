@@ -140,6 +140,21 @@ language and quality controls under More. Source, confidence and displayed frame
 remain visible. [ADR 0007](adr/0007-mobile-progressive-disclosure.md) and
 [verification/screenshots](MOBILE_SIMPLIFIED.md) record the refinement.
 
+## iPhone installation and resume
+
+2026-10-24: following the owner's iPhone selection, added compatible home-screen
+icons/metadata, unobtrusive installation instructions and an install-first alert
+action for ordinary iPhone browsers. Radar/nowcast revalidate on focus; the clock
+updates on resume and active weather queries refresh on bfcache/network restoration.
+Fixed inherited panel stacking over the phone's sticky navigation. No new service,
+paid dependency, forecast logic or quality-gate change.
+
+`pnpm check` passed with 62 TypeScript tests. Chrome iPhone-user-agent checks passed
+at three viewport sizes plus simulated installed mode; built icons/manifest and
+precache were validated. [ADR 0008](adr/0008-iphone-installation-and-resume.md) and
+[iPhone checks](IPHONE_CHECKS.md) record evidence and the still-open physical iPhone,
+Safari, home-screen installation and real background-push delivery checks.
+
 ## Earlier completed work relevant to this programme
 
 - `004e129`: delayed/expired rain notification protections.

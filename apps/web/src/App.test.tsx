@@ -440,8 +440,90 @@ it("shows both independently measured long-range shadow candidates", async () =>
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(window.navigator, "serviceWorker");
+});
+
+it("guides an iPhone browser to installation without asking for notification permission", async () => {
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+  );
+  window.matchMedia = vi.fn((query: string) => ({
+    matches: query.includes("max-width"),
+  })) as unknown as typeof window.matchMedia;
+  const requestPermission = vi.fn(async () => "granted");
+  vi.stubGlobal("Notification", { permission: "default", requestPermission });
+  apiMocks.rain.points = [
+    {
+      startsAt: new Date().toISOString(),
+      endsAt: new Date(Date.now() + 900_000).toISOString(),
+      intensity: "light",
+      precipitationMm: 0.1,
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Vis prognosedetaljer" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Installer for at få regnvarsler",
+    }),
+  );
+  expect(
+    document.querySelector("#weather-panel .iphone-install-help"),
+  ).toHaveAttribute("open");
+  expect(requestPermission).not.toHaveBeenCalled();
+  expect(apiMocks.getPushConfig).not.toHaveBeenCalled();
+  expect(apiMocks.savePushSubscription).not.toHaveBeenCalled();
+  view.unmount();
+  client.clear();
+});
+
+it("updates the radar age after resuming and revalidates a restored page", async () => {
+  const initialNow = Date.now();
+  apiMocks.manifest.frames = [
+    {
+      id: "resume",
+      observedAt: new Date(initialNow - 300_000).toISOString(),
+      fetchedAt: new Date(initialNow).toISOString(),
+      url: "/frames/resume.webp",
+      bounds: [7, 54, 13, 58],
+      product: "DBZH",
+      unit: "dBZ",
+      sha256: "resume",
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const revalidate = vi.spyOn(client, "refetchQueries");
+  const view = render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  await screen.findByText(/5 min siden/);
+  vi.spyOn(Date, "now").mockReturnValue(initialNow + 2_400_000);
+  fireEvent(document, new Event("visibilitychange"));
+  await screen.findByText(/45 min siden/);
+  const restored = new Event("pageshow");
+  Object.defineProperty(restored, "persisted", { value: true });
+  fireEvent(window, restored);
+  expect(revalidate).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "active" }),
+    { cancelRefetch: false },
+  );
+  view.unmount();
+  client.clear();
 });
 
 it("shows an honest empty radar state", async () => {

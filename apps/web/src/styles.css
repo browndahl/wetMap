@@ -1339,6 +1339,29 @@ a {
 .forecast-toggle {
   display: none;
 }
+.iphone-install-help {
+  margin: 0.75rem 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.iphone-install-help summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.iphone-install-help p {
+  margin: 0.5rem 0;
+}
+.iphone-install-help ol {
+  padding-left: 1.2rem;
+}
+.iphone-install-help li {
+  margin-block: 0.5rem;
+}
 
 @media (min-width: 851px) and (max-width: 1200px) {
   .location-search {
@@ -1437,6 +1460,7 @@ a {
   .weather-dock .timeline,
   .weather-dock .timeline.is-collapsed {
     position: static;
+    z-index: auto;
     flex: 0 0 auto;
     width: 100%;
     max-width: none;

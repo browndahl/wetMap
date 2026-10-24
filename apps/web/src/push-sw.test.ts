@@ -77,6 +77,8 @@ it("shows a push that is still timely", async () => {
     "Rain on the way",
     expect.objectContaining({
       body: "Light rain is expected near Aarhus.",
+      icon: "/pwa-192.png",
+      badge: "/pwa-192.png",
     }),
   );
 });

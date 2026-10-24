@@ -10,8 +10,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(message.title || "WetMap", {
       body: message.body || "Regn er på vej.",
-      icon: "/pwa-192.svg",
-      badge: "/favicon.svg",
+      icon: "/pwa-192.png",
+      badge: "/pwa-192.png",
       tag: message.tag || "wetmap-rain",
       renotify: true,
       data: { url: message.url || "/" },

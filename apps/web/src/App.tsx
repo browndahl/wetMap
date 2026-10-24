@@ -1,5 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronUp,
@@ -32,6 +36,8 @@ import LocationSearch from "./components/LocationSearch";
 import PrecisionObservatory from "./components/PrecisionObservatory";
 import RainNextHour from "./components/RainNextHour";
 import { useCompactLayout } from "./useCompactLayout";
+import { needsIphoneInstallation } from "./platform";
+import IphoneInstallHelp from "./components/IphoneInstallHelp";
 
 const WeatherMap = lazy(() => import("./components/WeatherMap"));
 const radarDelayBudgetMinutes = 25;
@@ -66,6 +72,7 @@ const timelineStartsCollapsed = () => {
 };
 
 export default function App() {
+  const queryClient = useQueryClient();
   const state = useWeatherStore();
   const compactLayout = useCompactLayout();
   const [forecastExpanded, setForecastExpanded] = useState(false);
@@ -85,12 +92,14 @@ export default function App() {
   const manifest = useQuery({
     queryKey: ["radar-frames"],
     queryFn: ({ signal }) => getRadarManifest(signal),
+    refetchOnWindowFocus: "always",
     refetchInterval: 60_000,
     refetchIntervalInBackground: true,
   });
   const nowcast = useQuery({
     queryKey: ["radar-nowcast"],
     queryFn: ({ signal }) => getRadarNowcast(signal),
+    refetchOnWindowFocus: "always",
     refetchInterval: 60_000,
     refetchIntervalInBackground: true,
   });
@@ -169,6 +178,31 @@ export default function App() {
     .slice(0, 4);
 
   useEffect(() => {
+    const refreshClock = () => {
+      if (document.visibilityState === "visible") setNow(Date.now());
+    };
+    const revalidate = () => {
+      refreshClock();
+      void queryClient.refetchQueries(
+        {
+          type: "active",
+          predicate: (query) =>
+            [
+              "radar-frames",
+              "radar-nowcast",
+              "forecast",
+              "rain-next-hour",
+            ].includes(String(query.queryKey[0])),
+        },
+        { cancelRefetch: false },
+      );
+    };
+    const restorePage = (event: PageTransitionEvent) => {
+      if (event.persisted) revalidate();
+    };
+    document.addEventListener("visibilitychange", refreshClock);
+    window.addEventListener("pageshow", restorePage);
+    window.addEventListener("online", revalidate);
     let minuteTimer: number | undefined;
     const nextMinute = window.setTimeout(
       () => {
@@ -178,10 +212,13 @@ export default function App() {
       60_000 - (Date.now() % 60_000),
     );
     return () => {
+      document.removeEventListener("visibilitychange", refreshClock);
+      window.removeEventListener("pageshow", restorePage);
+      window.removeEventListener("online", revalidate);
       window.clearTimeout(nextMinute);
       if (minuteTimer !== undefined) window.clearInterval(minuteTimer);
     };
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     try {
@@ -641,6 +678,9 @@ export default function App() {
               aria-label={t("mobileMoreView")}
             >
               <h2>{t("mobileMoreView")}</h2>
+              {needsIphoneInstallation() && (
+                <IphoneInstallHelp locale={state.locale} />
+              )}
               {mapControls}
               <button
                 className="settings-row"
