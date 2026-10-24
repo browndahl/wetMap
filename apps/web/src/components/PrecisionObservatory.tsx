@@ -15,6 +15,7 @@ import { translate } from "../i18n";
 
 interface Props {
   locale: "da" | "en";
+  inline?: boolean;
 }
 
 const formatTime = (value: string, locale: "da" | "en") =>
@@ -45,7 +46,10 @@ const shadowStatusMessageKey = (status: ShadowCandidateStatus) =>
         ? ("precisionShadowAwaitingRain" as const)
         : ("precisionShadowCollecting" as const);
 
-export default function PrecisionObservatory({ locale }: Props) {
+export default function PrecisionObservatory({
+  locale,
+  inline = false,
+}: Props) {
   const [open, setOpen] = useState(false);
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const quality = useQuery({
@@ -81,7 +85,7 @@ export default function PrecisionObservatory({ locale }: Props) {
     <>
       <button
         type="button"
-        className={`quality-trigger glass ${statusClass}`}
+        className={`quality-trigger glass ${statusClass} ${inline ? "quality-inline" : ""}`}
         aria-label={t("precisionOpen")}
         aria-expanded={open}
         aria-controls="precision-observatory"

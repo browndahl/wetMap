@@ -323,7 +323,10 @@ export default function RainNextHour({
   };
 
   return (
-    <section className="rain-card" aria-labelledby="rain-title">
+    <section
+      className={`rain-card ${compact ? "is-compact" : ""}`}
+      aria-labelledby="rain-title"
+    >
       <div className="rain-heading">
         <h3 id="rain-title">
           <Droplets size={15} aria-hidden="true" /> {t("rainNextHour")}
@@ -348,27 +351,31 @@ export default function RainNextHour({
             <span className="rain-eta-label">{t("rainEtaLabel")}</span>
             <div className="rain-summary">
               <strong>{etaHeadline}</strong>
-              <span>
-                {t("rainTotal")}{" "}
-                {rainEta.totalPrecipitationMm.toFixed(
-                  rainEta.totalPrecipitationMm < 1 ? 2 : 1,
-                )}{" "}
-                mm{isFetching ? " · …" : ""}
-              </span>
+              {!compact && (
+                <span>
+                  {t("rainTotal")}{" "}
+                  {rainEta.totalPrecipitationMm.toFixed(
+                    rainEta.totalPrecipitationMm < 1 ? 2 : 1,
+                  )}{" "}
+                  mm{isFetching ? " · …" : ""}
+                </span>
+              )}
             </div>
             {etaWindowText && (
               <p className="rain-eta-window">{etaWindowText}</p>
             )}
             <div className="rain-eta-meta">
-              <span>{t(intensityKey(rainEta.peakIntensity))}</span>
-              {rainEta.durationMinutes > 0 && (
+              {!compact && (
+                <span>{t(intensityKey(rainEta.peakIntensity))}</span>
+              )}
+              {!compact && rainEta.durationMinutes > 0 && (
                 <span>
                   {rainEta.durationMinutes} {t("rainEtaDuration")}
                 </span>
               )}
               <span>
                 {t(confidenceKey)}
-                {rainEta.confidence !== null
+                {!compact && rainEta.confidence !== null
                   ? ` · ${Math.round(rainEta.confidence * 100)}%`
                   : ""}
               </span>

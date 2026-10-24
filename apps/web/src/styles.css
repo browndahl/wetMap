@@ -1333,6 +1333,9 @@ a {
 .weather-dock {
   display: contents;
 }
+.app-header {
+  display: contents;
+}
 .forecast-toggle {
   display: none;
 }
@@ -1350,27 +1353,58 @@ a {
 
 /* One dock keeps the map available and avoids independently positioned panels. */
 @media (max-width: 850px) {
-  .topbar {
+  .app-header {
+    position: fixed;
+    z-index: 7;
     top: max(0.5rem, env(safe-area-inset-top));
     left: max(0.5rem, env(safe-area-inset-left));
     right: max(0.5rem, env(safe-area-inset-right));
-    min-height: 3.25rem;
-    gap: 0.45rem;
+    display: flex;
+    flex-direction: column-reverse;
+    background: var(--surface-0);
+    border: 1px solid oklch(1 0 0 / 12%);
+    border-radius: 1.2rem;
+    box-shadow: 0 4px 18px #0003;
   }
+  .app-header .glass {
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .topbar {
+    position: static;
+    min-height: 0;
+    padding: 0 0.9rem 0.6rem;
+  }
+  .topbar .brand-mark,
+  .topbar > div:nth-child(2),
   .topbar > div:nth-child(2) span {
     display: none;
   }
   .freshness {
-    margin-left: auto;
-    padding: 0.3rem 0.45rem;
+    margin: 0;
+    padding: 0;
+    background: transparent;
     font-size: 0.62rem;
   }
+  .mobile-map-time {
+    margin-left: auto;
+    color: var(--text-2);
+    font-size: 0.62rem;
+    font-variant-numeric: tabular-nums;
+  }
   .location-search {
-    top: calc(max(0.5rem, env(safe-area-inset-top)) + 3.75rem);
-    left: max(0.5rem, env(safe-area-inset-left));
-    right: max(0.5rem, env(safe-area-inset-right));
-    width: auto;
+    position: relative;
+    inset: auto;
+    width: 100%;
     transform: none;
+  }
+  .location-results {
+    top: calc(100% + 1.8rem);
+    max-height: 50dvh;
+    overflow-y: auto;
   }
   .location-search-form input {
     font-size: 1rem;
@@ -1390,7 +1424,7 @@ a {
     flex-direction: column;
     max-height: calc(
       100dvh - max(0.5rem, env(safe-area-inset-top)) -
-        env(safe-area-inset-bottom) - 13rem
+        env(safe-area-inset-bottom) - 8rem
     );
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1413,6 +1447,9 @@ a {
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+  .weather-dock > [hidden] {
+    display: none;
   }
   .weather-card .forecast-row {
     display: grid;
@@ -1438,7 +1475,9 @@ a {
   }
   .forecast-toggle strong {
     overflow-wrap: anywhere;
-    font-size: 0.95rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-2);
   }
   .forecast-toggle span span {
     font-size: 0.72rem;
@@ -1471,6 +1510,94 @@ a {
   }
   .weather-dock .rain-eta-meta span {
     font-size: 0.65rem;
+  }
+  .weather-dock .is-compact .rain-eta {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  .weather-dock .is-compact .rain-summary strong {
+    font-size: 1.1rem;
+    line-height: 1.35;
+    font-weight: 650;
+  }
+  .weather-dock .is-compact .rain-eta-meta {
+    margin-top: 0.6rem;
+    gap: 0;
+  }
+  .weather-dock .is-compact .rain-eta-meta span {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    white-space: normal;
+  }
+  .weather-dock .is-compact .rain-eta-meta span + span::before {
+    content: "·";
+    margin: 0 0.4rem;
+  }
+  .mobile-views {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    flex: 0 0 auto;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid oklch(1 0 0 / 8%);
+    background: var(--surface-0);
+  }
+  .mobile-views button {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border-radius: 0.75rem;
+    background: none;
+    color: var(--text-2);
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .mobile-views button[aria-pressed="true"] {
+    color: var(--accent);
+    background: oklch(0.76 0.13 205 / 10%);
+  }
+  .mobile-settings {
+    padding: 1rem;
+  }
+  .mobile-settings h2 {
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+  }
+  .settings-row,
+  .mobile-settings .quality-inline {
+    position: static;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 48px;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0.5rem 0;
+    border: 0;
+    border-bottom: 1px solid oklch(1 0 0 / 8%);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .settings-row span {
+    margin-left: auto;
+    color: var(--accent);
+  }
+  .mobile-settings .control-grid {
+    margin: 0 0 0.5rem;
+    padding: 0 0 0.75rem;
+    border-top: 0;
+    border-bottom: 1px solid oklch(1 0 0 / 8%);
   }
   .weather-dock .rain-chart {
     height: 5.4rem;
@@ -1541,8 +1668,11 @@ a {
     min-height: 44px;
   }
   .map .maplibregl-ctrl-top-right {
-    top: calc(max(0.5rem, env(safe-area-inset-top)) + 7.75rem);
+    top: calc(max(0.5rem, env(safe-area-inset-top)) + 6rem);
     right: max(0.5rem, env(safe-area-inset-right));
+  }
+  .app-shell:not(.mobile-more) .maplibregl-ctrl-top-right {
+    display: none;
   }
   .maplibregl-ctrl-group button {
     width: 44px !important;
@@ -1561,17 +1691,12 @@ a {
 @media (max-width: 850px) and (max-height: 500px) {
   .weather-dock {
     left: 45%;
-    max-height: calc(100dvh - env(safe-area-inset-bottom) - 10rem);
-  }
-  .quality-trigger {
-    top: auto;
-    bottom: 2rem;
-    left: max(5rem, env(safe-area-inset-left));
+    max-height: calc(100dvh - env(safe-area-inset-bottom) - 8rem);
   }
   .map .maplibregl-ctrl-top-right {
     right: auto;
     left: max(0.5rem, env(safe-area-inset-left));
-    top: 8rem;
+    top: 6rem;
   }
 }
 

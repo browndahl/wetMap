@@ -10,6 +10,7 @@ import {
   Pause,
   Play,
   Radio,
+  SlidersHorizontal,
   SkipForward,
   Wind,
 } from "lucide-react";
@@ -68,6 +69,10 @@ export default function App() {
   const state = useWeatherStore();
   const compactLayout = useCompactLayout();
   const [forecastExpanded, setForecastExpanded] = useState(false);
+  const [mobileView, setMobileView] = useState<"rain" | "radar" | "more">(
+    "rain",
+  );
+  const dockRef = useRef<HTMLDivElement>(null);
   const initialRadarPlaybackStarted = useRef(false);
   const [now, setNow] = useState(() => Date.now());
   const [timelineCollapsed, setTimelineCollapsed] = useState(
@@ -234,9 +239,54 @@ export default function App() {
     state.setPlaying(true);
   };
 
+  const mapControls = (
+    <div className="control-grid">
+      <label>
+        <span>
+          {t("opacity")} <output>{Math.round(state.opacity * 100)}%</output>
+        </span>
+        <input
+          aria-label={t("opacity")}
+          type="range"
+          min="0.1"
+          max="1"
+          step="0.05"
+          value={state.opacity}
+          onChange={(event) => state.setOpacity(Number(event.target.value))}
+        />
+      </label>
+      <button
+        className={`mode-button ${state.precise2d ? "is-active" : ""}`}
+        onClick={() => state.setPrecise2d(!state.precise2d)}
+        aria-pressed={state.precise2d}
+      >
+        <Layers3 size={17} aria-hidden="true" />
+        {state.precise2d ? t("precise") : t("buildings")}
+      </button>
+    </div>
+  );
+
+  const showMobileView = (view: "rain" | "radar" | "more") => {
+    setMobileView(view);
+    setForecastExpanded(false);
+    if (view === "radar") setTimelineCollapsed(false);
+    dockRef.current?.scrollTo?.({ top: 0 });
+  };
+
   return (
-    <main className="app-shell">
-      <a className="skip-link" href="#weather-panel">
+    <main
+      className={`app-shell ${compactLayout ? `mobile-${mobileView}` : ""}`}
+    >
+      <a
+        className="skip-link"
+        href="#weather-panel"
+        onClick={() => {
+          if (compactLayout) {
+            setMobileView("rain");
+            setForecastExpanded(true);
+          }
+        }}
+      >
         {t("skipToWeather")}
       </a>
       <Suspense
@@ -249,42 +299,57 @@ export default function App() {
         <WeatherMap frames={radarFrames} activeIndex={safeIndex} />
       </Suspense>
 
-      <header className="topbar glass" aria-label="WetMap">
-        <div className="brand-mark" aria-hidden="true">
-          <CloudRain size={19} />
-        </div>
-        <div>
-          <strong>wetmap</strong>
-          <span>
-            {state.selectedLocation.name} · {forecastLatitude.toFixed(2)}°n
+      <div className="app-header">
+        <header className="topbar glass" aria-label="WetMap">
+          <div className="brand-mark" aria-hidden="true">
+            <CloudRain size={19} />
+          </div>
+          <div>
+            <strong>wetmap</strong>
+            <span>
+              {state.selectedLocation.name} · {forecastLatitude.toFixed(2)}°n
+            </span>
+          </div>
+          <span
+            className={`freshness ${isStale ? "is-stale" : ""}`}
+            role="status"
+            title={t("freshnessHelp")}
+          >
+            <Radio size={13} aria-hidden="true" />
+            {isStale ? t("stale") : t("fresh")} ·{" "}
+            {Number.isFinite(ageMinutes)
+              ? formatAge(ageMinutes, state.locale)
+              : "–"}
           </span>
-        </div>
-        <span
-          className={`freshness ${isStale ? "is-stale" : ""}`}
-          role="status"
-          title={t("freshnessHelp")}
-        >
-          <Radio size={13} aria-hidden="true" />
-          {isStale ? t("stale") : t("fresh")} ·{" "}
-          {Number.isFinite(ageMinutes)
-            ? formatAge(ageMinutes, state.locale)
-            : "–"}
-        </span>
-        <button
-          className="icon-button"
-          aria-label={t("language")}
-          onClick={() => state.setLocale(state.locale === "da" ? "en" : "da")}
-        >
-          <Languages size={18} aria-hidden="true" />
-          <span>{state.locale.toUpperCase()}</span>
-        </button>
-      </header>
+          {compactLayout && activeFrameTime && (
+            <span className="mobile-map-time">
+              {activeIsNowcast ? t("nowcast") : t("measured")}{" "}
+              <time dateTime={activeFrameTime}>
+                {formatTime(activeFrameTime, state.locale)}
+              </time>
+            </span>
+          )}
+          {!compactLayout && (
+            <button
+              className="icon-button"
+              aria-label={t("language")}
+              onClick={() =>
+                state.setLocale(state.locale === "da" ? "en" : "da")
+              }
+            >
+              <Languages size={18} aria-hidden="true" />
+              <span>{state.locale.toUpperCase()}</span>
+            </button>
+          )}
+        </header>
 
-      <LocationSearch />
-      <PrecisionObservatory locale={state.locale} />
+        <LocationSearch />
+      </div>
+      {!compactLayout && <PrecisionObservatory locale={state.locale} />}
 
-      <div className="weather-dock">
+      <div className="weather-dock" ref={dockRef}>
         <section
+          hidden={compactLayout && mobileView !== "rain"}
           id="weather-panel"
           className="weather-card glass"
           aria-labelledby={
@@ -306,10 +371,7 @@ export default function App() {
               }}
             >
               <span>
-                <strong id="mobile-forecast-title">
-                  {state.selectedLocation.name}
-                </strong>
-                <span>{t("rainNextHour")}</span>
+                <strong id="mobile-forecast-title">{t("rainNextHour")}</strong>
               </span>
               {forecastExpanded ? (
                 <ChevronDown aria-hidden="true" />
@@ -391,6 +453,8 @@ export default function App() {
         </aside>
 
         <section
+          hidden={compactLayout && mobileView !== "radar"}
+          id="mobile-timeline"
           className={`timeline glass ${timelineCollapsed ? "is-collapsed" : ""}`}
           aria-labelledby="timeline-title"
         >
@@ -564,33 +628,64 @@ export default function App() {
                 </div>
               )}
 
-              <div className="control-grid">
-                <label>
-                  <span>
-                    {t("opacity")}{" "}
-                    <output>{Math.round(state.opacity * 100)}%</output>
-                  </span>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="1"
-                    step="0.05"
-                    value={state.opacity}
-                    onChange={(e) => state.setOpacity(Number(e.target.value))}
-                  />
-                </label>
-                <button
-                  className={`mode-button ${state.precise2d ? "is-active" : ""}`}
-                  onClick={() => state.setPrecise2d(!state.precise2d)}
-                  aria-pressed={state.precise2d}
-                >
-                  <Layers3 size={17} aria-hidden="true" />{" "}
-                  {state.precise2d ? t("precise") : t("buildings")}
-                </button>
-              </div>
+              {!compactLayout && mapControls}
             </div>
           )}
         </section>
+        {compactLayout && (
+          <>
+            <section
+              id="mobile-settings"
+              className="mobile-settings"
+              hidden={mobileView !== "more"}
+              aria-label={t("mobileMoreView")}
+            >
+              <h2>{t("mobileMoreView")}</h2>
+              {mapControls}
+              <button
+                className="settings-row"
+                aria-label={t("language")}
+                onClick={() =>
+                  state.setLocale(state.locale === "da" ? "en" : "da")
+                }
+              >
+                <Languages size={18} aria-hidden="true" />
+                {t("language")}
+                <span>{state.locale.toUpperCase()}</span>
+              </button>
+              <PrecisionObservatory locale={state.locale} inline />
+            </section>
+            <nav className="mobile-views" aria-label={t("mobileViews")}>
+              <button
+                aria-label={t("mobileRainView")}
+                aria-controls="weather-panel"
+                aria-pressed={mobileView === "rain"}
+                onClick={() => showMobileView("rain")}
+              >
+                <CloudRain size={18} aria-hidden="true" />
+                {t("mobileRain")}
+              </button>
+              <button
+                aria-label={t("mobileRadarView")}
+                aria-controls="mobile-timeline"
+                aria-pressed={mobileView === "radar"}
+                onClick={() => showMobileView("radar")}
+              >
+                <Radio size={18} aria-hidden="true" />
+                {t("radar")}
+              </button>
+              <button
+                aria-label={t("mobileMoreView")}
+                aria-controls="mobile-settings"
+                aria-pressed={mobileView === "more"}
+                onClick={() => showMobileView("more")}
+              >
+                <SlidersHorizontal size={18} aria-hidden="true" />
+                {t("mobileMore")}
+              </button>
+            </nav>
+          </>
+        )}
       </div>
 
       <footer className="attribution">

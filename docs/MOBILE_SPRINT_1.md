@@ -1,5 +1,8 @@
 # Phone layout and initial map rendering — 23 October 2026
 
+Historical first-sprint evidence. The mobile presentation was subsequently simplified
+following owner feedback; see [the revised interface](MOBILE_SIMPLIFIED.md).
+
 Implemented under [ADR 0006](adr/0006-mobile-weather-dock.md), following the owner's
 approval to start a phone sprint. This remains the shared React PWA, within the
 free-only constraint.

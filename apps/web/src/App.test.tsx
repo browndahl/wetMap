@@ -233,7 +233,7 @@ beforeEach(() => {
   });
 });
 
-it("starts compact on phones and keeps forecast and timeline expansion exclusive", async () => {
+it("shows one phone view at a time and keeps extra controls in More", async () => {
   window.matchMedia = vi.fn().mockReturnValue({ matches: true });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -247,15 +247,37 @@ it("starts compact on phones and keeps forecast and timeline expansion exclusive
     name: "Vis prognosedetaljer",
   });
   expect(forecast).toHaveAttribute("aria-expanded", "false");
-  const timeline = screen.getByRole("button", {
-    name: "Vis seneste observation",
-  });
-  expect(timeline).toHaveAttribute("aria-expanded", "false");
+  expect(
+    screen.queryByRole("button", { name: "Vis seneste observation" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Skift sprog" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Åbn Precision Observatory" }),
+  ).not.toBeInTheDocument();
   fireEvent.click(forecast);
   expect(forecast).toHaveAttribute("aria-expanded", "true");
-  fireEvent.click(timeline);
-  expect(forecast).toHaveAttribute("aria-expanded", "false");
-  expect(timeline).toHaveAttribute("aria-expanded", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Tidslinje" }));
+  expect(
+    screen.queryByRole("button", { name: "Skjul prognosedetaljer" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Minimer seneste observation" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Kort og indstillinger" }),
+  );
+  expect(
+    screen.getByRole("button", { name: "Skift sprog" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Åbn Precision Observatory" }),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Regnoverblik" }));
+  expect(
+    screen.getByRole("button", { name: "Vis prognosedetaljer" }),
+  ).toHaveAttribute("aria-expanded", "false");
   view.unmount();
   client.clear();
 });

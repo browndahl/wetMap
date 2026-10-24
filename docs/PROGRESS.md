@@ -131,6 +131,15 @@ screenshots. Physical-device, installation, push delivery and performance measur
 remain open; the forecast accuracy programme and independent acceptance run are not
 marked complete by this sprint.
 
+## Mobile simplification — owner feedback
+
+2026-10-24: refined the layout after the owner found the first phone layout too cluttered. Replaced simultaneous
+forecast/timeline panels with one compact rain overview and three navigation choices:
+Rain, Radar and More. Combined search and data-age information; moved map settings,
+language and quality controls under More. Source, confidence and displayed frame time
+remain visible. [ADR 0007](adr/0007-mobile-progressive-disclosure.md) and
+[verification/screenshots](MOBILE_SIMPLIFIED.md) record the refinement.
+
 ## Earlier completed work relevant to this programme
 
 - `004e129`: delayed/expired rain notification protections.
