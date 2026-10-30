@@ -1,6 +1,6 @@
 # WetMap system context
 
-Last updated: 2026-10-22
+Last updated: 2026-10-30
 
 ## Purpose
 
@@ -39,6 +39,13 @@ the GitHub radar workflow when required, and scans a bounded page of push
 subscriptions. GitHub's own radar schedule is a recovery trigger. The Python worker
 is stateless between runs and restores the current manifest, verification ledger and
 bounded verification cubes from R2.
+
+The same minute cron now also maintains a separate five-minute monitoring heartbeat
+and dispatches an external synthetic check after 15 minutes without a completed
+probe. An authenticated report maintains one bounded current incident. Public
+`/api/v1/operations/status` remains HTTP 503 while unhealthy, even when a repeated
+diagnostic execution succeeds to avoid duplicate mail. See ADR 0009 and
+`OPERATIONS_SPRINT.md`; this does not change forecast or push eligibility.
 
 ## Repository layout
 

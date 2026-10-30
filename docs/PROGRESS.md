@@ -155,6 +155,21 @@ precache were validated. [ADR 0008](adr/0008-iphone-installation-and-resume.md) 
 [iPhone checks](IPHONE_CHECKS.md) record evidence and the still-open physical iPhone,
 Safari, home-screen installation and real background-push delivery checks.
 
+## Operations reliability — 30 October 2026
+
+Owner-approved response to the 29 October stale-radar incident and sparse GitHub
+scheduled checks. Added an independent scheduler heartbeat, bounded synthetic
+dispatch recovery, authenticated reports, incident deduplication and public HTTP
+503 while unhealthy. Successful execution of a repeated diagnostic is explicitly
+not service recovery. Radar's 25-minute SLO remains strict unless a fresh monitor
+already owns that exact source-delay notification; invalid/stalled ingestion and
+missing monitoring continue to fail.
+
+[ADR 0009](adr/0009-operations-heartbeat-and-incidents.md) records the decision;
+[operations evidence](OPERATIONS_SPRINT.md) records the incident, test scope,
+account-wide R2 measurement and limitations. No forecast, gate, subscription-data
+or archive-retention change. Dependency migration and V6 remain separate work.
+
 ## Earlier completed work relevant to this programme
 
 - `004e129`: delayed/expired rain notification protections.

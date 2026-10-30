@@ -6,7 +6,31 @@ Start Docker Desktop and wait until its engine reports ready before running `doc
 
 ## 1. Radar stale (>25 minutes)
 
-Check the Cloudflare `wetmap-api` cron logs first, then the latest worker workflow, DMI status, 429/retry logs, R2 manifest `generatedAt`, and frame object HEAD. The Cloudflare cron scans alerts every minute and dispatches `radar.yml` when the newest observation is over 20 minutes old; an R2-backed eight-minute cooldown prevents duplicate recovery runs while ingestion catches up. Verify the `GITHUB_DISPATCH_TOKEN` Worker secret if no dispatch appears. The synthetic workflow also calls the reusable radar workflow as a recovery path. Keep serving the last good manifest with a stale banner. Rerun one workflow only; do not fan out retries against DMI. Roll back worker if schema validation began failing after a deploy.
+Check the Cloudflare `wetmap-api` cron logs first, then the latest worker workflow, DMI status, 429/retry logs, R2 manifest `generatedAt`, and frame object HEAD. The Cloudflare cron scans alerts every minute and dispatches `radar.yml` when the newest observation is over 20 minutes old; an R2-backed eight-minute cooldown prevents duplicate recovery runs while ingestion catches up. Verify the `GITHUB_DISPATCH_TOKEN` Worker secret if no dispatch appears. The synthetic workflow checks independently and does not rerun ingestion. Keep serving the last good manifest with a stale banner. Rerun one workflow only; do not fan out retries against DMI. Roll back worker if schema validation began failing after a deploy.
+
+## 1a. Monitoring heartbeat and grouped incidents
+
+Start with `/api/v1/operations/status`: `scheduler.checkedAt` must be within 10
+minutes, `probe.receivedAt` within 35, and radar observation age within 25. Public
+503 means unhealthy, even if a repeated diagnostic's Actions execution is green.
+Check `checks`, `activeIncident`, `radar` and scheduler `dispatchError`. The
+Cloudflare watchdog requests a synthetic run after 15 minutes without a completed
+probe, capped at one dispatch per 15 minutes. The independent GitHub schedule is
+fallback, not the sole clock. Dispatch manually at most once after checking queues.
+
+`source-delayed` means recent publication still contains old observations, not a
+proven provider-wide outage. `ingestion-stalled` means publication is also old.
+Only the exact active source-delay incident may own duplicate radar-job emails;
+missing/stale monitoring restores strict workflow failure. First/changed incidents
+fail the notification job; repeats warn and retain DEGRADED in the summary.
+
+Missing or mismatched `MONITOR_REPORT_TOKEN` in Cloudflare/Actions fails loudly.
+Rotate the same random secret in both stores without printing it. Never inject
+fake health reports into production. Synthetic probes do not rerun radar ingestion.
+
+Rollback: disable `OPERATIONS_MONITOR_ENABLED`, restore the previous strict
+synthetic workflow and deploy; keep radar recovery/push enabled. Two bounded
+`monitoring/*.json` metadata objects are separate from radar/verification history.
 
 ## 2. DMI unavailable or rate-limiting
 
