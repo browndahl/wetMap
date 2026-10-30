@@ -1,5 +1,14 @@
 # Free-tier budget
 
+30 October 2026 operations sprint: account-wide R2 read-only analytics returned
+287,892 operations (all action types, 1 October 00:00–30 October 15:00 UTC).
+Monitoring reuses existing cron/public Actions and two small fixed objects, adding
+about 11,520 state writes/month and 86,400 scheduled reads/month plus probe/status
+traffic. No paid upgrade or archive expansion. See [measurement and bounds](OPERATIONS_SPRINT.md).
+Recent maximum payload storage was about **8.21 GB**, not the original 0.2–1 GB
+estimate below; assess retention separately before expanding data. Workers had
+1,450 requests and zero errors on 29 October. No stored history is deleted here.
+
 Verified against official documentation on **2026-10-10**. “Free” never means unlimited or an SLA. Set provider spend limits to zero where supported and do not attach automatic paid upgrades.
 
 Owner constraint reaffirmed **2026-10-22: free only**. Do not activate paid plans,

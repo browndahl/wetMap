@@ -6,6 +6,63 @@ info:
 servers:
   - url: http://localhost:8080
 paths:
+  /api/v1/operations/status:
+    get:
+      operationId: getOperationsStatus
+      summary: Current service health, independent scheduler heartbeat and active incident
+      description: No-store diagnostic status. An ongoing incident can have successful diagnostic executions while this endpoint remains unhealthy. Old observations are never made fresh by republishing metadata.
+      responses:
+        "200":
+          description: Fresh monitoring, fresh radar and all external checks passing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsStatus" }
+        "503":
+          description: Degraded service, missing monitoring, stale data or unavailable state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsStatus" }
+  /api/v1/operations/report:
+    post:
+      operationId: recordOperationsReport
+      summary: Private authenticated external diagnostic report
+      description: Internal to GitHub monitoring, not a browser API. At most 16 KiB; timestamp within two minutes of receipt. Replays are idempotent; older reports cannot replace newer health.
+      security: [{ monitorReport: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runId, checkedAt, checks]
+              properties:
+                runId: { type: string, pattern: '^\d{1,20}(?:-\d{1,3})?$' }
+                checkedAt: { type: string, format: date-time }
+                checks:
+                  type: array
+                  minItems: 6
+                  maxItems: 6
+                  items: { $ref: "#/components/schemas/OperationsCheck" }
+      responses:
+        "200":
+          description: Incident transition acknowledgement; shouldFail controls first/changed incident mail, not service-health truth
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, shouldFail, transition, incidentId]
+                properties:
+                  accepted: { type: boolean }
+                  shouldFail: { type: boolean }
+                  transition:
+                    { enum: [opened, ongoing, recovered, healthy, superseded] }
+                  incidentId: { type: [string, "null"] }
+        "400": { description: Invalid or incomplete report }
+        "401": { description: Invalid bearer token }
+        "409":
+          { description: Concurrent update contention; retry the same report }
+        "413": { description: Report exceeds 16 KiB }
+        "503": { description: Monitoring disabled or storage unavailable }
   /api/v1/radar/frames:
     get:
       operationId: getRadarFrames
@@ -221,7 +278,47 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
 components:
+  securitySchemes:
+    monitorReport:
+      type: http
+      scheme: bearer
+      description: Dedicated random monitoring secret, never supplied to browsers
   schemas:
+    OperationsCheck:
+      type: object
+      required: [name, ok, code, durationMs]
+      properties:
+        name: { enum: [web, api, radar, quality, performance, scheduler] }
+        ok: { type: boolean }
+        code: { type: string, pattern: "^[a-z][a-z0-9-]{0,63}$" }
+        durationMs: { type: number, minimum: 0, maximum: 300000 }
+    OperationsStatus:
+      type: object
+      required: [schemaVersion, status, monitoringActive]
+      properties:
+        schemaVersion: { const: 1 }
+        generatedAt: { type: string, format: date-time }
+        status: { enum: [healthy, degraded] }
+        monitoringEnabled: { type: boolean }
+        monitoringActive: { type: boolean }
+        scheduler: { type: object }
+        probe: { type: object }
+        radar:
+          type: object
+          properties:
+            ok: { type: boolean }
+            code:
+              {
+                enum: [ok, source-delayed, ingestion-stalled, invalid-manifest],
+              }
+            ageMinutes: { type: [number, "null"] }
+            observedAt: { type: [string, "null"], format: date-time }
+        checks:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsCheck" }
+        activeIncident: { type: [object, "null"] }
+        lastIncident: { type: [object, "null"] }
+        code: { type: string }
     RadarFrame:
       type: object
       required: [id, observedAt, fetchedAt, url, bounds, product, unit, sha256]

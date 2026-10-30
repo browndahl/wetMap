@@ -16,6 +16,7 @@ ALLOWED_ORIGIN = "https://wetmap.pages.dev,https://wetmap-staging.pages.dev"
 GITHUB_REPOSITORY = "browndahl/wetMap"
 GITHUB_RADAR_WORKFLOW = "radar.yml"
 GITHUB_REF = "main"
+OPERATIONS_MONITOR_ENABLED = "true"
 VAPID_SUBJECT = "https://wetmap.pages.dev"
 
 [triggers]

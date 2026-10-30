@@ -4,6 +4,11 @@ import {
   savePushSubscription,
   sendRainAlerts,
 } from "./push";
+import {
+  operationsStatus,
+  receiveOperationsReport,
+  scheduleOperations,
+} from "./operations";
 
 interface Env {
   RADAR: R2Bucket;
@@ -15,6 +20,8 @@ interface Env {
   GITHUB_REPOSITORY?: string;
   GITHUB_RADAR_WORKFLOW?: string;
   GITHUB_REF?: string;
+  OPERATIONS_MONITOR_ENABLED?: string;
+  MONITOR_REPORT_TOKEN?: string;
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
@@ -1962,11 +1969,17 @@ export default {
     const allowedOrigin = Object.keys(cors(origin, env)).length > 0;
     if (
       ["POST", "DELETE"].includes(request.method) &&
+      url.pathname !== "/api/v1/operations/report" &&
       (!origin || !allowedOrigin)
     )
       return new Response(null, { status: 403 });
     let response: Response;
     if (
+      url.pathname === "/api/v1/operations/report" &&
+      request.method === "POST"
+    )
+      response = await receiveOperationsReport(request, env);
+    else if (
       url.pathname === "/api/v1/push/subscriptions" &&
       request.method === "POST"
     )
@@ -1979,6 +1992,8 @@ export default {
     else if (request.method !== "GET")
       response = new Response(null, { status: 405 });
     else if (url.pathname === "/api/v1/push/config") response = pushConfig(env);
+    else if (url.pathname === "/api/v1/operations/status")
+      response = await operationsStatus(env);
     else if (url.pathname === "/api/v1/radar/frames")
       response = await frames(request, env);
     else if (url.pathname === "/api/v1/radar/nowcast")
@@ -2014,10 +2029,10 @@ export default {
     env: Env,
     context: ExecutionContext,
   ): Promise<void> {
-    context.waitUntil(
-      Promise.all([ensureFreshRadar(env), sendRainAlerts(env)]).then(
-        () => undefined,
-      ),
-    );
+    // A monitoring/dispatch failure must never prevent the independent alert scan
+    // or radar recovery from finishing. Keep separate waitUntil promises.
+    context.waitUntil(ensureFreshRadar(env));
+    context.waitUntil(sendRainAlerts(env));
+    context.waitUntil(scheduleOperations(env));
   },
 };
