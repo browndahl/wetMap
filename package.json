@@ -14,8 +14,8 @@
     "worker:test": "python3 -m pytest apps/worker/tests"
   },
   "devDependencies": {
-    "prettier": "3.6.2",
-    "turbo": "2.5.8",
+    "prettier": "3.9.10",
+    "turbo": "2.11.10",
     "typescript": "5.9.3"
   }
 }
