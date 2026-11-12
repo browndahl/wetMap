@@ -172,6 +172,15 @@ or archive-retention change. Dependency migration and V6 remain separate work.
 
 ## Earlier completed work relevant to this programme
 
+12 November verification completeness: owner approved proceeding after the audit.
+Implemented bounded all-retained-observation planning/execution, canonical pair
+identity, first-wins history preservation and public retained-window accounting.
+Local real-input replay scored all 21 missing intermediate pairs in 668 ms, with
+100% window coverage and zero repeat scores/downloads. [Rollout evidence](VERIFICATION_COMPLETENESS_2026-11-12.md),
+[ADR 0012](adr/0012-verification-completeness-shared-coverage.md). Shared-mask comparison
+is the following shadow-only stage; no numerical gate or scoring definition changed
+in the completeness stage.
+
 12 November precision audit / Redis decision: added independent raw-grid scoring
 reconstruction and mask-comparison diagnostics. 7 cubes / 13 observations gave 42
 available pairs, 21 public matches, zero score mismatches, and identical persistence

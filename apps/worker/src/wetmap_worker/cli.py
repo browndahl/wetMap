@@ -21,7 +21,6 @@ from .processor import inspect_odim, process_hdf5
 from .storage import (
     download_frames_r2,
     download_manifest_r2,
-    download_verification_cube_r2,
     download_verification_r2,
     upload_nowcast_r2,
     upload_r2,
@@ -33,9 +32,8 @@ from .verification import (
     quality_by_lead,
     update_verification_state,
     verification_forecast_changed,
-    verification_candidates,
-    verify_previous_nowcast,
 )
+from .verification_batch import run_verifications
 
 
 def configure_logs() -> None:
@@ -141,6 +139,7 @@ def run(output: Path, limit: int, upload: bool) -> None:
                 full_history: dict | None = None
                 gauge_history: dict | None = None
                 verification_results_added = False
+                verification_batch = None
                 gauge_result_added = False
                 with tempfile.TemporaryDirectory(prefix="wetmap-previous-nowcast-") as previous:
                     previous_directory = Path(previous)
@@ -155,41 +154,25 @@ def run(output: Path, limit: int, upload: bool) -> None:
                                 history_path = previous_directory / "verification.json"
                             if history_path.exists():
                                 full_history = append_verification_history(history_path, [])
-                            verified_pairs = {
-                                (
-                                    entry.get("basedOnObservedAt"),
-                                    entry.get("observedAt"),
-                                )
-                                for entry in (full_history or {}).get("results", [])
-                            }
-                            verifications: list[dict] = []
-                            for candidate in verification_candidates(
-                                previous_state, source_frames[-1].observedAt
-                            ):
-                                if (
-                                    candidate.get("basedOnObservedAt"),
-                                    source_frames[-1].observedAt,
-                                ) in verified_pairs:
-                                    continue
-                                try:
-                                    cube_path = download_verification_cube_r2(
-                                        previous_directory, candidate["dataKey"]
-                                    )
-                                    verification = verify_previous_nowcast(
-                                        candidate,
-                                        cube_path,
-                                        source_paths[-1],
-                                        source_frames[-1].observedAt,
-                                    )
-                                    if verification:
-                                        verifications.append(verification)
-                                except Exception:
-                                    logging.exception(
-                                        "nowcast.verification.candidate.failed",
-                                        extra={
-                                            "basedOnObservedAt": candidate.get("basedOnObservedAt")
-                                        },
-                                    )
+
+                            def retained_observations(directory, names):
+                                # Reuse newly processed and already downloaded map
+                                # source images; other retained observations stay
+                                # in this temporary verification directory.
+                                return [
+                                    output / name
+                                    if (output / name).exists()
+                                    else download_frames_r2(directory, [name])[0]
+                                    for name in names
+                                ]
+
+                            verifications, verification_batch = run_verifications(
+                                previous_state,
+                                frames,
+                                full_history,
+                                previous_directory,
+                                load_frames=retained_observations,
+                            )
                             if verifications:
                                 verification_results_added = True
                                 full_history = append_verification_history(
@@ -281,6 +264,8 @@ def run(output: Path, limit: int, upload: bool) -> None:
                         )
                     write_json_atomic(nowcast_directory / "verification-history.json", full_history)
                     public_report = public_verification_report(full_history)
+                    if verification_batch is not None:
+                        public_report["verificationBatch"] = verification_batch
                     if gauge_history:
                         public_report["groundGauge"] = public_gauge_report(gauge_history)
                     consistency_path = nowcast_directory / "consistency.json"

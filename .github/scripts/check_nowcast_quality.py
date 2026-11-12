@@ -3,7 +3,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from check_verification_batch import validate_batch
+
 report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+validate_batch(report)
 if report.get("sampleCount", 0) < 1:
     raise SystemExit("Nowcast quality has no verification samples")
 

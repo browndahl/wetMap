@@ -56,8 +56,7 @@ export interface NowcastManifest {
   generatedAt: string;
   attribution: typeof DMI_ATTRIBUTION;
   method:
-    | "adaptive-optical-flow-persistence"
-    | "dense-optical-flow-extrapolation";
+    "adaptive-optical-flow-persistence" | "dense-optical-flow-extrapolation";
   algorithmVersion?: string;
   rainThresholdDbz?: 5 | 10 | 15 | 20;
   rainRadiusPixels?: 1 | 3 | 5;
@@ -67,10 +66,7 @@ export interface NowcastManifest {
 }
 
 export type PrecisionStatus =
-  | "collecting"
-  | "awaiting-rain"
-  | "verified"
-  | "degraded";
+  "collecting" | "awaiting-rain" | "verified" | "degraded";
 
 export interface VerificationSummary {
   sampleCount: number;
@@ -116,10 +112,7 @@ export interface PrecisionObservatory {
 }
 
 export type ShadowCandidateStatus =
-  | "collecting"
-  | "awaiting-rain"
-  | "promotable"
-  | "held-back";
+  "collecting" | "awaiting-rain" | "promotable" | "held-back";
 
 export interface ShadowCandidateLeadQuality extends VerificationSummary {
   leadMinutes: number;
@@ -135,8 +128,7 @@ export interface ShadowCandidateLeadQuality extends VerificationSummary {
   probabilityCalibration?: ProbabilityCalibrationQuality;
 }
 
-export interface ProbabilityCalibrationThresholdQuality
-  extends VerificationSummary {
+export interface ProbabilityCalibrationThresholdQuality extends VerificationSummary {
   minimumRainProbability: number;
   eventPixelCount: number;
   recallFloor: number;
@@ -219,10 +211,7 @@ export interface GeographicConsistencyQuality {
 }
 
 export type RadarCalibrationStatus =
-  | "collecting"
-  | "awaiting-overlap"
-  | "inconclusive"
-  | "calibrated";
+  "collecting" | "awaiting-overlap" | "inconclusive" | "calibrated";
 
 export interface RadarCalibrationCandidate {
   thresholdDbz: 5 | 10 | 15 | 20;
@@ -261,6 +250,22 @@ export interface RadarThresholdCalibration {
   candidates: RadarCalibrationCandidate[];
 }
 
+export interface VerificationBatchReport {
+  scope: "retained-valid-time-pairs";
+  eligiblePairs: number;
+  alreadyVerified: number;
+  planned: number;
+  attempted: number;
+  completed: number;
+  errors: number;
+  deferred: number;
+  rejectedForecasts: number;
+  budgetExhausted: boolean;
+  durationMs: number;
+  coverageFraction: number | null;
+  complete: boolean;
+}
+
 export interface NowcastQualityResponse {
   schemaVersion: number;
   generatedAt: string;
@@ -275,6 +280,7 @@ export interface NowcastQualityResponse {
   shadowCandidates?: ShadowCandidateQuality[];
   groundGauge?: GroundGaugeQuality;
   geographicConsistency?: GeographicConsistencyQuality;
+  verificationBatch?: VerificationBatchReport;
 }
 
 export interface PrecisionObservatoryResponse {
@@ -289,6 +295,7 @@ export interface PrecisionObservatoryResponse {
   shadowCandidates?: ShadowCandidateQuality[];
   groundGauge?: GroundGaugeQuality;
   geographicConsistency?: GeographicConsistencyQuality;
+  verificationBatch?: VerificationBatchReport;
 }
 
 export interface ForecastPoint {
@@ -312,11 +319,7 @@ export interface ForecastResponse {
 export type RainIntensity = "none" | "trace" | "light" | "moderate" | "heavy";
 export type RainPointSource = "radar-nowcast" | "harmonie";
 export type RainEtaStatus =
-  | "dry"
-  | "weak-echo"
-  | "raining"
-  | "expected"
-  | "intermittent";
+  "dry" | "weak-echo" | "raining" | "expected" | "intermittent";
 export type RainEtaConfidenceLevel = "unknown" | "low" | "medium" | "high";
 export type RainEtaSource = "radar-nowcast" | "harmonie" | "mixed";
 

@@ -200,6 +200,49 @@ describe("radar nowcast edge endpoint", () => {
     expect(response.headers.get("Cache-Control")).toContain("max-age=300");
   });
 
+  it("preserves verification accounting in quality and observatory responses", async () => {
+    const { env, context, r2 } = setup();
+    const batch = {
+      scope: "retained-valid-time-pairs",
+      eligiblePairs: 42,
+      alreadyVerified: 21,
+      planned: 21,
+      attempted: 21,
+      completed: 21,
+      errors: 0,
+      deferred: 0,
+      rejectedForecasts: 0,
+      budgetExhausted: false,
+      durationMs: 700,
+      coverageFraction: 1,
+      complete: true,
+    };
+    r2.values.set(
+      "nowcast/verification.json",
+      JSON.stringify({
+        schemaVersion: 5,
+        generatedAt: "2026-11-12T12:00:00Z",
+        algorithmVersion: "adaptive-optical-flow-persistence-v1",
+        thresholdDbz: 20,
+        sampleCount: 42,
+        totalSampleCount: 42,
+        verificationBatch: batch,
+      }),
+    );
+    for (const endpoint of ["quality", "observatory"]) {
+      const response = await worker.fetch(
+        new Request(`https://api.test/api/v1/radar/nowcast/${endpoint}`),
+        env,
+        context,
+      );
+      expect(response.status).toBe(200);
+      expect(
+        ((await response.json()) as { verificationBatch: unknown })
+          .verificationBatch,
+      ).toEqual(batch);
+    }
+  });
+
   it("returns the multi-horizon quality contract before samples exist", async () => {
     const { env, context } = setup();
 
