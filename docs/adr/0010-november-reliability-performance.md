@@ -18,7 +18,7 @@ failures, not evidence of an application exception.
 
 Before changes, 36 bounded API samples: 12 point-cache MISS p50 1129 ms / p95
 2181 ms; 24 HIT p50 34 ms / p95 153 ms. Three cold Chrome mobile simulations
-(390x844, 1.6 Mbps, 150 ms latency, 4x CPU) showed answer 1060–1580 ms, LCP
+(390x844, 1.6 Mbps, 150 ms latency, 4x CPU) showed status shell 1060–1580 ms, LCP
 1044–1568 ms, CLS 0.013–0.023. Canvas creation is not proof of a rendered map;
 add local performance marks for meaningful map/radar readiness. These small samples
 are diagnostic measurements, not a production field p95 or real-device acceptance.

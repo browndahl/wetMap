@@ -26,6 +26,9 @@ not retrospectively erase incidents or prove permanent availability.
   not expose the pending buffer. Playback waits for image readiness before its
   700 ms dwell timer; removed speculative downloads that accumulated while a
   throttled connection could not keep up. Unrelated renders do not restart loading.
+  A regression test covers another load handler adding a GeoJSON source: the style
+  is editable even though isStyleLoaded becomes temporarily false. The old guard
+  could lose that one-time event and leave radar permanently absent on cold loads.
   `wetmap:map-ready` and `wetmap:radar-ready` marks
   distinguish actual readiness from canvas creation.
 - `/design` loads lazily; service-worker registration waits for window load, keeping
@@ -54,7 +57,19 @@ became ready within the 45 s deadline; that finding prompted the playback fix.
 These are small diagnostic samples, not field p95, Lighthouse or physical iPhone
 acceptance. Cross-origin ResourceTiming sizes can be absent without TAO.
 
-Post-release measurements and workflow evidence are recorded after deployment.
+Final staging [86333d49](https://86333d49.wetmap-staging.pages.dev/): three cold
+mobile runs reached radar-ready at 7.44–8.10 s and map-ready at 7.58–8.31 s; desktop
+radar 0.54–1.10 s, map 0.58–0.66 s. All six had zero page errors, failed requests or
+horizontal overflow; mobile LCP 1.04–1.36 s, CLS 0.0123, zero measured blocking
+milliseconds. The staging capture's forecast wait followed canvas detection, so its
+forecastMs is an upper bound, not an independent exact answer timing.
+
+[Machine-readable baseline/staging evidence](evidence/november-reliability/measurements.json).
+PR [#25](https://github.com/browndahl/wetMap/pull/25) records the release and
+post-deployment measurements, production smoke and retention reports. CI
+[43294840328](https://github.com/browndahl/wetMap/actions/runs/43294840328) and security
+[43294840472](https://github.com/browndahl/wetMap/actions/runs/43294840472) passed for
+00be087, including .NET, containers, all three CodeQL languages, Trivy and secrets.
 
 ## Storage and owner-approved retention
 
