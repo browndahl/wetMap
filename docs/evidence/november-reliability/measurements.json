@@ -1,0 +1,689 @@
+{
+  "before": {
+    "testedAt": "2026-11-12T19:22:26.831Z",
+    "url": "https://wetmap.pages.dev/",
+    "api": [
+      {
+        "city": "Aarhus",
+        "point": 0,
+        "repeat": 0,
+        "status": 200,
+        "ms": 1129,
+        "pointCache": "MISS",
+        "modelCache": "MISS",
+        "timing": "dmi;dur=199.0, total;dur=199.0, radar;dur=582.0, combined_total;dur=1026.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aarhus",
+        "point": 0,
+        "repeat": 1,
+        "status": 200,
+        "ms": 52,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aarhus",
+        "point": 0,
+        "repeat": 2,
+        "status": 200,
+        "ms": 34,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=4.0, total;dur=4.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aarhus",
+        "point": 1,
+        "repeat": 0,
+        "status": 200,
+        "ms": 828,
+        "pointCache": "MISS",
+        "modelCache": "MISS",
+        "timing": "dmi;dur=161.0, total;dur=161.0, radar;dur=192.0, combined_total;dur=701.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aarhus",
+        "point": 1,
+        "repeat": 1,
+        "status": 200,
+        "ms": 37,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=4.0, total;dur=4.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aarhus",
+        "point": 1,
+        "repeat": 2,
+        "status": 200,
+        "ms": 96,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Copenhagen",
+        "point": 0,
+        "repeat": 0,
+        "status": 200,
+        "ms": 2131,
+        "pointCache": "MISS",
+        "modelCache": "MISS",
+        "timing": "dmi;dur=1660.0, openmeteo;dur=160.0, total;dur=1660.0, radar;dur=145.0, combined_total;dur=2013.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Copenhagen",
+        "point": 0,
+        "repeat": 1,
+        "status": 200,
+        "ms": 59,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=6.0, total;dur=6.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Copenhagen",
+        "point": 0,
+        "repeat": 2,
+        "status": 200,
+        "ms": 49,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Copenhagen",
+        "point": 1,
+        "repeat": 0,
+        "status": 200,
+        "ms": 314,
+        "pointCache": "MISS",
+        "modelCache": "HIT",
+        "timing": "cache;dur=3.0, total;dur=3.0, radar;dur=142.0, combined_total;dur=148.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Copenhagen",
+        "point": 1,
+        "repeat": 1,
+        "status": 200,
+        "ms": 86,
+        "pointCache": "HIT",
+        "modelCache": "HIT",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Copenhagen",
+        "point": 1,
+        "repeat": 2,
+        "status": 200,
+        "ms": 28,
+        "pointCache": "HIT",
+        "modelCache": "HIT",
+        "timing": "point_cache;dur=4.0, total;dur=4.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Odense",
+        "point": 0,
+        "repeat": 0,
+        "status": 200,
+        "ms": 1228,
+        "pointCache": "MISS",
+        "modelCache": "MISS",
+        "timing": "dmi;dur=710.0, openmeteo;dur=41.0, total;dur=751.0, radar;dur=227.0, combined_total;dur=1055.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Odense",
+        "point": 0,
+        "repeat": 1,
+        "status": 200,
+        "ms": 25,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Odense",
+        "point": 0,
+        "repeat": 2,
+        "status": 200,
+        "ms": 50,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Odense",
+        "point": 1,
+        "repeat": 0,
+        "status": 200,
+        "ms": 1936,
+        "pointCache": "MISS",
+        "modelCache": "MISS",
+        "timing": "dmi;dur=1540.0, openmeteo;dur=40.0, total;dur=1540.0, radar;dur=120.0, combined_total;dur=1909.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Odense",
+        "point": 1,
+        "repeat": 1,
+        "status": 200,
+        "ms": 22,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=4.0, total;dur=4.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Odense",
+        "point": 1,
+        "repeat": 2,
+        "status": 200,
+        "ms": 24,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=4.0, total;dur=4.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aalborg",
+        "point": 0,
+        "repeat": 0,
+        "status": 200,
+        "ms": 1957,
+        "pointCache": "MISS",
+        "modelCache": "MISS",
+        "timing": "dmi;dur=1540.0, openmeteo;dur=40.0, total;dur=1540.0, radar;dur=127.0, combined_total;dur=1906.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aalborg",
+        "point": 0,
+        "repeat": 1,
+        "status": 200,
+        "ms": 56,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aalborg",
+        "point": 0,
+        "repeat": 2,
+        "status": 200,
+        "ms": 45,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=6.0, total;dur=6.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aalborg",
+        "point": 1,
+        "repeat": 0,
+        "status": 200,
+        "ms": 320,
+        "pointCache": "MISS",
+        "modelCache": "HIT",
+        "timing": "cache;dur=4.0, total;dur=4.0, radar;dur=132.0, combined_total;dur=137.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aalborg",
+        "point": 1,
+        "repeat": 1,
+        "status": 200,
+        "ms": 23,
+        "pointCache": "HIT",
+        "modelCache": "HIT",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Aalborg",
+        "point": 1,
+        "repeat": 2,
+        "status": 200,
+        "ms": 57,
+        "pointCache": "HIT",
+        "modelCache": "HIT",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Esbjerg",
+        "point": 0,
+        "repeat": 0,
+        "status": 200,
+        "ms": 1897,
+        "pointCache": "MISS",
+        "modelCache": "MISS",
+        "timing": "dmi;dur=1540.0, openmeteo;dur=40.0, total;dur=1540.0, radar;dur=132.0, combined_total;dur=1853.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Esbjerg",
+        "point": 0,
+        "repeat": 1,
+        "status": 200,
+        "ms": 19,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Esbjerg",
+        "point": 0,
+        "repeat": 2,
+        "status": 200,
+        "ms": 172,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Esbjerg",
+        "point": 1,
+        "repeat": 0,
+        "status": 200,
+        "ms": 236,
+        "pointCache": "MISS",
+        "modelCache": "HIT",
+        "timing": "cache;dur=4.0, total;dur=4.0, radar;dur=134.0, combined_total;dur=141.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Esbjerg",
+        "point": 1,
+        "repeat": 1,
+        "status": 200,
+        "ms": 32,
+        "pointCache": "HIT",
+        "modelCache": "HIT",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Esbjerg",
+        "point": 1,
+        "repeat": 2,
+        "status": 200,
+        "ms": 153,
+        "pointCache": "HIT",
+        "modelCache": "HIT",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Ronne",
+        "point": 0,
+        "repeat": 0,
+        "status": 200,
+        "ms": 2181,
+        "pointCache": "MISS",
+        "modelCache": "MISS",
+        "timing": "dmi;dur=1539.0, openmeteo;dur=39.0, total;dur=1539.0, radar;dur=118.0, combined_total;dur=1897.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Ronne",
+        "point": 0,
+        "repeat": 1,
+        "status": 200,
+        "ms": 23,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Ronne",
+        "point": 0,
+        "repeat": 2,
+        "status": 200,
+        "ms": 22,
+        "pointCache": "HIT",
+        "modelCache": "MISS",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Ronne",
+        "point": 1,
+        "repeat": 0,
+        "status": 200,
+        "ms": 254,
+        "pointCache": "MISS",
+        "modelCache": "HIT",
+        "timing": "cache;dur=4.0, total;dur=4.0, radar;dur=142.0, combined_total;dur=148.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Ronne",
+        "point": 1,
+        "repeat": 1,
+        "status": 200,
+        "ms": 23,
+        "pointCache": "HIT",
+        "modelCache": "HIT",
+        "timing": "point_cache;dur=5.0, total;dur=5.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      },
+      {
+        "city": "Ronne",
+        "point": 1,
+        "repeat": 2,
+        "status": 200,
+        "ms": 32,
+        "pointCache": "HIT",
+        "modelCache": "HIT",
+        "timing": "point_cache;dur=4.0, total;dur=4.0",
+        "edge": "CPH",
+        "source": "dmi-radar-nowcast-harmonie"
+      }
+    ],
+    "browser": [
+      {
+        "profile": "mobile-4g",
+        "run": 0,
+        "answerMs": 1580,
+        "canvasMs": 3873,
+        "lcp": 1568,
+        "cls": 0.014108874203217412,
+        "longTasks": 1,
+        "blockingMs": 17,
+        "marks": [],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 16
+      },
+      {
+        "profile": "mobile-4g",
+        "run": 1,
+        "answerMs": 1064,
+        "canvasMs": 2856,
+        "lcp": 1060,
+        "cls": 0.012543412657844701,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 16
+      },
+      {
+        "profile": "mobile-4g",
+        "run": 2,
+        "answerMs": 1060,
+        "canvasMs": 2845,
+        "lcp": 1044,
+        "cls": 0.022635955855102086,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 16
+      },
+      {
+        "profile": "desktop",
+        "run": 0,
+        "answerMs": 189,
+        "canvasMs": 269,
+        "lcp": 200,
+        "cls": 0.03399874255521798,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 36
+      },
+      {
+        "profile": "desktop",
+        "run": 1,
+        "answerMs": 336,
+        "canvasMs": 516,
+        "lcp": 340,
+        "cls": 0.03509935388635706,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 37
+      },
+      {
+        "profile": "desktop",
+        "run": 2,
+        "answerMs": 219,
+        "canvasMs": 299,
+        "lcp": 412,
+        "cls": 0.012681957917390047,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 38
+      }
+    ]
+  },
+  "staging": {
+    "testedAt": "2026-11-12T19:53:48.814Z",
+    "url": "https://86333d49.wetmap-staging.pages.dev/",
+    "api": [],
+    "browser": [
+      {
+        "profile": "mobile-4g",
+        "run": 0,
+        "answerMs": 1366,
+        "forecastMs": 3656,
+        "canvasMs": 3654,
+        "lcp": 1356,
+        "cls": 0.012242428398903802,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [
+          {
+            "name": "wetmap:radar-ready",
+            "startTime": 8103.200000017881
+          },
+          {
+            "name": "wetmap:map-ready",
+            "startTime": 8305.600000023842
+          }
+        ],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 22
+      },
+      {
+        "profile": "mobile-4g",
+        "run": 1,
+        "answerMs": 1079,
+        "forecastMs": 2866,
+        "canvasMs": 2864,
+        "lcp": 1064,
+        "cls": 0.012242428398903802,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [
+          {
+            "name": "wetmap:radar-ready",
+            "startTime": 7435.800000011921
+          },
+          {
+            "name": "wetmap:map-ready",
+            "startTime": 7579.4000000059605
+          }
+        ],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 22
+      },
+      {
+        "profile": "mobile-4g",
+        "run": 2,
+        "answerMs": 1050,
+        "forecastMs": 2838,
+        "canvasMs": 2836,
+        "lcp": 1044,
+        "cls": 0.012242428398903802,
+        "longTasks": 1,
+        "blockingMs": 0,
+        "marks": [
+          {
+            "name": "wetmap:radar-ready",
+            "startTime": 7467.799999982119
+          },
+          {
+            "name": "wetmap:map-ready",
+            "startTime": 7583.299999982119
+          }
+        ],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 22
+      },
+      {
+        "profile": "desktop",
+        "run": 0,
+        "answerMs": 185,
+        "forecastMs": 261,
+        "canvasMs": 260,
+        "lcp": 328,
+        "cls": 0.017062765163845486,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [
+          {
+            "name": "wetmap:map-ready",
+            "startTime": 599.0999999940395
+          },
+          {
+            "name": "wetmap:radar-ready",
+            "startTime": 1095.5999999940395
+          }
+        ],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 24
+      },
+      {
+        "profile": "desktop",
+        "run": 1,
+        "answerMs": 216,
+        "forecastMs": 297,
+        "canvasMs": 294,
+        "lcp": 400,
+        "cls": 0.018607518250265243,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [
+          {
+            "name": "wetmap:radar-ready",
+            "startTime": 539.9000000059605
+          },
+          {
+            "name": "wetmap:map-ready",
+            "startTime": 660.5999999940395
+          }
+        ],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 24
+      },
+      {
+        "profile": "desktop",
+        "run": 2,
+        "answerMs": 147,
+        "forecastMs": 398,
+        "canvasMs": 221,
+        "lcp": 364,
+        "cls": 0.012679528281129438,
+        "longTasks": 0,
+        "blockingMs": 0,
+        "marks": [
+          {
+            "name": "wetmap:map-ready",
+            "startTime": 581.9000000059605
+          },
+          {
+            "name": "wetmap:radar-ready",
+            "startTime": 708.4000000059605
+          }
+        ],
+        "overflow": false,
+        "errors": [],
+        "failures": [],
+        "resourceCount": 24
+      }
+    ]
+  }
+}

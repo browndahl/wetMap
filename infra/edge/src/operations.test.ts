@@ -290,6 +290,36 @@ it("does not let an older run overwrite the latest health result", async () => {
   );
 });
 
+it("keeps dependent radar-performance failures visible without opening a duplicate incident", async () => {
+  const { env } = setup();
+  const first = await (
+    await receiveOperationsReport(
+      request(report("1", { radar: "source-delayed" })),
+      env,
+    )
+  ).json<any>();
+  const next = await (
+    await receiveOperationsReport(
+      request(
+        report("2", {
+          radar: "source-delayed",
+          performance: "radar-unavailable",
+        }),
+      ),
+      env,
+    )
+  ).json<any>();
+  expect(next.incidentId).toBe(first.incidentId);
+  expect(next.shouldFail).toBe(false);
+  const status = await operationsStatus(env);
+  expect(status.status).toBe(503);
+  expect(
+    (await status.json<any>()).checks.find(
+      (check: any) => check.name === "performance",
+    ).ok,
+  ).toBe(false);
+});
+
 it("uses token authentication, not browser CORS permission, for monitor reports", async () => {
   const { env } = setup();
   const fullEnv = {

@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -170,17 +172,25 @@ const apiMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./components/WeatherMap", () => ({
-  default: ({
+  default: function MockWeatherMap({
     frames,
     activeIndex,
+    onFrameReady,
   }: {
     frames: Array<{ id: string }>;
     activeIndex: number;
-  }) => (
-    <div aria-label="test map" data-testid="active-frame">
-      {frames[activeIndex]?.id}
-    </div>
-  ),
+    onFrameReady: (id: string) => void;
+  }) {
+    const frameId = frames[activeIndex]?.id;
+    useEffect(() => {
+      if (frameId) onFrameReady(frameId);
+    }, [frameId, onFrameReady]);
+    return (
+      <div aria-label="test map" data-testid="active-frame">
+        {frames[activeIndex]?.id}
+      </div>
+    );
+  },
 }));
 vi.mock("./api", () => ({
   getRadarManifest: async () => apiMocks.manifest,
@@ -577,7 +587,7 @@ it("automatically plays recent radar history and finishes on the latest observat
   );
   expect(screen.getByText("Seneste observation")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "Afspil radar" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Afspil radar" }));
   expect(useWeatherStore.getState().playing).toBe(true);
   fireEvent.change(screen.getByRole("slider", { name: "Radar-tidspunkt" }), {
     target: { value: "1" },
@@ -668,7 +678,33 @@ it("searches for a place, moves the forecast location, and saves a favorite", as
   await waitFor(() =>
     expect(useWeatherStore.getState().selectedLocation.name).toBe("København"),
   );
-  expect(input).toHaveValue("København");
+  expect(screen.getByRole("searchbox")).toHaveValue("København");
+
+  // A map/favorite selection must replace a partially typed search immediately,
+  // without preserving stale results or triggering another old-query request.
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "Odense" },
+  });
+  act(() =>
+    useWeatherStore.getState().setSelectedLocation({
+      id: "map:55.403,10.402",
+      name: "Odense valgt på kortet",
+      context: "Kort",
+      latitude: 55.403,
+      longitude: 10.402,
+    }),
+  );
+  expect(screen.getByRole("searchbox")).toHaveValue("Odense valgt på kortet");
+  expect(screen.queryByText("Region Hovedstaden")).not.toBeInTheDocument();
+  act(() =>
+    useWeatherStore.getState().setSelectedLocation({
+      id: "photon:N:1",
+      name: "København",
+      context: "Region Hovedstaden",
+      latitude: 55.6761,
+      longitude: 12.5683,
+    }),
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "Gem sted som favorit" }));
   expect(useWeatherStore.getState().favoriteLocations).toHaveLength(1);

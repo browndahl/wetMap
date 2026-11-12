@@ -6,6 +6,35 @@ from operations_probe import collect_checks, report_exit_code
 
 
 class OperationsProbeTests(unittest.TestCase):
+    @patch(
+        "operations_probe.check_live_performance",
+        side_effect=SystemExit(
+            "Live precipitation probe did not use the radar-nowcast path"
+        ),
+    )
+    @patch("operations_probe.validate_quality", return_value=None)
+    @patch("operations_probe.get_document")
+    def test_performance_failure_has_a_specific_cause_without_weakening_health(
+        self, document, quality, performance
+    ):
+        document.side_effect = [
+            '<div id="root"></div>',
+            {"status": "ok"},
+            {"frames": [{"observedAt": "2026-10-30T11:50:00Z"}]},
+            {},
+            {
+                "monitoringEnabled": True,
+                "scheduler": {"checkedAt": "2026-10-30T12:00:00Z"},
+            },
+        ]
+        checks = collect_checks(
+            "https://web.test",
+            "https://api.test",
+            now=datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc),
+        )
+        self.assertFalse(checks[4]["ok"])
+        self.assertEqual(checks[4]["code"], "radar-unavailable")
+
     @patch("operations_probe.check_live_performance")
     @patch("operations_probe.validate_quality")
     @patch("operations_probe.get_document")

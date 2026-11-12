@@ -81,6 +81,7 @@ export default function App() {
   );
   const dockRef = useRef<HTMLDivElement>(null);
   const initialRadarPlaybackStarted = useRef(false);
+  const [renderedFrameId, setRenderedFrameId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [timelineCollapsed, setTimelineCollapsed] = useState(
     timelineStartsCollapsed,
@@ -232,7 +233,14 @@ export default function App() {
   }, [timelineCollapsed]);
 
   useEffect(() => {
-    if (!state.playing || radarFrames.length < 2) return;
+    // Never queue image downloads faster than a connection can display them.
+    // Start the dwell timer only after the selected radar image has loaded.
+    if (
+      !state.playing ||
+      radarFrames.length < 2 ||
+      renderedFrameId !== activeFrame?.id
+    )
+      return;
     if (safeIndex >= lastFrameIndex) {
       state.setPlaying(false);
       return;
@@ -242,7 +250,14 @@ export default function App() {
       700,
     );
     return () => window.clearTimeout(timer);
-  }, [lastFrameIndex, radarFrames.length, safeIndex, state]);
+  }, [
+    activeFrame?.id,
+    lastFrameIndex,
+    radarFrames.length,
+    renderedFrameId,
+    safeIndex,
+    state,
+  ]);
 
   useEffect(() => {
     if (
@@ -333,7 +348,11 @@ export default function App() {
           </div>
         }
       >
-        <WeatherMap frames={radarFrames} activeIndex={safeIndex} />
+        <WeatherMap
+          frames={radarFrames}
+          activeIndex={safeIndex}
+          onFrameReady={setRenderedFrameId}
+        />
       </Suspense>
 
       <div className="app-header">

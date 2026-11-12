@@ -11,12 +11,16 @@ const map = vi.hoisted(() => {
   const state = {
     loadHandlers: [] as MapHandler[],
     styleDataHandlers: [] as MapHandler[],
+    sourceDataHandlers: [] as Array<
+      (event: { sourceId: string; sourceDataType: string }) => void
+    >,
     pendingLoadHandler: undefined as MapHandler | undefined,
     isStyleLoaded: vi.fn(),
     addControl: vi.fn(),
     on: vi.fn((event: string, handler: MapHandler) => {
       if (event === "load") state.loadHandlers.push(handler);
       if (event === "styledata") state.styleDataHandlers.push(handler);
+      if (event === "sourcedata") state.sourceDataHandlers.push(handler);
       return state;
     }),
     once: vi.fn((event: string, handler: MapHandler) => {
@@ -63,9 +67,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   map.loadHandlers.length = 0;
   map.styleDataHandlers.length = 0;
+  map.sourceDataHandlers.length = 0;
   map.pendingLoadHandler = undefined;
   map.isStyleLoaded.mockReturnValue(false);
   map.getLayer.mockReturnValue(undefined);
+  map.getSource.mockReturnValue(undefined);
   window.matchMedia = vi
     .fn()
     .mockReturnValue({ matches: false }) as typeof window.matchMedia;
@@ -94,6 +100,19 @@ it("renders a cached radar frame after the map style finishes loading", () => {
   view.unmount();
 });
 
+it("does not lose the load event while another handler adds a pending source", () => {
+  const view = render(<WeatherMap frames={[frame]} activeIndex={0} />);
+  // The load event guarantees a usable style even when the newly added location
+  // GeoJSON source makes isStyleLoaded temporarily false again.
+  act(() => map.loadHandlers.forEach((handler) => handler()));
+  expect(map.isStyleLoaded()).toBe(false);
+  expect(map.addSource).toHaveBeenCalledWith(
+    "radar-1",
+    expect.objectContaining({ type: "image" }),
+  );
+  view.unmount();
+});
+
 it("renders the first frame when style readiness arrives after the load event", () => {
   const view = render(<WeatherMap frames={[frame]} activeIndex={0} />);
 
@@ -116,7 +135,15 @@ it("updates opacity without rebuilding the radar source", () => {
     id === "radar-layer-1" ? {} : undefined,
   );
   const view = render(<WeatherMap frames={[frame]} activeIndex={0} />);
+  act(() =>
+    map.sourceDataHandlers.forEach((handler) =>
+      handler({ sourceId: "radar-1", sourceDataType: "content" }),
+    ),
+  );
   const sourceAdds = map.addSource.mock.calls.length;
+
+  view.rerender(<WeatherMap frames={[frame]} activeIndex={0} />);
+  expect(map.addSource).toHaveBeenCalledTimes(sourceAdds);
 
   act(() => useWeatherStore.getState().setOpacity(0.45));
 
@@ -126,6 +153,54 @@ it("updates opacity without rebuilding the radar source", () => {
     "raster-opacity",
     0.45,
   );
+  view.unmount();
+});
+
+it("keeps the old frame visible until new image content arrives and reuses buffers", () => {
+  map.isStyleLoaded.mockReturnValue(true);
+  const ready = vi.fn();
+  const source = { updateImage: vi.fn() };
+  map.getSource.mockImplementation((id: string) =>
+    id.startsWith("radar-") ? source : undefined,
+  );
+  map.getLayer.mockImplementation((id: string) =>
+    id.startsWith("radar-layer-") ? {} : undefined,
+  );
+  const view = render(
+    <WeatherMap
+      frames={[frame, { ...frame, id: "next", url: "/frames/next.webp" }]}
+      activeIndex={0}
+      onFrameReady={ready}
+    />,
+  );
+  expect(ready).not.toHaveBeenCalled();
+  expect(map.setPaintProperty).not.toHaveBeenCalledWith(
+    "radar-layer-0",
+    "raster-opacity",
+    0,
+  );
+  act(() =>
+    map.sourceDataHandlers.forEach((handler) =>
+      handler({ sourceId: "radar-1", sourceDataType: "content" }),
+    ),
+  );
+  expect(map.setPaintProperty).toHaveBeenCalledWith(
+    "radar-layer-1",
+    "raster-opacity",
+    0.7,
+  );
+  expect(ready).toHaveBeenCalledWith("test-frame");
+  view.rerender(
+    <WeatherMap
+      frames={[frame, { ...frame, id: "next", url: "/frames/next.webp" }]}
+      activeIndex={1}
+    />,
+  );
+  expect(source.updateImage).toHaveBeenCalledWith(
+    expect.objectContaining({ url: expect.stringContaining("next.webp") }),
+  );
+  expect(map.removeSource).not.toHaveBeenCalled();
+  expect(map.removeLayer).not.toHaveBeenCalled();
   view.unmount();
 });
 

@@ -34,6 +34,13 @@ synthetic workflow and deploy; keep radar recovery/push enabled. Two bounded
 
 ## 2. DMI unavailable or rate-limiting
 
+For R2 timeouts, distinguish transport from source freshness: history bytes must
+not be truncated to meet a workflow deadline. Transport uses bounded retries and
+at most two multipart threads; ordinary ledgers use a single PUT. Synthetic
+`radar-unavailable`, `cache-no-hit`, `cache-slow`, `telemetry-invalid` codes identify
+performance causes; a radar-dependent failure stays unhealthy even when grouped
+into the same incident signature.
+
 Confirm dependency status and `Retry-After`. Stop manual polling, allow circuit breaker/backoff, and keep cached forecast/radar. If outage exceeds an hour, post status copy in the UI; never synthesize observations.
 
 ## 3. Map unavailable
@@ -53,6 +60,16 @@ Disable the bad manifest entry (do not overwrite its immutable object), compare 
 Open `/api/v1/radar/nowcast/quality` and first confirm `algorithmVersion`; never combine cohorts from `byAlgorithmVersion`. Separate the affected lead time and dBZ threshold before tuning. Do not infer +60-minute quality from +10-minute results. Compare `criticalSuccessIndex` with `meanPersistenceCriticalSuccessIndex` and inspect `byForecastMethod`; a negative optical-flow skill of at most −0.02 with 12 or more optical-flow samples should select persistence on the next generated forecast. Future push frames must remain ineligible until they have at least 12 validations, CSI ≥ 0.20, non-negative persistence skill and confidence ≥ 0.55. If no horizons beyond +10 appear after 65 minutes, inspect `verification-state.json`, the 16 ring-buffer cube objects, checksum failures and workflow logs. Treat `groundGauge` separately and compare its 5/10/15/20 dBZ threshold and 1/3/5-pixel spatial profiles within a single `comparisonVersion`; DMI MetObs is raw and sparse, so disagreement is evidence to investigate—not proof that the entire radar field is wrong. Roll back if the public report schema, point forecast and map frame no longer agree.
 
 ## Rollback and recovery
+
+Retired nowcast WebPs: run **Retired nowcast image cleanup** with apply=false;
+inspect/download the retention-report artifact before setting apply=true and an
+explicit max_delete. Only exact derived-image keys with both upload and valid times
+older than 48h are eligible; active manifest is refreshed before every batch.
+NOWCAST_RETENTION_ENABLED=true enables once-per-day cleanup after good ingestion.
+Set it false to stop future cleanup. No broad R2 nowcast/ lifecycle is safe: that
+prefix also contains private history. Deletion is permanent; rollback does not
+restore the retired derived images. Radar observations and verification history
+are not targets. See [November evidence](NOVEMBER_RELIABILITY.md).
 
 Pages/Worker: redeploy the prior Git SHA. Worker: revert and dispatch once; idempotency skips existing objects. R2: restore `frames.json` from the previous workflow log/staging copy. Target RTO/RPO are in `SLO.md`. No v1 database exists; if Phase 2 adds one, automated daily backups plus a quarterly isolated restore test become a release gate.
 

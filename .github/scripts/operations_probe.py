@@ -79,8 +79,30 @@ def collect_checks(
         started = time.perf_counter()
         try:
             code = operation() or "ok"
-        except (Exception, SystemExit):
+        except (Exception, SystemExit) as error:
             code = "probe-failed"
+            # Stable, non-secret diagnostics instead of swallowing the cause of
+            # every incident into an opaque probe-failed. Thresholds unchanged.
+            message = str(error)
+            if name == "performance":
+                if message.startswith("Live precipitation probe did not use"):
+                    code = "radar-unavailable"
+                elif message.startswith("Point forecast cache did not produce"):
+                    code = "cache-no-hit"
+                elif message.startswith("Cached point forecast is too slow"):
+                    code = "cache-slow"
+                elif "telemetry" in message:
+                    code = "telemetry-invalid"
+            print(
+                json.dumps(
+                    {
+                        "event": "operations.check.failed",
+                        "check": name,
+                        "code": code,
+                        "exceptionType": type(error).__name__,
+                    }
+                )
+            )
         checks.append(
             {
                 "name": name,

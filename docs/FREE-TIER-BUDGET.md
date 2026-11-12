@@ -1,5 +1,12 @@
 # Free-tier budget
 
+12 November 2026: recent maximum R2 payload reached **10.42 GB** (56,951 objects),
+up from 8.21 GB on 30 October. Owner approved only retired derived nowcast WebPs
+older than 48 hours, with active-image protection and a reviewed dry-run. No broad
+nowcast/ lifecycle or paid upgrade. Storage snapshots are not GB-month billing;
+existing metered R2 cannot be guaranteed cost-free by this cleanup. See
+[November measurements and implementation](NOVEMBER_RELIABILITY.md).
+
 30 October 2026 operations sprint: account-wide R2 read-only analytics returned
 287,892 operations (all action types, 1 October 00:00–30 October 15:00 UTC).
 Monitoring reuses existing cron/public Actions and two small fixed objects, adding
@@ -42,7 +49,7 @@ Class A and 10 million Class B operations were rechecked against
 - Worker keeps 13 frames (60 minutes at 5-minute cadence), seeds stateless runs from the R2 manifest, and uploads only new immutable frames before replacing the manifest. R2 expires `frames/` objects after 48 hours.
 - Frame names are immutable and CDN-cacheable for one year; `frames.json` is cached for 60 seconds with 5-minute stale-while-revalidate.
 - Twelve short-lived +5…+60 minute optical-flow frames replace the prior nowcast on each successful radar run. The compact risk grid avoids loading full images in the minute alert scan.
-- Forecast coordinates are coalesced to a 0.01° model grid, cached at the edge for 10 minutes, and stored as last-known-good R2 responses. Direct DMI EDR is primary; after a 1.5-second head start, Open-Meteo's DMI distribution hedges slow or failed DMI requests.
+- Forecast coordinates are coalesced to a 0.01° model grid, cached at the edge for 10 minutes, and stored as last-known-good R2 responses. Direct DMI EDR is primary; after a 400 ms head start, Open-Meteo's DMI distribution hedges slow or failed DMI requests. Concurrent identical cold model requests share one operation within an isolate, not a global lock.
 - Next-hour precipitation fetches a 3×3 radar neighbourhood through three small R2 byte-range reads at the selected coordinate. The combined response is edge-cached for 60 seconds on a 0.001° point grid, and a cached 0.01° HARMONIE response fills only intervals without usable radar coverage; the UI labels the source per interval.
 - Cloudflare Cron checks R2 every minute and only dispatches ingestion when the newest observation is over 20 minutes old. An eight-minute R2-backed cooldown prevents duplicate recovery dispatches. GitHub's schedules remain recovery triggers rather than the sole production clock.
 - Location search is restricted to Denmark, limited to six results, debounced in the browser, cached for 24 hours, and reverse lookups are cached for seven days. Photon remains an optional no-SLA dependency rather than a prerequisite for weather data.

@@ -9,6 +9,7 @@ import {
   receiveOperationsReport,
   scheduleOperations,
 } from "./operations";
+import { coalesceResponse } from "./singleFlight";
 
 interface Env {
   RADAR: R2Bucket;
@@ -39,7 +40,7 @@ const radarDispatchCooldownMs = 8 * 60 * 1000;
 const radarDispatchStateKey = "scheduler/radar-dispatch.json";
 const locationCacheSeconds = 24 * 60 * 60;
 const reverseLocationCacheSeconds = 7 * 24 * 60 * 60;
-const dmiPrimaryHeadStartMs = 1_500;
+const dmiPrimaryHeadStartMs = 400;
 
 type WeatherProvider = "dmi-edr" | "open-meteo-dmi";
 
@@ -203,11 +204,7 @@ interface ForecastPayload {
 type RainIntensity = "none" | "trace" | "light" | "moderate" | "heavy";
 type RainPointSource = "radar-nowcast" | "harmonie";
 type RainEtaStatus =
-  | "dry"
-  | "weak-echo"
-  | "raining"
-  | "expected"
-  | "intermittent";
+  "dry" | "weak-echo" | "raining" | "expected" | "intermittent";
 type RainEtaConfidenceLevel = "unknown" | "low" | "medium" | "high";
 type RainEtaSource = "radar-nowcast" | "harmonie" | "mixed";
 
@@ -266,8 +263,7 @@ interface PointRiskMetadata {
   generatedAt: string;
   basedOnObservedAt: string;
   method:
-    | "adaptive-optical-flow-persistence"
-    | "dense-optical-flow-extrapolation";
+    "adaptive-optical-flow-persistence" | "dense-optical-flow-extrapolation";
   bounds: [number, number, number, number];
   width: number;
   height: number;
@@ -1010,7 +1006,15 @@ async function fetchDmiForecast(
   });
 }
 
-async function refreshForecast(
+function refreshForecast(
+  ...args: Parameters<typeof buildForecastResponse>
+): Promise<Response> {
+  return coalesceResponse(args[4].RADAR, `forecast:${args[2].url}`, () =>
+    buildForecastResponse(...args),
+  );
+}
+
+async function buildForecastResponse(
   latitude: number,
   longitude: number,
   cacheKey: Request,
@@ -1045,7 +1049,7 @@ async function refreshForecast(
   const response = new Response(body, {
     headers: forecastHeaders("MISS", telemetry),
   });
-  await Promise.all([
+  const writeThrough = Promise.all([
     edgeCache.put(cacheKey, response.clone()),
     env.RADAR.put(persistentKey, body, {
       httpMetadata: {
@@ -1054,10 +1058,16 @@ async function refreshForecast(
       },
     }),
   ]);
+  context.waitUntil(
+    writeThrough.catch((error) =>
+      console.error("forecast.cache.persist-failed", { error }),
+    ),
+  );
   if (backgroundDmi) {
     context.waitUntil(
       backgroundDmi
         .then(async (dmiPayload) => {
+          await writeThrough.catch(() => undefined);
           if (!dmiPayload.points.length)
             throw new Error("Direct DMI background refresh returned no points");
           const dmiBody = JSON.stringify(dmiPayload);
@@ -1138,8 +1148,7 @@ async function forecast(
     headers.set("X-WetMap-Cache", "HIT");
     const telemetry: RequestTelemetry = {
       provider: (headers.get("X-WetMap-Provider") ?? undefined) as
-        | WeatherProvider
-        | undefined,
+        WeatherProvider | undefined,
       fallback: (headers.get("X-WetMap-Fallback") ??
         undefined) as RequestTelemetry["fallback"],
       cacheMs: elapsed(cacheStartedAt),
@@ -1663,7 +1672,15 @@ async function fetchOpenMeteoPrecipitation(
   };
 }
 
-async function refreshPrecipitation(
+function refreshPrecipitation(
+  ...args: Parameters<typeof buildPrecipitationResponse>
+): Promise<Response> {
+  return coalesceResponse(args[4].RADAR, `precipitation:${args[2].url}`, () =>
+    buildPrecipitationResponse(...args),
+  );
+}
+
+async function buildPrecipitationResponse(
   latitude: number,
   longitude: number,
   cacheKey: Request,
@@ -1693,7 +1710,7 @@ async function refreshPrecipitation(
   const response = new Response(body, {
     headers: precipitationHeaders("MISS", telemetry),
   });
-  await Promise.all([
+  const writeThrough = Promise.all([
     edgeCache.put(cacheKey, response.clone()),
     env.RADAR.put(persistentKey, body, {
       httpMetadata: {
@@ -1702,10 +1719,16 @@ async function refreshPrecipitation(
       },
     }),
   ]);
+  context.waitUntil(
+    writeThrough.catch((error) =>
+      console.error("precipitation.cache.persist-failed", { error }),
+    ),
+  );
   if (backgroundDmi) {
     context.waitUntil(
       backgroundDmi
         .then(async (dmiPayload) => {
+          await writeThrough.catch(() => undefined);
           const dmiBody = JSON.stringify(dmiPayload);
           const dmiTelemetry: RequestTelemetry = {
             provider: "dmi-edr",
@@ -1783,8 +1806,7 @@ async function modelPrecipitation(
     headers.set("X-WetMap-Cache", "HIT");
     const telemetry: RequestTelemetry = {
       provider: (headers.get("X-WetMap-Provider") ?? undefined) as
-        | WeatherProvider
-        | undefined,
+        WeatherProvider | undefined,
       fallback: (headers.get("X-WetMap-Fallback") ??
         undefined) as RequestTelemetry["fallback"],
       cacheMs: elapsed(cacheStartedAt),

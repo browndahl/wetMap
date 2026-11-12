@@ -172,6 +172,14 @@ or archive-retention change. Dependency migration and V6 remain separate work.
 
 ## Earlier completed work relevant to this programme
 
+12 November reliability/performance: repaired dependency lint, bounded R2 transport,
+nonblocking cache persistence, isolate-local cold-request coalescing and map buffer
+reuse; added stable monitoring failure causes and bundle regression budgets.
+Owner separately approved only derived nowcast images older than 48h, with active
+protection and a reviewed dry-run. [Evidence and limitations](NOVEMBER_RELIABILITY.md),
+[ADR 0010](adr/0010-november-reliability-performance.md). This does not complete V6,
+physical-device or independent full acceptance testing.
+
 - `004e129`: delayed/expired rain notification protections.
 - `4f4eab2`: V5 recall-calibrated challenger in shadow mode.
 - `4d6b894`: V4 probability-gated challenger in shadow mode.
