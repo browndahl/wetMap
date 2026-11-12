@@ -685,6 +685,7 @@ async function precisionObservatory(
     };
     geographicConsistency?: unknown;
     verificationBatch?: unknown;
+    comparisonAudit?: unknown;
   };
   const headers = new Headers(qualityResponse.headers);
   headers.delete("Content-Length");
@@ -701,6 +702,9 @@ async function precisionObservatory(
       shadowCandidates: report.shadowCandidates ?? [],
       ...(report.verificationBatch
         ? { verificationBatch: report.verificationBatch }
+        : {}),
+      ...(report.comparisonAudit
+        ? { comparisonAudit: report.comparisonAudit }
         : {}),
       groundGauge: report.groundGauge
         ? {

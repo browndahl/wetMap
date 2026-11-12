@@ -212,3 +212,24 @@ def test_current_report_version_never_relabels_older_pair_cohorts(tmp_path):
     assert report["availablePairCount"] == 2
     assert list(report["cohorts"]) == ["test-v1"]
     assert report["reproductionStatus"] == "blocked"
+
+
+def test_overlapping_snapshots_cannot_manufacture_the_evidence_floor(tmp_path):
+    state, manifest, public = fixture(tmp_path)
+    report = MODULE.audit(state, manifest, public, tmp_path, minimum_pairs=3, include_pair_ids=True)
+    combined = MODULE.combine_audits([report, report], minimum_pairs=3)
+    assert combined["pairCount"] == 2 and combined["overlappingPairCount"] == 2
+    assert combined["reproductionStatus"] == "blocked"
+
+
+def test_disjoint_snapshots_close_same_floor_but_never_hide_a_bad_snapshot(tmp_path):
+    state, manifest, public = fixture(tmp_path)
+    first = MODULE.audit(state, manifest, public, tmp_path, minimum_pairs=3, include_pair_ids=True)
+    second = dict(first)
+    second["verifiedPairIds"] = [
+        ["different-cohort", *identity[1:]] for identity in first["verifiedPairIds"]
+    ]
+    combined = MODULE.combine_audits([first, second], minimum_pairs=3)
+    assert combined["pairCount"] == 4 and combined["reproductionStatus"] == "pass"
+    second = {**second, "reproductionStatus": "fail", "mismatchCount": 1}
+    assert MODULE.combine_audits([first, second], minimum_pairs=3)["reproductionStatus"] == "fail"

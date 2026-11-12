@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -9,6 +10,8 @@ from typing import Any, Iterable
 
 import numpy as np
 from PIL import Image
+
+from .comparison import COMPARISON_VERSION, compare_shared_coverage, shared_coverage_summary
 
 from .nowcast import (
     ALERT_MINIMUM_CSI,
@@ -210,6 +213,7 @@ def verify_previous_nowcast(
         score for score in threshold_scores if score["thresholdDbz"] == SIGNIFICANT_ECHO_DBZ
     )
     shadow_candidate_scores: list[dict[str, Any]] = []
+    shared_inputs = []
     for shadow_candidate in metadata.get("shadowCandidates", []):
         shadow_frame = next(
             (
@@ -359,6 +363,20 @@ def verify_previous_nowcast(
                 ),
             }
         )
+        shared_inputs.append(
+            {
+                "candidateId": shadow_candidate["candidateId"],
+                "leadMinutes": int(shadow_frame["leadMinutes"]),
+                "predicted": candidate_cube[..., shadow_index],
+                "incumbent": cube[..., shadow_index],
+                "probability": probability_cube[..., shadow_index]
+                if probability_cube is not None
+                else None,
+                "probabilityThresholdDbz": int(
+                    shadow_candidate.get("probabilityThresholdDbz", SIGNIFICANT_ECHO_DBZ)
+                ),
+            }
+        )
     result = {
         "verifiedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "basedOnObservedAt": metadata["basedOnObservedAt"],
@@ -373,6 +391,21 @@ def verify_previous_nowcast(
     }
     if shadow_candidate_scores:
         result["shadowCandidateScores"] = shadow_candidate_scores
+    try:
+        result["sharedCoverageComparison"] = compare_shared_coverage(
+            predicted,
+            persistence,
+            actual,
+            shared_inputs,
+        )
+    except Exception:
+        # A diagnostic failure must not discard an otherwise valid legacy score
+        # or suppress fresh radar. Expose failure, never invent a successful v2 row.
+        logging.exception("nowcast.comparison-audit.failed")
+        result["comparisonAuditError"] = {
+            "comparisonVersion": COMPARISON_VERSION,
+            "code": "invalid-data",
+        }
     return result
 
 
@@ -883,6 +916,7 @@ def _report(history: list[dict[str, Any]], recent_limit: int | None = None) -> d
             _observatory_summary(active_history, threshold) for threshold in (5, 10, 15, 20)
         ],
         "results": result_slice,
+        "comparisonAudit": shared_coverage_summary(history),
     }
 
 
@@ -923,7 +957,12 @@ def public_verification_report(
         if _algorithm_version(entry) == active_version
     ]
     report["results"] = [
-        {key: value for key, value in entry.items() if key != "shadowCandidateScores"}
+        {
+            key: value
+            for key, value in entry.items()
+            if key
+            not in {"shadowCandidateScores", "sharedCoverageComparison", "comparisonAuditError"}
+        }
         for entry in active_results[-recent_results:]
     ]
     report["returnedResultCount"] = len(report["results"])

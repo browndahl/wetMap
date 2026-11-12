@@ -1,0 +1,13 @@
+{
+  "mode": "local-verifier-vs-independent-oracle",
+  "comparisonVersion": "shared-coverage-v2",
+  "rawPairs": 85,
+  "scoreChecks": 350,
+  "candidateComparisons": 60,
+  "brierChecks": 36,
+  "mismatches": 0,
+  "secondaryBytes": 135664,
+  "maximumSecondaryBytes": 6543,
+  "publishedV2LedgerChecked": false,
+  "promotionEnabled": false
+}
