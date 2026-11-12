@@ -1,6 +1,6 @@
 # WetMap system context
 
-Last updated: 2026-10-30
+Last updated: 2026-11-12
 
 ## Purpose
 
@@ -63,6 +63,11 @@ diagnostic execution succeeds to avoid duplicate mail. See ADR 0009 and
 
 The production API is the edge Worker. The .NET API remains the canonical portable
 local implementation; see ADR 0002.
+
+Browser caches, data-centre-local Worker Cache API entries, isolate-local cold-model
+coalescing and shared R2 last-known-good responses form the current cache hierarchy.
+There is no global distributed lock or Redis service. ADR 0011 defers Redis until
+representative traffic and an enforced free-only budget demonstrate a benefit.
 
 ## Radar and nowcast data flow
 
@@ -156,10 +161,26 @@ re-approved.
 
 ## Current status and known constraints
 
-The release at the start of the V6 programme is commit `004e129`. Radar ingestion,
+The historical release at the start of the V6 programme was commit `004e129`.
+The November reliability release is `890d7a6` (PR #25): bounded R2 transport,
+nonblocking model-cache persistence, readiness-gated radar playback, stable image
+buffers and strictly allow-listed retirement of inactive derived nowcast WebPs
+older than 48 hours. Active images and verification history are protected. No
+paid upgrade was activated. See `NOVEMBER_RELIABILITY.md` and ADR 0010.
+
+Radar ingestion,
 map rendering, point forecasts, automatic radar playback, quality observability and
 background notification expiry are operational. Forecast quality remains the primary
-bottleneck: only the +45-minute observatory window currently passes every gate.
+bottleneck; current per-horizon status must be read from the quality API, not the
+historical baseline's claim about which horizon passed then.
 
-The Phase 0 measurement and ranked findings are in `BASELINE.md`. That document takes
-precedence over older point-in-time claims in `TEST-RESULTS.md`.
+The 12 November raw-data audit found latest-observation-only verification and
+different valid masks for forecast/persistence. A local independent audit reproduced
+21 published pairs without metric mismatches, but the 50-pair requirement remains
+BLOCKED. Common-mask results are diagnostic only; no metric, gate, history or
+forecast was changed. See `PRECISION_AUDIT_2026-11-12.md` for evidence and the approval
+boundary before changing the production comparison policy.
+
+The original Phase 0 measurement and ranked findings are in `BASELINE.md`. Dated
+audit/reliability checkpoints qualify that historical baseline; neither they nor
+`TEST-RESULTS.md` establish completion of the independent full acceptance programme.
