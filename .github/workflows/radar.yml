@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 8
     environment: production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with: { python-version: "3.12", cache: pip }
       - run: pip install -e apps/worker
