@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -195,11 +196,25 @@ def test_observatory_uses_horizon_windows_and_requires_rain_evidence(
         "algorithmVersion": ALGORITHM_VERSION,
         "thresholdScores": [],
     }
-    dry_results = [
-        {**base, "leadMinutes": lead}
-        for lead in (10, 20, 25, 35, 40, 50, 55, 60)
-        for _sample in range(6)
-    ]
+
+    def distinct_samples(values):
+        results = []
+        for lead in (10, 20, 25, 35, 40, 50, 55, 60):
+            for sample in range(6):
+                origin = datetime(2026, 10, 12, 10, sample * 5, tzinfo=timezone.utc)
+                valid = origin + timedelta(minutes=lead)
+                results.append(
+                    {
+                        **values,
+                        "leadMinutes": lead,
+                        "basedOnObservedAt": origin.isoformat(),
+                        "predictedAt": valid.isoformat(),
+                        "observedAt": valid.isoformat(),
+                    }
+                )
+        return results
+
+    dry_results = distinct_samples(base)
 
     dry_report = append_verification_history(tmp_path / "dry-history.json", dry_results)
 
@@ -222,11 +237,7 @@ def test_observatory_uses_horizon_windows_and_requires_rain_evidence(
         "criticalSuccessIndexSkill": 0.2,
         "dbzMeanAbsoluteError": 2.0,
     }
-    wet_results = [
-        {**wet_base, "leadMinutes": lead}
-        for lead in (10, 20, 25, 35, 40, 50, 55, 60)
-        for _sample in range(6)
-    ]
+    wet_results = distinct_samples(wet_base)
     wet_report = append_verification_history(tmp_path / "wet-history.json", wet_results)
 
     assert wet_report["observatory"]["overallStatus"] == "verified"

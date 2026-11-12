@@ -1,0 +1,47 @@
+{
+  "initial": {
+    "event": "nowcast.verification.batch",
+    "scope": "retained-valid-time-pairs",
+    "eligiblePairs": 42,
+    "alreadyVerified": 21,
+    "planned": 21,
+    "attempted": 21,
+    "completed": 21,
+    "errors": 0,
+    "deferred": 0,
+    "rejectedForecasts": 0,
+    "budgetExhausted": false,
+    "cubeDownloads": 6,
+    "observationDownloads": 6,
+    "durationMs": 668,
+    "coverageFraction": 1,
+    "complete": true
+  },
+  "newPairLeads": {
+    "5": 6,
+    "15": 5,
+    "25": 4,
+    "35": 3,
+    "45": 2,
+    "55": 1
+  },
+  "retry": {
+    "event": "nowcast.verification.batch",
+    "scope": "retained-valid-time-pairs",
+    "eligiblePairs": 42,
+    "alreadyVerified": 42,
+    "planned": 0,
+    "attempted": 0,
+    "completed": 0,
+    "errors": 0,
+    "deferred": 0,
+    "rejectedForecasts": 0,
+    "budgetExhausted": false,
+    "cubeDownloads": 0,
+    "observationDownloads": 0,
+    "durationMs": 1,
+    "coverageFraction": 1,
+    "complete": true
+  },
+  "addedSerializedBytes": 43191
+}

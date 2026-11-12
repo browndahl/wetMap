@@ -50,6 +50,27 @@ def _ratio(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator, 4) if denominator else None
 
 
+def verification_identity(entry: dict[str, Any]) -> tuple[Any, ...]:
+    """Identity of an immutable scored pair, independent of verification run time."""
+
+    def instant(value):
+        try:
+            parsed = _parse_time(value)
+            if parsed.tzinfo is None:
+                raise ValueError("Timestamp must be timezone-aware")
+            return parsed.astimezone(timezone.utc).isoformat()
+        except (AttributeError, TypeError, ValueError):
+            return str(value)
+
+    return (
+        entry.get("algorithmVersion") or LEGACY_ALGORITHM_VERSION,
+        instant(entry.get("basedOnObservedAt")),
+        instant(entry.get("predictedAt")),
+        instant(entry.get("observedAt")),
+        entry.get("leadMinutes"),
+    )
+
+
 def _categorical_scores(
     predicted: np.ndarray,
     actual: np.ndarray,
@@ -877,25 +898,14 @@ def append_verification_history(
         except (json.JSONDecodeError, AttributeError):
             history = []
     incoming = result if isinstance(result, list) else [result]
-    incoming_keys = {
-        (
-            entry["basedOnObservedAt"],
-            entry["observedAt"],
-            _algorithm_version(entry),
-        )
-        for entry in incoming
-    }
-    history = [
-        entry
-        for entry in history
-        if (
-            entry.get("basedOnObservedAt"),
-            entry.get("observedAt"),
-            _algorithm_version(entry),
-        )
-        not in incoming_keys
-    ]
-    history.extend(incoming)
+    # Never replace an already recorded score during a retry/backfill. A distinct
+    # algorithm/valid time/lead is a distinct pair, not a reason to relabel history.
+    seen = {verification_identity(entry) for entry in history}
+    for entry in incoming:
+        key = verification_identity(entry)
+        if key not in seen:
+            history.append(entry)
+            seen.add(key)
     history.sort(key=lambda entry: (entry["observedAt"], entry["leadMinutes"]))
     return _report(history[-maximum_entries:])
 

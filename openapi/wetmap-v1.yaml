@@ -578,6 +578,38 @@ components:
           minItems: 1
           maxItems: 4
           items: { $ref: "#/components/schemas/RainForecastPoint" }
+    VerificationBatch:
+      type: object
+      required:
+        [
+          scope,
+          eligiblePairs,
+          alreadyVerified,
+          planned,
+          attempted,
+          completed,
+          errors,
+          deferred,
+          rejectedForecasts,
+          budgetExhausted,
+          durationMs,
+          coverageFraction,
+          complete,
+        ]
+      properties:
+        scope: { type: string, const: retained-valid-time-pairs }
+        eligiblePairs: { type: integer, minimum: 0 }
+        alreadyVerified: { type: integer, minimum: 0 }
+        planned: { type: integer, minimum: 0 }
+        attempted: { type: integer, minimum: 0 }
+        completed: { type: integer, minimum: 0 }
+        errors: { type: integer, minimum: 0 }
+        deferred: { type: integer, minimum: 0 }
+        rejectedForecasts: { type: integer, minimum: 0 }
+        budgetExhausted: { type: boolean }
+        durationMs: { type: integer, minimum: 0 }
+        coverageFraction: { type: [number, "null"], minimum: 0, maximum: 1 }
+        complete: { type: boolean }
     NowcastQuality:
       type: object
       required:
@@ -669,6 +701,7 @@ components:
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
         geographicConsistency:
           { $ref: "#/components/schemas/GeographicConsistencyQuality" }
+        verificationBatch: { $ref: "#/components/schemas/VerificationBatch" }
         results:
           type: array
           maxItems: 288
@@ -760,6 +793,7 @@ components:
         groundGauge: { $ref: "#/components/schemas/GroundGaugeQuality" }
         geographicConsistency:
           { $ref: "#/components/schemas/GeographicConsistencyQuality" }
+        verificationBatch: { $ref: "#/components/schemas/VerificationBatch" }
     ShadowCandidateQuality:
       type: object
       required:
