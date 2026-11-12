@@ -172,6 +172,14 @@ or archive-retention change. Dependency migration and V6 remain separate work.
 
 ## Earlier completed work relevant to this programme
 
+12 November precision audit / Redis decision: added independent raw-grid scoring
+reconstruction and mask-comparison diagnostics. 7 cubes / 13 observations gave 42
+available pairs, 21 public matches, zero score mismatches, and identical persistence
+inputs in 7/7 cubes. The unchanged 50-pair criterion is **BLOCKED**, not passed.
+Found latest-observation-only verification and unequal comparison masks; no model,
+history, scoring definition or gate was changed. Redis deferred, no service created.
+[Audit checkpoint](PRECISION_AUDIT_2026-11-12.md), [ADR 0011](adr/0011-defer-redis-cache.md).
+
 12 November reliability/performance: repaired dependency lint, bounded R2 transport,
 nonblocking cache persistence, isolate-local cold-request coalescing and map buffer
 reuse; added stable monitoring failure causes and bundle regression budgets.
