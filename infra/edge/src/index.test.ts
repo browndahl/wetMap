@@ -217,6 +217,16 @@ describe("radar nowcast edge endpoint", () => {
       coverageFraction: 1,
       complete: true,
     };
+    const comparisonAudit = {
+      comparisonVersion: "shared-coverage-v2",
+      mode: "shadow-only",
+      canAffectForecasts: false,
+      promotionEnabled: false,
+      sampleCount: 0,
+      failedPairCount: 0,
+      thresholdDbz: 20,
+      cohorts: [],
+    };
     r2.values.set(
       "nowcast/verification.json",
       JSON.stringify({
@@ -227,6 +237,7 @@ describe("radar nowcast edge endpoint", () => {
         sampleCount: 42,
         totalSampleCount: 42,
         verificationBatch: batch,
+        comparisonAudit,
       }),
     );
     for (const endpoint of ["quality", "observatory"]) {
@@ -236,10 +247,12 @@ describe("radar nowcast edge endpoint", () => {
         context,
       );
       expect(response.status).toBe(200);
-      expect(
-        ((await response.json()) as { verificationBatch: unknown })
-          .verificationBatch,
-      ).toEqual(batch);
+      const body = (await response.json()) as {
+        verificationBatch: unknown;
+        comparisonAudit: unknown;
+      };
+      expect(body.verificationBatch).toEqual(batch);
+      expect(body.comparisonAudit).toEqual(comparisonAudit);
     }
   });
 

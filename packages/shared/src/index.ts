@@ -266,6 +266,61 @@ export interface VerificationBatchReport {
   complete: boolean;
 }
 
+export interface SharedCoverageScore {
+  validPixels: number;
+  hits: number;
+  misses: number;
+  falseAlarms: number;
+  correctNegatives: number;
+  precision: number | null;
+  recall: number | null;
+  criticalSuccessIndex: number | null;
+  falseAlarmRatio: number | null;
+  meanPairDbzMAE: number | null;
+}
+
+export interface SharedCoverageLead {
+  leadMinutes: number;
+  sampleCount: number;
+  forecast: SharedCoverageScore;
+  persistence: SharedCoverageScore;
+  meanPairSkillOverPersistence: number | null;
+  coverage: {
+    observedValidPixels: number;
+    commonValidPixels: number;
+    commonFractionOfObserved: number | null;
+    minimumPairFraction: number | null;
+  };
+  incumbent?: SharedCoverageScore;
+  meanPairImprovementOverIncumbent?: number | null;
+  probability?: {
+    sampleCount: number;
+    meanBrierScore: number | null;
+    meanPersistenceBrierScore: number | null;
+    meanBrierSkillScore: number | null;
+    thresholdMismatchCount: number;
+  };
+}
+
+export interface SharedCoverageAudit {
+  comparisonVersion: "shared-coverage-v2";
+  mode: "shadow-only";
+  thresholdDbz: 20;
+  canAffectForecasts: false;
+  promotionEnabled: false;
+  sampleCount: number;
+  failedPairCount: number;
+  cohorts: Array<{
+    algorithmVersion: string;
+    sampleCount: number;
+    byLeadMinutes: SharedCoverageLead[];
+    candidates: Array<{
+      candidateId: string;
+      byLeadMinutes: SharedCoverageLead[];
+    }>;
+  }>;
+}
+
 export interface NowcastQualityResponse {
   schemaVersion: number;
   generatedAt: string;
@@ -281,6 +336,7 @@ export interface NowcastQualityResponse {
   groundGauge?: GroundGaugeQuality;
   geographicConsistency?: GeographicConsistencyQuality;
   verificationBatch?: VerificationBatchReport;
+  comparisonAudit?: SharedCoverageAudit;
 }
 
 export interface PrecisionObservatoryResponse {
@@ -296,6 +352,7 @@ export interface PrecisionObservatoryResponse {
   groundGauge?: GroundGaugeQuality;
   geographicConsistency?: GeographicConsistencyQuality;
   verificationBatch?: VerificationBatchReport;
+  comparisonAudit?: SharedCoverageAudit;
 }
 
 export interface ForecastPoint {

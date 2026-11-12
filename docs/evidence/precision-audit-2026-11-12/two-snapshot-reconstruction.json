@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 2,
+  "scope": "deduplicated-multi-snapshot-raw-reconstruction",
+  "generatedAt": "2026-11-12T21:32:23.530960+00:00",
+  "minimumPairs": 50,
+  "pairCount": 64,
+  "snapshotCount": 2,
+  "overlappingPairCount": 0,
+  "uniqueObservedTimes": 18,
+  "uniqueForecastOrigins": 12,
+  "verifiedPairIdsSha256": "a85f92a82d0f981f147f3da68ab612faffa54bb0131470d221627de41683ad0b",
+  "reproductionStatus": "pass",
+  "mismatchCount": 0,
+  "blockedReasons": [],
+  "snapshots": [
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-12T21:32:23.118287+00:00",
+      "publicReportGeneratedAt": "2026-11-12T20:26:43.640676Z",
+      "stateGeneratedAt": "2026-11-12T20:26:24.806422Z",
+      "reproductionStatus": "blocked",
+      "minimumPairs": 50,
+      "pairCount": 21,
+      "availablePairCount": 42,
+      "scoreComparisons": 126,
+      "uniqueObservedTimes": 12,
+      "publishedUniqueObservedTimes": 6,
+      "uniqueForecastOrigins": 6,
+      "blockedReasons": ["minimum-pairs"],
+      "mismatchCount": 0,
+      "mismatches": [],
+      "persistenceIdentity": {
+        "checked": 7,
+        "missing": 0,
+        "mismatched": 0
+      },
+      "skipped": {
+        "missing-public-pair": 21,
+        "missing-observation": 42
+      },
+      "coverageComparison": {
+        "differentMaskPairs": 27,
+        "maximumMaskDifferencePixels": 1009,
+        "diagnosticOnly": true
+      },
+      "cohorts": {
+        "adaptive-optical-flow-persistence-v1": {
+          "5": {
+            "pairCount": 6,
+            "publishedPairCount": 0,
+            "differentMaskPairs": 0,
+            "meanIndependentMaskSkill": 0.0,
+            "meanCommonMaskSkill": 0.0,
+            "meanCommonCoverageFractionOfObserved": 0.3937145133977488
+          },
+          "10": {
+            "pairCount": 6,
+            "publishedPairCount": 6,
+            "differentMaskPairs": 6,
+            "meanIndependentMaskSkill": 0.2973793699558335,
+            "meanCommonMaskSkill": 0.29476528181702755,
+            "meanCommonCoverageFractionOfObserved": 0.9871371671438413
+          },
+          "15": {
+            "pairCount": 5,
+            "publishedPairCount": 0,
+            "differentMaskPairs": 0,
+            "meanIndependentMaskSkill": 0.0,
+            "meanCommonMaskSkill": 0.0,
+            "meanCommonCoverageFractionOfObserved": 0.3936746687917123
+          },
+          "20": {
+            "pairCount": 5,
+            "publishedPairCount": 5,
+            "differentMaskPairs": 5,
+            "meanIndependentMaskSkill": 0.26763315485725714,
+            "meanCommonMaskSkill": 0.26067490340321675,
+            "meanCommonCoverageFractionOfObserved": 0.9725186497515125
+          },
+          "25": {
+            "pairCount": 4,
+            "publishedPairCount": 0,
+            "differentMaskPairs": 0,
+            "meanIndependentMaskSkill": 0.0,
+            "meanCommonMaskSkill": 0.0,
+            "meanCommonCoverageFractionOfObserved": 0.393689610518976
+          },
+          "30": {
+            "pairCount": 4,
+            "publishedPairCount": 4,
+            "differentMaskPairs": 4,
+            "meanIndependentMaskSkill": 0.22106950721075386,
+            "meanCommonMaskSkill": 0.2176811836391996,
+            "meanCommonCoverageFractionOfObserved": 0.9565338120780931
+          },
+          "35": {
+            "pairCount": 3,
+            "publishedPairCount": 0,
+            "differentMaskPairs": 3,
+            "meanIndependentMaskSkill": 0.2405516912507705,
+            "meanCommonMaskSkill": 0.2559523007540942,
+            "meanCommonCoverageFractionOfObserved": 0.37472191785370385
+          },
+          "40": {
+            "pairCount": 3,
+            "publishedPairCount": 3,
+            "differentMaskPairs": 3,
+            "meanIndependentMaskSkill": 0.2452983675954532,
+            "meanCommonMaskSkill": 0.24900425774568827,
+            "meanCommonCoverageFractionOfObserved": 0.9482479989909202
+          },
+          "45": {
+            "pairCount": 2,
+            "publishedPairCount": 0,
+            "differentMaskPairs": 2,
+            "meanIndependentMaskSkill": 0.22359245257320404,
+            "meanCommonMaskSkill": 0.23819312732463857,
+            "meanCommonCoverageFractionOfObserved": 0.367143141747186
+          },
+          "50": {
+            "pairCount": 2,
+            "publishedPairCount": 2,
+            "differentMaskPairs": 2,
+            "meanIndependentMaskSkill": 0.1471577460483516,
+            "meanCommonMaskSkill": 0.15721262702632066,
+            "meanCommonCoverageFractionOfObserved": 0.9211594514245951
+          },
+          "55": {
+            "pairCount": 1,
+            "publishedPairCount": 0,
+            "differentMaskPairs": 1,
+            "meanIndependentMaskSkill": 0.08729356252106504,
+            "meanCommonMaskSkill": 0.11032314887930511,
+            "meanCommonCoverageFractionOfObserved": 0.3622372746289471
+          },
+          "60": {
+            "pairCount": 1,
+            "publishedPairCount": 1,
+            "differentMaskPairs": 1,
+            "meanIndependentMaskSkill": 0.04123833156091221,
+            "meanCommonMaskSkill": 0.055692606713014875,
+            "meanCommonCoverageFractionOfObserved": 0.9110942249240122
+          }
+        }
+      },
+      "inputInventory": {
+        "fileCount": 20,
+        "bytes": 6047259
+      },
+      "limitations": [
+        "Overlapping forecast pairs/pixels are not independent weather events; no IID confidence intervals.",
+        "Common-mask skill is an additive diagnostic, not a new production metric or a promotion decision.",
+        "This sample cannot establish seasonal/regional skill or independent published Brier agreement.",
+        "Projected WebP bounds/encoding are checked; ODIM georeprojection is not independently reconstructed.",
+        "No model tuning, archive write, gate change or Redis service is performed."
+      ],
+      "sourceDocuments": {
+        "verification-state.json": {
+          "sha256": "59d8b6cd6508276d9c0c26bea2ad04ee529dec712546e21dde0a5b2012c6afb4"
+        },
+        "frames.json": {
+          "sha256": "268164083ce02f2cfa6161586d064e44ef98d91e5312c986014eecfb74618ea1"
+        },
+        "public-quality.json": {
+          "sha256": "3a1fcc9be68c1e3b452d683f3356df574e2024bb894e8eccba518f1930bded86"
+        }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-12T21:32:23.530532+00:00",
+      "publicReportGeneratedAt": "2026-11-12T21:23:57.534479Z",
+      "stateGeneratedAt": "2026-11-12T21:23:34.418446Z",
+      "reproductionStatus": "blocked",
+      "minimumPairs": 50,
+      "pairCount": 43,
+      "availablePairCount": 43,
+      "scoreComparisons": 258,
+      "uniqueObservedTimes": 12,
+      "publishedUniqueObservedTimes": 12,
+      "uniqueForecastOrigins": 6,
+      "blockedReasons": ["minimum-pairs"],
+      "mismatchCount": 0,
+      "mismatches": [],
+      "persistenceIdentity": {
+        "checked": 7,
+        "missing": 0,
+        "mismatched": 0
+      },
+      "skipped": {
+        "missing-observation": 41
+      },
+      "coverageComparison": {
+        "differentMaskPairs": 27,
+        "maximumMaskDifferencePixels": 1793,
+        "diagnosticOnly": true
+      },
+      "cohorts": {
+        "adaptive-optical-flow-persistence-v1": {
+          "5": {
+            "pairCount": 6,
+            "publishedPairCount": 6,
+            "differentMaskPairs": 0,
+            "meanIndependentMaskSkill": 0.0,
+            "meanCommonMaskSkill": 0.0,
+            "meanCommonCoverageFractionOfObserved": 0.4947371916193512
+          },
+          "10": {
+            "pairCount": 6,
+            "publishedPairCount": 6,
+            "differentMaskPairs": 6,
+            "meanIndependentMaskSkill": 0.3584807566063637,
+            "meanCommonMaskSkill": 0.359106717865918,
+            "meanCommonCoverageFractionOfObserved": 0.9735895474185531
+          },
+          "15": {
+            "pairCount": 6,
+            "publishedPairCount": 6,
+            "differentMaskPairs": 0,
+            "meanIndependentMaskSkill": 0.0,
+            "meanCommonMaskSkill": 0.0,
+            "meanCommonCoverageFractionOfObserved": 0.4947371916193512
+          },
+          "20": {
+            "pairCount": 5,
+            "publishedPairCount": 5,
+            "differentMaskPairs": 5,
+            "meanIndependentMaskSkill": 0.2490331799325544,
+            "meanCommonMaskSkill": 0.2481037649814113,
+            "meanCommonCoverageFractionOfObserved": 0.9413199658692172
+          },
+          "25": {
+            "pairCount": 4,
+            "publishedPairCount": 4,
+            "differentMaskPairs": 0,
+            "meanIndependentMaskSkill": 0.0,
+            "meanCommonMaskSkill": 0.0,
+            "meanCommonCoverageFractionOfObserved": 0.3936771590795896
+          },
+          "30": {
+            "pairCount": 4,
+            "publishedPairCount": 4,
+            "differentMaskPairs": 4,
+            "meanIndependentMaskSkill": 0.12945923425812075,
+            "meanCommonMaskSkill": 0.1320968808305305,
+            "meanCommonCoverageFractionOfObserved": 0.9107379839840184
+          },
+          "35": {
+            "pairCount": 3,
+            "publishedPairCount": 3,
+            "differentMaskPairs": 3,
+            "meanIndependentMaskSkill": 0.11467541903848237,
+            "meanCommonMaskSkill": 0.12400866974903042,
+            "meanCommonCoverageFractionOfObserved": 0.3484244778696417
+          },
+          "40": {
+            "pairCount": 3,
+            "publishedPairCount": 3,
+            "differentMaskPairs": 3,
+            "meanIndependentMaskSkill": 0.12545543053114203,
+            "meanCommonMaskSkill": 0.13354714610080048,
+            "meanCommonCoverageFractionOfObserved": 0.9198054635745377
+          },
+          "45": {
+            "pairCount": 2,
+            "publishedPairCount": 2,
+            "differentMaskPairs": 2,
+            "meanIndependentMaskSkill": 0.08814319727632422,
+            "meanCommonMaskSkill": 0.09267353782597314,
+            "meanCommonCoverageFractionOfObserved": 0.33295148919215056
+          },
+          "50": {
+            "pairCount": 2,
+            "publishedPairCount": 2,
+            "differentMaskPairs": 2,
+            "meanIndependentMaskSkill": 0.04257212908694953,
+            "meanCommonMaskSkill": 0.042042001664421194,
+            "meanCommonCoverageFractionOfObserved": 0.8365628202757627
+          },
+          "55": {
+            "pairCount": 1,
+            "publishedPairCount": 1,
+            "differentMaskPairs": 1,
+            "meanIndependentMaskSkill": 0.029129673070641685,
+            "meanCommonMaskSkill": 0.03370771493515176,
+            "meanCommonCoverageFractionOfObserved": 0.33399741010060763
+          },
+          "60": {
+            "pairCount": 1,
+            "publishedPairCount": 1,
+            "differentMaskPairs": 1,
+            "meanIndependentMaskSkill": -0.00363194214158258,
+            "meanCommonMaskSkill": 0.0007974481658692186,
+            "meanCommonCoverageFractionOfObserved": 0.8386688599266101
+          }
+        }
+      },
+      "inputInventory": {
+        "fileCount": 20,
+        "bytes": 6586346
+      },
+      "limitations": [
+        "Overlapping forecast pairs/pixels are not independent weather events; no IID confidence intervals.",
+        "Common-mask skill is an additive diagnostic, not a new production metric or a promotion decision.",
+        "This sample cannot establish seasonal/regional skill or independent published Brier agreement.",
+        "Projected WebP bounds/encoding are checked; ODIM georeprojection is not independently reconstructed.",
+        "No model tuning, archive write, gate change or Redis service is performed."
+      ],
+      "sourceDocuments": {
+        "verification-state.json": {
+          "sha256": "58bf07932912550a3be56a9dc2cc8425416b6b730d6bd465f1026d4e9ef6ce6f"
+        },
+        "frames.json": {
+          "sha256": "1d1466eefefce8a3a417c7c57621961fe5f33ee8fd5b9b2e3bfd6c27a0da1116"
+        },
+        "public-quality.json": {
+          "sha256": "35e57ba225e01cb316ce4ea6bc81c7fb959c0941a118b7df6e872d20023a012e"
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "The 50-pair floor is applied to the deduplicated union, not lowered for any snapshot.",
+    "Overlapping pairs/pixels are not independent weather events; no IID confidence intervals.",
+    "Covered metrics: counts, precision/recall/CSI, dBZ MAE and persistence skill; not full published Brier acceptance."
+  ]
+}

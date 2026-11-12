@@ -172,6 +172,15 @@ or archive-retention change. Dependency migration and V6 remain separate work.
 
 ## Earlier completed work relevant to this programme
 
+12 November shared-coverage-v2: added an explicitly shadow-only, algorithm-separated
+comparison against persistence and the exact archived operational incumbent, with
+same-mask probability evidence and visible coverage loss. Legacy gates and scores
+are unchanged. Two raw snapshots now reconstruct 64 unique published legacy pairs
+without checked metric mismatches; the original 21-pair checkpoint below remains
+historically blocked. A separate 85-pair local v2 oracle replay has zero mismatches,
+but is not a published-v2 or full independent acceptance pass.
+[Contract and evidence](SHARED_COVERAGE_V2_2026-11-12.md).
+
 12 November verification completeness: owner approved proceeding after the audit.
 Implemented bounded all-retained-observation planning/execution, canonical pair
 identity, first-wins history preservation and public retained-window accounting.

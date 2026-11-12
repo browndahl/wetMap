@@ -49,17 +49,17 @@ diagnostic execution succeeds to avoid duplicate mail. See ADR 0009 and
 
 ## Repository layout
 
-| Path | Responsibility |
-| --- | --- |
-| `apps/web` | React 19, TypeScript, Vite, MapLibre, TanStack Query, Zustand and PWA UI |
-| `apps/worker` | Python DMI radar ingestion, processing, nowcasting and verification |
-| `apps/api` | Portable/local .NET 10 API used by Compose and integration tests |
-| `infra/edge` | Production Cloudflare Worker API, caching, scheduler and Web Push |
-| `packages/shared` | Shared TypeScript contracts and design tokens |
-| `openapi/wetmap-v1.yaml` | Public API contract |
-| `infra/tofu` | Cloudflare infrastructure definitions |
-| `.github/workflows` | CI, security, deploy, radar, synthetic monitoring and release |
-| `docs/adr` | Accepted architecture decisions |
+| Path                     | Responsibility                                                           |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `apps/web`               | React 19, TypeScript, Vite, MapLibre, TanStack Query, Zustand and PWA UI |
+| `apps/worker`            | Python DMI radar ingestion, processing, nowcasting and verification      |
+| `apps/api`               | Portable/local .NET 10 API used by Compose and integration tests         |
+| `infra/edge`             | Production Cloudflare Worker API, caching, scheduler and Web Push        |
+| `packages/shared`        | Shared TypeScript contracts and design tokens                            |
+| `openapi/wetmap-v1.yaml` | Public API contract                                                      |
+| `infra/tofu`             | Cloudflare infrastructure definitions                                    |
+| `.github/workflows`      | CI, security, deploy, radar, synthetic monitoring and release            |
+| `docs/adr`               | Accepted architecture decisions                                          |
 
 The production API is the edge Worker. The .NET API remains the canonical portable
 local implementation; see ADR 0002.
@@ -175,11 +175,17 @@ bottleneck; current per-horizon status must be read from the quality API, not th
 historical baseline's claim about which horizon passed then.
 
 The 12 November raw-data audit found latest-observation-only verification and
-different valid masks for forecast/persistence. A local independent audit reproduced
-21 published pairs without metric mismatches, but the 50-pair requirement remains
-BLOCKED. Common-mask results are diagnostic only; no metric, gate, history or
-forecast was changed. See `PRECISION_AUDIT_2026-11-12.md` for evidence and the approval
-boundary before changing the production comparison policy.
+different valid masks for forecast/persistence. PR #27 repaired bounded retained-window
+verification and immutable pair deduplication; live ingestion covered 63/63 eligible
+pairs. Two raw snapshots now reconstruct 64 distinct published legacy pairs without
+checked metric mismatches, passing the unchanged 50-pair implementation-audit floor.
+This does not establish full independent forecast acceptance. The original 21-pair
+checkpoint remains historical in `PRECISION_AUDIT_2026-11-12.md`.
+
+The next staged release adds `shared-coverage-v2` as separate shadow-only evidence,
+with same-mask Brier and the actual archived incumbent. It cannot enter forecast
+selection, calibration, alert gates or promotion; old scores are not rescored.
+See `SHARED_COVERAGE_V2_2026-11-12.md` and ADR 0012 for the activation boundary.
 
 The original Phase 0 measurement and ranked findings are in `BASELINE.md`. Dated
 audit/reliability checkpoints qualify that historical baseline; neither they nor

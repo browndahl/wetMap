@@ -32,7 +32,7 @@ from wetmap_worker.verification import (
 )
 
 
-def test_scores_previous_nowcast_against_new_observation(tmp_path: Path) -> None:
+def test_scores_previous_nowcast_against_new_observation(tmp_path: Path, monkeypatch) -> None:
     observed = np.zeros((64, 96, 4), dtype=np.uint8)
     observed[..., 3] = 1
     observed[20:40, 30:55, 3] = 198  # Approximately 20 dBZ.
@@ -102,6 +102,23 @@ def test_scores_previous_nowcast_against_new_observation(tmp_path: Path) -> None
     assert history["sampleCount"] == 1
     assert history["meanCriticalSuccessIndex"] > 0.9
     assert history["meanCriticalSuccessIndexSkill"] is not None
+
+    def broken_comparison(*_args):
+        raise ValueError("Invalid diagnostic grid")
+
+    monkeypatch.setattr("wetmap_worker.verification.compare_shared_coverage", broken_comparison)
+    degraded = verify_previous_nowcast(
+        metadata_path, cube_path, observed_path, "2026-10-11T12:00:00Z"
+    )
+    assert degraded is not None
+    assert degraded["hits"] == result["hits"]
+    assert degraded["criticalSuccessIndex"] == result["criticalSuccessIndex"]
+    assert "sharedCoverageComparison" not in degraded
+    assert degraded["comparisonAuditError"]["code"] == "invalid-data"
+    report = public_verification_report(
+        append_verification_history(tmp_path / "degraded-history.json", degraded)
+    )
+    assert report["comparisonAudit"]["failedPairCount"] == 1
 
 
 def test_groups_multiple_forecast_horizons_and_keeps_public_payload_bounded(
@@ -578,6 +595,12 @@ def test_scores_shadow_candidate_against_the_same_observation(tmp_path: Path) ->
 
     assert result is not None
     assert len(result["shadowCandidateScores"]) == 5
+    parallel = result["sharedCoverageComparison"]
+    assert parallel["comparisonVersion"] == "shared-coverage-v2"
+    assert parallel["mode"] == "shadow-only"
+    # Legacy ablation control is intentionally worse than the actual incumbent.
+    # V2 must use the actual operational cube, not that upstream control.
+    assert parallel["candidates"][0]["improvementOverIncumbent"] == 0
     candidate = result["shadowCandidateScores"][0]
     assert candidate["candidateId"] == SHADOW_CANDIDATE_ID
     assert candidate["criticalSuccessIndex"] == result["criticalSuccessIndex"]

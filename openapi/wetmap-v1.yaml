@@ -610,6 +610,141 @@ components:
         durationMs: { type: integer, minimum: 0 }
         coverageFraction: { type: [number, "null"], minimum: 0, maximum: 1 }
         complete: { type: boolean }
+    SharedCoverageScore:
+      type: object
+      required:
+        [
+          validPixels,
+          hits,
+          misses,
+          falseAlarms,
+          correctNegatives,
+          precision,
+          recall,
+          criticalSuccessIndex,
+          falseAlarmRatio,
+          meanPairDbzMAE,
+        ]
+      properties:
+        validPixels: { type: integer, minimum: 0 }
+        hits: { type: integer, minimum: 0 }
+        misses: { type: integer, minimum: 0 }
+        falseAlarms: { type: integer, minimum: 0 }
+        correctNegatives: { type: integer, minimum: 0 }
+        precision: { type: [number, "null"], minimum: 0, maximum: 1 }
+        recall: { type: [number, "null"], minimum: 0, maximum: 1 }
+        criticalSuccessIndex: { type: [number, "null"], minimum: 0, maximum: 1 }
+        falseAlarmRatio: { type: [number, "null"], minimum: 0, maximum: 1 }
+        meanPairDbzMAE: { type: [number, "null"], minimum: 0 }
+    SharedCoverageLead:
+      type: object
+      required:
+        [
+          leadMinutes,
+          sampleCount,
+          forecast,
+          persistence,
+          meanPairSkillOverPersistence,
+          coverage,
+        ]
+      properties:
+        leadMinutes: { type: integer, minimum: 5, maximum: 60, multipleOf: 5 }
+        sampleCount: { type: integer, minimum: 1 }
+        forecast: { $ref: "#/components/schemas/SharedCoverageScore" }
+        persistence: { $ref: "#/components/schemas/SharedCoverageScore" }
+        meanPairSkillOverPersistence:
+          { type: [number, "null"], minimum: -1, maximum: 1 }
+        coverage:
+          type: object
+          required:
+            [
+              observedValidPixels,
+              commonValidPixels,
+              commonFractionOfObserved,
+              minimumPairFraction,
+            ]
+          properties:
+            observedValidPixels: { type: integer, minimum: 0 }
+            commonValidPixels: { type: integer, minimum: 0 }
+            commonFractionOfObserved:
+              { type: [number, "null"], minimum: 0, maximum: 1 }
+            minimumPairFraction:
+              { type: [number, "null"], minimum: 0, maximum: 1 }
+        incumbent: { $ref: "#/components/schemas/SharedCoverageScore" }
+        meanPairImprovementOverIncumbent:
+          { type: [number, "null"], minimum: -1, maximum: 1 }
+        probability:
+          type: object
+          required:
+            [
+              sampleCount,
+              meanBrierScore,
+              meanPersistenceBrierScore,
+              meanBrierSkillScore,
+              thresholdMismatchCount,
+            ]
+          properties:
+            sampleCount: { type: integer, minimum: 0 }
+            meanBrierScore: { type: [number, "null"], minimum: 0, maximum: 1 }
+            meanPersistenceBrierScore:
+              { type: [number, "null"], minimum: 0, maximum: 1 }
+            meanBrierSkillScore: { type: [number, "null"], maximum: 1 }
+            thresholdMismatchCount: { type: integer, minimum: 0 }
+    SharedCoverageAudit:
+      type: object
+      description: Additive 20 dBZ shared-coverage diagnostics; cannot affect operational forecasts or promotion.
+      required:
+        [
+          comparisonVersion,
+          mode,
+          thresholdDbz,
+          canAffectForecasts,
+          promotionEnabled,
+          sampleCount,
+          failedPairCount,
+          cohorts,
+        ]
+      properties:
+        comparisonVersion: { type: string, const: shared-coverage-v2 }
+        mode: { type: string, const: shadow-only }
+        thresholdDbz: { type: number, const: 20 }
+        canAffectForecasts: { type: boolean, const: false }
+        promotionEnabled: { type: boolean, const: false }
+        sampleCount: { type: integer, minimum: 0 }
+        failedPairCount: { type: integer, minimum: 0 }
+        cohorts:
+          type: array
+          items:
+            type: object
+            required: [algorithmVersion, sampleCount, byLeadMinutes, candidates]
+            properties:
+              algorithmVersion: { type: string }
+              sampleCount: { type: integer, minimum: 1 }
+              byLeadMinutes:
+                type: array
+                maxItems: 12
+                items: { $ref: "#/components/schemas/SharedCoverageLead" }
+              candidates:
+                type: array
+                maxItems: 5
+                items:
+                  type: object
+                  required: [candidateId, byLeadMinutes]
+                  properties:
+                    candidateId: { type: string }
+                    byLeadMinutes:
+                      type: array
+                      maxItems: 3
+                      items:
+                        allOf:
+                          - $ref: "#/components/schemas/SharedCoverageLead"
+                          - type: object
+                            required:
+                              [
+                                incumbent,
+                                meanPairImprovementOverIncumbent,
+                                probability,
+                              ]
     NowcastQuality:
       type: object
       required:
@@ -702,6 +837,7 @@ components:
         geographicConsistency:
           { $ref: "#/components/schemas/GeographicConsistencyQuality" }
         verificationBatch: { $ref: "#/components/schemas/VerificationBatch" }
+        comparisonAudit: { $ref: "#/components/schemas/SharedCoverageAudit" }
         results:
           type: array
           maxItems: 288
@@ -794,6 +930,7 @@ components:
         geographicConsistency:
           { $ref: "#/components/schemas/GeographicConsistencyQuality" }
         verificationBatch: { $ref: "#/components/schemas/VerificationBatch" }
+        comparisonAudit: { $ref: "#/components/schemas/SharedCoverageAudit" }
     ShadowCandidateQuality:
       type: object
       required:

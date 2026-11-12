@@ -129,7 +129,7 @@ def mean(values):
     return sum(values) / len(values) if values else None
 
 
-def audit(state, manifest, public, directory, *, minimum_pairs=50):
+def audit(state, manifest, public, directory, *, minimum_pairs=50, include_pair_ids=False):
     observations, inventory, bounds = {}, set(), {}
     for frame in manifest["frames"]:
         match = FRAME_KEY.fullmatch(frame["url"])
@@ -299,7 +299,7 @@ def audit(state, manifest, public, directory, *, minimum_pairs=50):
     blocked = [] if len(published_pairs) >= minimum_pairs else ["minimum-pairs"]
     if identity["missing"]:
         blocked.append("missing-persistence-source")
-    return {
+    report = {
         "schemaVersion": 1,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "publicReportGeneratedAt": public.get("generatedAt"),
@@ -339,23 +339,88 @@ def audit(state, manifest, public, directory, *, minimum_pairs=50):
             "No model tuning, archive write, gate change or Redis service is performed.",
         ],
     }
+    if include_pair_ids:
+        report["verifiedPairIds"] = [
+            [
+                pair["algorithmVersion"],
+                pair["basedOnObservedAt"],
+                pair["observedAt"],
+                pair["leadMinutes"],
+            ]
+            for pair in published_pairs
+        ]
+    return report
+
+
+def combine_audits(reports, *, minimum_pairs=50):
+    """Apply the same evidence floor to a deduplicated union, never summed counts."""
+    identities = {tuple(identity) for report in reports for identity in report["verifiedPairIds"]}
+    blocked = sorted(
+        {
+            reason
+            for report in reports
+            for reason in report["blockedReasons"]
+            if reason != "minimum-pairs"
+        }
+    )
+    if len(identities) < minimum_pairs:
+        blocked.append("minimum-pairs")
+    mismatches = sum(report["mismatchCount"] for report in reports)
+    failed = mismatches or any(report["reproductionStatus"] == "fail" for report in reports)
+    return {
+        "schemaVersion": 2,
+        "scope": "deduplicated-multi-snapshot-raw-reconstruction",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "minimumPairs": minimum_pairs,
+        "pairCount": len(identities),
+        "snapshotCount": len(reports),
+        "overlappingPairCount": sum(report["pairCount"] for report in reports) - len(identities),
+        "uniqueObservedTimes": len({identity[2] for identity in identities}),
+        "uniqueForecastOrigins": len({identity[1] for identity in identities}),
+        "verifiedPairIdsSha256": hashlib.sha256(
+            json.dumps(sorted(identities)).encode()
+        ).hexdigest(),
+        "reproductionStatus": "fail" if failed else ("blocked" if blocked else "pass"),
+        "mismatchCount": mismatches,
+        "blockedReasons": blocked,
+        "snapshots": [
+            {key: value for key, value in report.items() if key != "verifiedPairIds"}
+            for report in reports
+        ],
+        "limitations": [
+            "The 50-pair floor is applied to the deduplicated union, not lowered for any snapshot.",
+            "Overlapping pairs/pixels are not independent weather events; no IID confidence intervals.",
+            "Covered metrics: counts, precision/recall/CSI, dBZ MAE and persistence skill; not full published Brier acceptance.",
+        ],
+    }
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=Path)
+    parser.add_argument("directory", type=Path, nargs="+")
     parser.add_argument("--minimum-pairs", type=int, default=50)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.minimum_pairs < 1:
         parser.error("minimum-pairs must be positive")
     source_names = ("verification-state.json", "frames.json", "public-quality.json")
-    documents = [json.loads((args.directory / name).read_text()) for name in source_names]
-    report = audit(*documents, args.directory, minimum_pairs=args.minimum_pairs)
-    report["sourceDocuments"] = {
-        name: {"sha256": hashlib.sha256((args.directory / name).read_bytes()).hexdigest()}
-        for name in source_names
-    }
+    reports = []
+    for directory in args.directory:
+        documents = [json.loads((directory / name).read_text()) for name in source_names]
+        report = audit(
+            *documents, directory, minimum_pairs=args.minimum_pairs, include_pair_ids=True
+        )
+        report["sourceDocuments"] = {
+            name: {"sha256": hashlib.sha256((directory / name).read_bytes()).hexdigest()}
+            for name in source_names
+        }
+        reports.append(report)
+    report = (
+        combine_audits(reports, minimum_pairs=args.minimum_pairs)
+        if len(reports) > 1
+        else reports[0]
+    )
+    report.pop("verifiedPairIds", None)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
     print(
@@ -368,6 +433,7 @@ def main():
                     "mismatchCount",
                     "coverageComparison",
                 )
+                if key in report
             }
         )
     )

@@ -59,6 +59,15 @@ Disable the bad manifest entry (do not overwrite its immutable object), compare 
 
 Open `/api/v1/radar/nowcast/quality` and first confirm `algorithmVersion`; never combine cohorts from `byAlgorithmVersion`. Separate the affected lead time and dBZ threshold before tuning. Do not infer +60-minute quality from +10-minute results. Compare `criticalSuccessIndex` with `meanPersistenceCriticalSuccessIndex` and inspect `byForecastMethod`; a negative optical-flow skill of at most −0.02 with 12 or more optical-flow samples should select persistence on the next generated forecast. Future push frames must remain ineligible until they have at least 12 validations, CSI ≥ 0.20, non-negative persistence skill and confidence ≥ 0.55. If no horizons beyond +10 appear after 65 minutes, inspect `verification-state.json`, the 16 ring-buffer cube objects, checksum failures and workflow logs. Treat `groundGauge` separately and compare its 5/10/15/20 dBZ threshold and 1/3/5-pixel spatial profiles within a single `comparisonVersion`; DMI MetObs is raw and sparse, so disagreement is evidence to investigate—not proof that the entire radar field is wrong. Roll back if the public report schema, point forecast and map frame no longer agree.
 
+Inspect `verificationBatch` for retained-window completeness: errors/deferred work
+are not successful coverage. Retry failed pairs without resetting or replacing
+history. Downloads and verification are bounded; fresh radar must still publish.
+For `comparisonAudit`, require `shared-coverage-v2`, shadow-only mode, zero failed
+pairs, and both forecast/promotion flags false. Compare within algorithm and lead,
+inspect common/observed coverage, and never substitute this cohort for legacy
+promotion or alert evidence. A small/empty v2 cohort is normal during rollout;
+do not backfill by replacing historical scores. See ADR 0012 and the dated v2 report.
+
 ## Rollback and recovery
 
 Retired nowcast WebPs: run **Retired nowcast image cleanup** with apply=false;
