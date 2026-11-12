@@ -226,8 +226,19 @@ export async function receiveOperationsReport(
       durationMs,
     })),
   };
+  const radarUnavailable = report.checks.some(
+    (check) => check.name === "radar" && !check.ok,
+  );
   const signature = report.checks
     .filter((check) => !check.ok)
+    .filter(
+      (check) =>
+        !(
+          radarUnavailable &&
+          check.name === "performance" &&
+          check.code === "radar-unavailable"
+        ),
+    )
     .map((check) => `${check.name}:${check.code}`)
     .sort()
     .join(",");

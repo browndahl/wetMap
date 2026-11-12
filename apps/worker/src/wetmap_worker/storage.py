@@ -18,6 +18,7 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
 
 def _r2_client():
     import boto3
+    from botocore.config import Config
 
     account = os.environ["R2_ACCOUNT_ID"]
     return boto3.client(
@@ -26,6 +27,27 @@ def _r2_client():
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
         region_name="auto",
+        config=Config(
+            connect_timeout=5,
+            read_timeout=20,
+            retries={"mode": "standard", "total_max_attempts": 3},
+            max_pool_connections=4,
+        ),
+    )
+
+
+def _transfer_config():
+    from boto3.s3.transfer import TransferConfig
+
+    # R2 ledger writes used to fan out into ten multipart threads with 60-second
+    # socket retries, exhausting the eight-minute workflow. Preserve exact JSON
+    # bytes/keys but use a single PUT for ordinary ledgers and bounded concurrency
+    # for genuinely large transfers. Never truncate history to solve a timeout.
+    return TransferConfig(
+        multipart_threshold=128 * 1024 * 1024,
+        multipart_chunksize=16 * 1024 * 1024,
+        max_concurrency=2,
+        preferred_transfer_client="classic",
     )
 
 
@@ -35,7 +57,9 @@ def download_manifest_r2(destination: Path) -> bool:
 
     temporary = destination.with_suffix(".download")
     try:
-        _r2_client().download_file(os.environ["R2_BUCKET"], "frames/frames.json", str(temporary))
+        _r2_client().download_file(
+            os.environ["R2_BUCKET"], "frames/frames.json", str(temporary), Config=_transfer_config()
+        )
     except ClientError as error:
         temporary.unlink(missing_ok=True)
         if error.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
@@ -54,7 +78,9 @@ def download_frames_r2(output_directory: Path, frame_names: Iterable[str]) -> li
         destination = output_directory / name
         if not destination.exists():
             temporary = destination.with_suffix(".download")
-            client.download_file(bucket, f"frames/{name}", str(temporary))
+            client.download_file(
+                bucket, f"frames/{name}", str(temporary), Config=_transfer_config()
+            )
             temporary.replace(destination)
         downloaded.append(destination)
     return downloaded
@@ -75,7 +101,9 @@ def download_verification_r2(destination: Path) -> bool:
         ("nowcast/gauge-verification-history.json", "gauge-verification-history.json"),
     ):
         try:
-            client.download_file(bucket, key, str(destination / name))
+            temporary = (destination / name).with_suffix(".download")
+            client.download_file(bucket, key, str(temporary), Config=_transfer_config())
+            temporary.replace(destination / name)
             downloaded = True
         except ClientError as error:
             if error.response.get("Error", {}).get("Code") in {
@@ -93,7 +121,9 @@ def download_verification_cube_r2(destination: Path, data_key: str) -> Path:
     if not re.fullmatch(r"nowcast/verification-cubes/cube-\d{2}\.npz", data_key):
         raise ValueError("Invalid verification cube key")
     target = destination / Path(data_key).name
-    _r2_client().download_file(os.environ["R2_BUCKET"], data_key, str(target))
+    _r2_client().download_file(
+        os.environ["R2_BUCKET"], data_key, str(target), Config=_transfer_config()
+    )
     return target
 
 
@@ -107,6 +137,7 @@ def upload_r2(output_directory: Path, frame_paths: Iterable[Path] | None = None)
             str(frame),
             bucket,
             f"frames/{frame.name}",
+            Config=_transfer_config(),
             ExtraArgs={
                 "ContentType": "image/webp",
                 "CacheControl": "public,max-age=31536000,immutable",
@@ -116,6 +147,7 @@ def upload_r2(output_directory: Path, frame_paths: Iterable[Path] | None = None)
         str(output_directory / "frames.json"),
         bucket,
         "frames/frames.json",
+        Config=_transfer_config(),
         ExtraArgs={
             "ContentType": "application/json",
             "CacheControl": "public,max-age=60,stale-while-revalidate=300",
@@ -136,6 +168,7 @@ def upload_nowcast_r2(
             str(frame),
             bucket,
             f"nowcast/{frame.name}",
+            Config=_transfer_config(),
             ExtraArgs={"ContentType": "image/webp", "CacheControl": "public,max-age=300"},
         )
     point_metadata = json.loads((nowcast_directory / "point-risk.json").read_text())
@@ -143,6 +176,7 @@ def upload_nowcast_r2(
         str(nowcast_directory / "point-risk.bin"),
         bucket,
         point_metadata["dataKey"],
+        Config=_transfer_config(),
         ExtraArgs={
             "ContentType": "application/octet-stream",
             "CacheControl": "no-cache",
@@ -155,13 +189,12 @@ def upload_nowcast_r2(
         and verification_forecast_path.exists()
         and verification_cube_path.exists()
     ):
-        verification_forecast = json.loads(
-            verification_forecast_path.read_text(encoding="utf-8")
-        )
+        verification_forecast = json.loads(verification_forecast_path.read_text(encoding="utf-8"))
         client.upload_file(
             str(verification_cube_path),
             bucket,
             verification_forecast["dataKey"],
+            Config=_transfer_config(),
             ExtraArgs={
                 "ContentType": "application/octet-stream",
                 "CacheControl": "no-store",
@@ -181,6 +214,7 @@ def upload_nowcast_r2(
             str(nowcast_directory / name),
             bucket,
             f"nowcast/{name}",
+            Config=_transfer_config(),
             ExtraArgs={
                 "ContentType": "application/json",
                 "CacheControl": "public,max-age=60,stale-while-revalidate=300",

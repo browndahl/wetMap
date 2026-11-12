@@ -15,6 +15,13 @@ const toSelectedLocation = (location: LocationResult): SelectedLocation => ({
 });
 
 export default function LocationSearch() {
+  const selectedLocationId = useWeatherStore(
+    (state) => state.selectedLocation.id,
+  );
+  return <LocationSearchContent key={selectedLocationId} />;
+}
+
+function LocationSearchContent() {
   const locale = useWeatherStore((state) => state.locale);
   const selectedLocation = useWeatherStore((state) => state.selectedLocation);
   const favoriteLocations = useWeatherStore((state) => state.favoriteLocations);
@@ -31,33 +38,37 @@ export default function LocationSearch() {
   const [locationError, setLocationError] = useState<MessageKey | null>(null);
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
 
-  useEffect(() => setInput(selectedLocation.name), [selectedLocation]);
-
   useEffect(() => {
     const query = input.trim();
     if (query.length < 2 || query === selectedLocation.name) {
-      setDebouncedQuery("");
       return;
     }
     const timer = window.setTimeout(() => setDebouncedQuery(query), 350);
     return () => window.clearTimeout(timer);
   }, [input, selectedLocation.name]);
 
+  // Invalid/changed input disables old results immediately. No synchronous state
+  // cascade in an effect, and an external location selection remounts the editor.
+  const activeQuery =
+    input.trim() === debouncedQuery && input.trim() !== selectedLocation.name
+      ? debouncedQuery
+      : "";
+
   const locations = useQuery({
     queryKey: [
       "location-search",
-      debouncedQuery,
+      activeQuery,
       selectedLocation.latitude.toFixed(1),
       selectedLocation.longitude.toFixed(1),
     ],
     queryFn: ({ signal }) =>
       searchLocations(
-        debouncedQuery,
+        activeQuery,
         selectedLocation.latitude,
         selectedLocation.longitude,
         signal,
       ),
-    enabled: debouncedQuery.length >= 2,
+    enabled: activeQuery.length >= 2,
     staleTime: 24 * 60 * 60_000,
     retry: 1,
   });
@@ -193,7 +204,7 @@ export default function LocationSearch() {
             </p>
           )}
           {!locations.isError &&
-            debouncedQuery.length >= 2 &&
+            activeQuery.length >= 2 &&
             !locations.isFetching &&
             results.length === 0 && (
               <p className="location-message">{t("noLocations")}</p>
@@ -213,22 +224,23 @@ export default function LocationSearch() {
               </span>
             </button>
           ))}
-          {debouncedQuery.length < 2 && favoriteLocations.length > 0 && (
-            <div className="favorite-locations">
-              <span>{t("favorites")}</span>
-              {favoriteLocations.map((favorite) => (
-                <button
-                  type="button"
-                  key={favorite.id}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => selectLocation(favorite)}
-                >
-                  <Star size={13} fill="currentColor" aria-hidden="true" />
-                  {favorite.name}
-                </button>
-              ))}
-            </div>
-          )}
+          {(input.trim().length < 2 || input === selectedLocation.name) &&
+            favoriteLocations.length > 0 && (
+              <div className="favorite-locations">
+                <span>{t("favorites")}</span>
+                {favoriteLocations.map((favorite) => (
+                  <button
+                    type="button"
+                    key={favorite.id}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectLocation(favorite)}
+                  >
+                    <Star size={13} fill="currentColor" aria-hidden="true" />
+                    {favorite.name}
+                  </button>
+                ))}
+              </div>
+            )}
         </div>
       )}
       {locationError && (

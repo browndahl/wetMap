@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import type {
   GeoJSONSource,
+  ImageSource,
   Map as MapLibreMap,
   MapMouseEvent,
+  MapSourceDataEvent,
 } from "maplibre-gl";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import type { NowcastFrame, RadarFrame } from "@wetmap/shared";
@@ -19,10 +21,19 @@ maplibregl.setWorkerUrl(maplibreWorkerUrl);
 interface Props {
   frames: Array<RadarFrame | NowcastFrame>;
   activeIndex: number;
+  onFrameReady?: (id: string) => void;
 }
 
 const framesBase =
   import.meta.env.VITE_FRAMES_BASE_URL || window.location.origin;
+
+function markReady(name: string) {
+  if (
+    typeof performance.mark === "function" &&
+    !performance.getEntriesByName(name).length
+  )
+    performance.mark(name);
+}
 
 const imageCoordinates = (
   frame: RadarFrame | NowcastFrame,
@@ -77,7 +88,11 @@ function addBuildings(map: MapLibreMap) {
   );
 }
 
-export default function WeatherMap({ frames, activeIndex }: Props) {
+export default function WeatherMap({
+  frames,
+  activeIndex,
+  onFrameReady,
+}: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const visibleBuffer = useRef<0 | 1>(0);
@@ -89,6 +104,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
   const setSelectedLocation = useWeatherStore(
     (state) => state.setSelectedLocation,
   );
+  const frame = frames[activeIndex];
 
   useEffect(() => {
     if (!container.current || mapRef.current) return;
@@ -118,6 +134,7 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
       "top-right",
     );
     map.on("load", () => {
+      markReady("wetmap:map-ready");
       if (!useWeatherStore.getState().precise2d) addBuildings(map);
       const location = useWeatherStore.getState().selectedLocation;
       map.addSource("selected-location", {
@@ -190,41 +207,53 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
   }, [selectedLocation]);
 
   useEffect(() => {
-    const preloaded = frames
-      .slice(activeIndex, activeIndex + (precise2d ? 2 : 3))
-      .map((frame) => {
-        const image = new Image();
-        image.crossOrigin = "anonymous";
-        image.decoding = "async";
-        image.src = new URL(frame.url, framesBase).toString();
-        return image;
-      });
-    return () =>
-      preloaded.forEach((image) => {
-        image.onload = null;
-        image.onerror = null;
-      });
-  }, [activeIndex, frames, precise2d]);
-
-  useEffect(() => {
     const map = mapRef.current;
-    const frame = frames[activeIndex];
     if (!map || !frame) return;
 
-    let fadeTimer: number | undefined;
+    let cancelContent: (() => void) | undefined;
     let rendered = false;
+    const renderWhenReady = () => {
+      if (map.isStyleLoaded()) renderFrame();
+    };
     const renderFrame = () => {
-      if (rendered || !map.isStyleLoaded()) return;
+      if (rendered) return;
       rendered = true;
       map.off("load", renderFrame);
-      map.off("styledata", renderFrame);
+      map.off("style.load", renderFrame);
+      map.off("styledata", renderWhenReady);
       const next = visibleBuffer.current === 0 ? 1 : 0;
       const sourceId = `radar-${next}`;
       const layerId = `radar-layer-${next}`;
       const oldLayerId = `radar-layer-${visibleBuffer.current}`;
       const absoluteUrl = new URL(frame.url, framesBase).toString();
-      if (map.getLayer(layerId)) map.removeLayer(layerId);
-      if (map.getSource(sourceId)) map.removeSource(sourceId);
+      let visible = false;
+      const showLoadedFrame = (event: MapSourceDataEvent) => {
+        if (
+          visible ||
+          event.sourceId !== sourceId ||
+          event.sourceDataType !== "content" ||
+          !map.getLayer(layerId)
+        )
+          return;
+        visible = true;
+        map.off("sourcedata", showLoadedFrame);
+        map.setPaintProperty(layerId, "raster-opacity", opacityRef.current);
+        if (map.getLayer(oldLayerId))
+          map.setPaintProperty(oldLayerId, "raster-opacity", 0);
+        visibleBuffer.current = next;
+        markReady("wetmap:radar-ready");
+        onFrameReady?.(frame.id);
+      };
+      map.on("sourcedata", showLoadedFrame);
+      cancelContent = () => map.off("sourcedata", showLoadedFrame);
+      const existing = map.getSource(sourceId) as ImageSource | undefined;
+      if (existing) {
+        existing.updateImage({
+          url: absoluteUrl,
+          coordinates: imageCoordinates(frame),
+        });
+        return;
+      }
       map.addSource(sourceId, {
         type: "image",
         url: absoluteUrl,
@@ -235,34 +264,38 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
           id: layerId,
           type: "raster",
           source: sourceId,
-          paint: { "raster-opacity": 0, "raster-fade-duration": 280 },
+          paint: {
+            "raster-opacity": 0,
+            "raster-fade-duration": 0,
+            "raster-opacity-transition": {
+              duration: window.matchMedia("(prefers-reduced-motion: reduce)")
+                .matches
+                ? 0
+                : 120,
+            },
+          },
         },
         map.getLayer("wetmap-3d-buildings") ? "wetmap-3d-buildings" : undefined,
       );
-      fadeTimer = window.setTimeout(() => {
-        if (!map.getLayer(layerId)) return;
-        map.setPaintProperty(layerId, "raster-opacity", opacityRef.current);
-        if (map.getLayer(oldLayerId))
-          map.setPaintProperty(oldLayerId, "raster-opacity", 0);
-        visibleBuffer.current = next;
-      }, 40);
     };
 
     if (map.isStyleLoaded()) renderFrame();
     else {
-      // `isStyleLoaded()` can briefly be false after MapLibre's one-time load
-      // event. Listening to styledata as well prevents the first radar frame
-      // from waiting for a later playback change before it becomes visible.
+      // style.load/load prove the style can be edited. Do not recheck
+      // isStyleLoaded inside their callback: another load handler may have just
+      // added a GeoJSON source, making it temporarily false and losing this frame.
       map.on("load", renderFrame);
-      map.on("styledata", renderFrame);
+      map.on("style.load", renderFrame);
+      map.on("styledata", renderWhenReady);
     }
 
     return () => {
       map.off("load", renderFrame);
-      map.off("styledata", renderFrame);
-      if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
+      map.off("style.load", renderFrame);
+      map.off("styledata", renderWhenReady);
+      cancelContent?.();
     };
-  }, [activeIndex, frames]);
+  }, [frame, onFrameReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -294,7 +327,12 @@ export default function WeatherMap({ frames, activeIndex }: Props) {
     opacityRef.current = opacity;
     if (!map) return;
     for (const id of ["radar-layer-0", "radar-layer-1"])
-      if (map.getLayer(id)) map.setPaintProperty(id, "raster-opacity", opacity);
+      if (map.getLayer(id))
+        map.setPaintProperty(
+          id,
+          "raster-opacity",
+          id === `radar-layer-${visibleBuffer.current}` ? opacity : 0,
+        );
   }, [opacity]);
 
   return (

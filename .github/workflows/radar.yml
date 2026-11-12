@@ -36,3 +36,11 @@ jobs:
             python .github/scripts/check_freshness.py /tmp/wetmap-frames/frames.json 25
           fi
         env: { API_URL: "${{ vars.API_URL }}" }
+      - name: Retire inactive derived images older than 48h, at most once per day
+        if: vars.NOWCAST_RETENTION_ENABLED == 'true'
+        run: python -m wetmap_worker.retention --apply --once-per-day --report /tmp/retention-report.json
+        env:
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}

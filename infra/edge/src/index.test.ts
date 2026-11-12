@@ -418,6 +418,38 @@ describe("forecast edge endpoint", () => {
     vi.restoreAllMocks();
   });
 
+  it("returns a valid forecast without waiting for a slow persistent cache write", async () => {
+    const { env, context, r2, waits } = setup();
+    const originalPut = r2.put.bind(r2);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(r2, "put").mockImplementation(async (key, value) => {
+      await blocked;
+      await originalPut(key, value);
+    });
+    const upstream = vi.fn(async () => dmiResponse());
+    vi.stubGlobal("fetch", upstream);
+    const responses = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        worker.fetch(
+          new Request(
+            "https://api.test/api/v1/weather/forecast?lat=56.1629&lon=10.2039",
+          ),
+          env,
+          context,
+        ),
+      ),
+    );
+    expect(responses.every((response) => response.status === 200)).toBe(true);
+    expect(upstream).toHaveBeenCalledOnce();
+    expect(r2.values.size).toBe(0);
+    release();
+    await Promise.all(waits);
+    expect(r2.values.size).toBe(1);
+  });
+
   it("serves direct DMI HARMONIE as the primary provider and persists it", async () => {
     const { env, context, r2 } = setup();
     const upstream = vi.fn(async () => dmiResponse());
@@ -576,7 +608,9 @@ describe("forecast edge endpoint", () => {
       env,
       context,
     );
-    await vi.advanceTimersByTimeAsync(1_500);
+    await vi.advanceTimersByTimeAsync(399);
+    expect(upstream).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
     const response = await responsePromise;
 
     expect(response.status).toBe(200);
@@ -585,7 +619,7 @@ describe("forecast edge endpoint", () => {
     expect(response.headers.get("X-WetMap-DMI-Outcome")).toBe("pending");
     expect(upstream).toHaveBeenCalledTimes(2);
 
-    await vi.advanceTimersByTimeAsync(3_500);
+    await vi.advanceTimersByTimeAsync(4_600);
     await Promise.all(waits);
     const refreshed = await worker.fetch(
       new Request(
