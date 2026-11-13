@@ -376,6 +376,48 @@ a {
   letter-spacing: -0.04em;
   overflow-wrap: anywhere;
 }
+.temperature-context {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid oklch(1 0 0 / 10%);
+}
+.temperature-location {
+  min-width: 0;
+  flex: 1;
+}
+.temperature-context h2 {
+  margin: 0.35rem 0 0;
+}
+.location-temperature {
+  flex: 0 0 auto;
+  max-width: 55%;
+  text-align: right;
+}
+.location-temperature strong {
+  display: block;
+  font-size: 3rem;
+  line-height: 1.05;
+  letter-spacing: -0.06em;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.location-temperature strong span {
+  margin-left: 0.15rem;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  color: var(--text-2);
+}
+.location-temperature small {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--text-2);
+  font-size: 0.65rem;
+  line-height: 1.3;
+}
 .forecast-row {
   display: grid;
   grid-template-columns: 1fr auto 5rem;
@@ -1670,6 +1712,23 @@ a {
     margin-top: 0;
     padding-top: 0;
     border: 0;
+  }
+  .weather-dock .temperature-context {
+    margin-bottom: 0.65rem;
+    padding-bottom: 0.65rem;
+  }
+  .weather-dock .temperature-context h2 {
+    font-size: 0.85rem;
+    margin-top: 0.2rem;
+  }
+  .weather-dock .temperature-location .eyebrow {
+    font-size: 0.6rem;
+  }
+  .weather-dock .location-temperature strong {
+    font-size: 2.3rem;
+  }
+  .weather-dock .location-temperature small {
+    font-size: 0.6rem;
   }
   .weather-dock .rain-heading {
     display: none;

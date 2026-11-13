@@ -176,6 +176,10 @@ or archive-retention change. Dependency migration and V6 remain separate work.
 explicit observed/latest/predicted navigation, tap/keyboard data-age help and
 bounded small-screen panels. No backend, model, gate or paid-service change.
 [Scope, tests and screenshots](UI_UX_REFINEMENT_2026-11-13.md), [ADR 0013](adr/0013-rain-first-interface.md).
+Owner follow-up places the hourly temperature prominently above rain on both
+layouts, and reveals the phone overview on location selection. Previous-city
+placeholder temperatures are suppressed; valid time remains explicit. Six added
+regression cases, no extra weather requests or backend changes.
 
 13 November release follow-up: PRs #27/#28 deployed, 159 successful GitHub runs
 since merge at inspection, 1,115 v2 pairs with no calculation errors, latest retained

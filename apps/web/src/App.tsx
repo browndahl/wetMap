@@ -80,6 +80,7 @@ export default function App() {
     "rain",
   );
   const dockRef = useRef<HTMLDivElement>(null);
+  const weatherPanelRef = useRef<HTMLElement>(null);
   const initialRadarPlaybackStarted = useRef(false);
   const [renderedFrameId, setRenderedFrameId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -177,6 +178,27 @@ export default function App() {
   const forecastPoints = (forecast.data?.points ?? [])
     .filter((point) => new Date(point.step).getTime() >= currentHour.getTime())
     .slice(0, 4);
+  // keepPreviousData smooths the hourly table, but a newly selected location
+  // must never inherit the previous location's headline temperature.
+  const temperaturePoint =
+    !forecast.isPlaceholderData && !forecast.isError
+      ? forecastPoints[0]
+      : undefined;
+  const temperature = temperaturePoint?.temperatureC;
+  const hasTemperature =
+    typeof temperature === "number" && Number.isFinite(temperature);
+
+  useEffect(
+    () =>
+      useWeatherStore.subscribe((next, previous) => {
+        if (next.selectedLocation === previous.selectedLocation) return;
+        setMobileView("rain");
+        setForecastExpanded(false);
+        dockRef.current?.scrollTo?.({ top: 0 });
+        weatherPanelRef.current?.scrollTo?.({ top: 0 });
+      }),
+    [],
+  );
 
   useEffect(() => {
     const refreshClock = () => {
@@ -430,15 +452,40 @@ export default function App() {
           hidden={compactLayout && mobileView !== "rain"}
           id="weather-panel"
           className="weather-card glass"
-          aria-labelledby="rain-title"
+          aria-label={`${t("weatherAt")} ${state.selectedLocation.name}`}
           tabIndex={-1}
+          ref={weatherPanelRef}
         >
-          {!compactLayout && (
-            <div className="weather-context">
-              <span className="eyebrow">{t("rainOverview")}</span>
+          <div className="weather-context temperature-context">
+            <div className="temperature-location">
+              <span className="eyebrow">{t("temperature")}</span>
               <h2>{state.selectedLocation.name}</h2>
             </div>
-          )}
+            <div
+              className="location-temperature"
+              role="status"
+              aria-label={t("temperature")}
+            >
+              <strong>
+                {hasTemperature ? Math.round(temperature) : "–"}
+                <span>°C</span>
+              </strong>
+              <small>
+                {hasTemperature && temperaturePoint ? (
+                  <>
+                    {t("temperatureForecast")} ·{" "}
+                    <time dateTime={temperaturePoint.step}>
+                      {formatTime(temperaturePoint.step, state.locale)}
+                    </time>
+                  </>
+                ) : forecast.isPending || forecast.isPlaceholderData ? (
+                  t("loadingForecast")
+                ) : (
+                  t("temperatureUnavailable")
+                )}
+              </small>
+            </div>
+          </div>
           <RainNextHour
             compact={compactLayout && !forecastExpanded}
             data={rain.data}

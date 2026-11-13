@@ -65,3 +65,23 @@ Leave VITE_API_BASE_URL and VITE_FRAMES_BASE_URL unset for the same-origin dev p
 The default remains localhost:8080 for compose development. Production CORS and
 network settings are unchanged. CI/security, production deployment and final live
 interaction checks are required before describing this checkpoint as live.
+
+## Temperature-first follow-up — owner feedback
+
+The owner requested temperature as the first visible information after selecting a
+location. A large °C value now leads the location header on desktop and phone,
+above rain and independent of the hourly-details disclosure. It is explicitly an
+hourly forecast with a valid time, not an observed real-time measurement. Location
+selection reveals the phone overview and resets panel scroll position.
+
+Previous-location placeholder data never supplies the headline temperature. Pending,
+failed or missing values show a dash and an honest status, not a stale city's value
+or a fabricated zero. Six regression cases cover normal/negative/zero/missing
+temperatures, delayed location changes and mobile radar-to-overview selection.
+Web suite: 38 tests; TypeScript total: 92. No extra request, source or backend change.
+
+Local browser checks cover desktop, 390×844 and 320×568, including an actual map
+click from mobile radar: the overview opens with a loading placeholder, followed by
+the selected location's temperature. The temperature and outer dock remain visible
+on the small viewport. [Desktop](evidence/uiux-2026-11-13/temperature-desktop.jpg)
+and [phone](evidence/uiux-2026-11-13/temperature-mobile.jpg) show the follow-up.

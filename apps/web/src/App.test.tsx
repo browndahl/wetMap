@@ -143,6 +143,8 @@ const apiMocks = vi.hoisted(() => ({
     attribution: "Baseret på data fra DMI og efterfølgende bearbejdet",
     points: [] as Array<Record<string, unknown>>,
   },
+  forecastOverride: undefined as
+    undefined | ((latitude: number, longitude: number) => Promise<unknown>),
   rain: {
     latitude: 56.16,
     longitude: 10.2,
@@ -196,7 +198,10 @@ vi.mock("./api", () => ({
   getRadarManifest: async () => apiMocks.manifest,
   getRadarNowcast: async () => apiMocks.nowcast,
   getPrecisionObservatory: async () => apiMocks.quality,
-  getForecast: async () => apiMocks.forecast,
+  getForecast: async (latitude: number, longitude: number) =>
+    apiMocks.forecastOverride
+      ? apiMocks.forecastOverride(latitude, longitude)
+      : apiMocks.forecast,
   getRainNextHour: async () => apiMocks.rain,
   getPushConfig: apiMocks.getPushConfig,
   savePushSubscription: apiMocks.savePushSubscription,
@@ -221,6 +226,7 @@ beforeEach(() => {
   apiMocks.manifest.frames = [];
   apiMocks.nowcast.frames = [];
   apiMocks.forecast.points = [];
+  apiMocks.forecastOverride = undefined;
   apiMocks.rain.points = [];
   apiMocks.rain.source = "open-meteo-dmi";
   apiMocks.quality.shadowCandidates = [];
@@ -292,7 +298,7 @@ it("shows one phone view at a time and keeps extra controls in More", async () =
   client.clear();
 });
 
-it("puts rain first on desktop and reveals hourly details without hiding radar", async () => {
+it("keeps rain visible before hourly details on desktop without hiding radar", async () => {
   apiMocks.rain.points = [
     {
       startsAt: new Date().toISOString(),
@@ -327,6 +333,152 @@ it("puts rain first on desktop and reveals hourly details without hiding radar",
     screen.getByRole("button", { name: "Minimer seneste observation" }),
   ).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByText("Tørt den næste time")).toBeVisible();
+});
+
+it.each([
+  [0, "0°C"],
+  [-2.6, "-3°C"],
+  [7.6, "8°C"],
+])(
+  "highlights the hourly temperature without opening details (%s)",
+  async (value, expected) => {
+    apiMocks.forecast.points = [
+      { step: new Date().toISOString(), temperatureC: value },
+    ];
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("status", { name: "Temperatur" }),
+      ).toHaveTextContent(expected),
+    );
+    expect(
+      screen.getByRole("status", { name: "Temperatur" }),
+    ).toHaveTextContent("Timeprognose");
+    expect(
+      screen.getByRole("button", { name: /^Vis prognosedetaljer/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+  },
+);
+
+it("does not turn a missing temperature into zero", async () => {
+  apiMocks.forecast.points = [
+    { step: new Date().toISOString(), temperatureC: null },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("status", { name: "Temperatur" }),
+    ).toHaveTextContent("Ikke tilgængelig"),
+  );
+  expect(screen.getByRole("status", { name: "Temperatur" })).toHaveTextContent(
+    "–°C",
+  );
+});
+
+it("never shows the previous city's headline temperature while loading a new location", async () => {
+  const step = new Date().toISOString();
+  let finish: (value: unknown) => void = () => {
+    throw new Error("No pending forecast");
+  };
+  const pending = new Promise<unknown>((resolve) => {
+    finish = resolve;
+  });
+  apiMocks.forecastOverride = async (latitude) =>
+    latitude === 56.16
+      ? { ...apiMocks.forecast, points: [{ step, temperatureC: 5 }] }
+      : pending;
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("status", { name: "Temperatur" }),
+    ).toHaveTextContent("5°C"),
+  );
+  act(() =>
+    useWeatherStore.getState().setSelectedLocation({
+      id: "odense",
+      name: "Odense",
+      context: "Fyn",
+      latitude: 55.4,
+      longitude: 10.39,
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("status", { name: "Temperatur" }),
+    ).toHaveTextContent("Henter prognose"),
+  );
+  expect(
+    screen.getByRole("status", { name: "Temperatur" }),
+  ).not.toHaveTextContent("5°C");
+  await act(async () => {
+    finish({
+      ...apiMocks.forecast,
+      latitude: 55.4,
+      longitude: 10.39,
+      points: [{ step, temperatureC: 13 }],
+    });
+    await pending;
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("status", { name: "Temperatur" }),
+    ).toHaveTextContent("13°C"),
+  );
+});
+
+it("reveals the temperature overview after a location selection from mobile radar", async () => {
+  window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+  apiMocks.forecast.points = [
+    { step: new Date().toISOString(), temperatureC: 7 },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("status", { name: "Temperatur" }),
+    ).toHaveTextContent("7°C"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Tidslinje" }));
+  expect(
+    screen.queryByRole("status", { name: "Temperatur" }),
+  ).not.toBeInTheDocument();
+  act(() =>
+    useWeatherStore
+      .getState()
+      .setSelectedLocation(useWeatherStore.getState().selectedLocation),
+  );
+  expect(screen.getByRole("button", { name: "Regnoverblik" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(screen.getByRole("status", { name: "Temperatur" })).toBeVisible();
 });
 
 it("chooses observed/future radar explicitly and pauses playback on manual navigation", async () => {
