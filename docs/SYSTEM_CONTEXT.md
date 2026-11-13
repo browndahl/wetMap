@@ -191,6 +191,12 @@ successful GitHub runs, but +45/+60 forecast quality remains degraded. See
 `SHARED_COVERAGE_RELEASE_2026-11-13.md` for current evidence and source-footprint
 limitations. Redis remains deferred; no new service or paid tier was activated.
 
+The 13 November UI refinement makes rain primary on desktop, retains the compact
+phone overview, and adds explicit historical/latest/predicted radar choices and
+tap/keyboard data-age help. Manual frame selection pauses playback; source time,
+estimated confidence and quality restrictions remain visible. See
+`UI_UX_REFINEMENT_2026-11-13.md` and ADR 0013 for tests and viewport limitations.
+
 The original Phase 0 measurement and ranked findings are in `BASELINE.md`. Dated
 audit/reliability checkpoints qualify that historical baseline; neither they nor
 `TEST-RESULTS.md` establish completion of the independent full acceptance programme.

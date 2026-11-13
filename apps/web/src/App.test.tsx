@@ -254,7 +254,7 @@ it("shows one phone view at a time and keeps extra controls in More", async () =
     </QueryClientProvider>,
   );
   const forecast = await screen.findByRole("button", {
-    name: "Vis prognosedetaljer",
+    name: /^Vis prognosedetaljer · Regndetaljer og varsler$/,
   });
   expect(forecast).toHaveAttribute("aria-expanded", "false");
   expect(
@@ -270,7 +270,7 @@ it("shows one phone view at a time and keeps extra controls in More", async () =
   expect(forecast).toHaveAttribute("aria-expanded", "true");
   fireEvent.click(screen.getByRole("button", { name: "Tidslinje" }));
   expect(
-    screen.queryByRole("button", { name: "Skjul prognosedetaljer" }),
+    screen.queryByRole("button", { name: /^Skjul prognosedetaljer/ }),
   ).not.toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Minimer seneste observation" }),
@@ -286,10 +286,144 @@ it("shows one phone view at a time and keeps extra controls in More", async () =
   ).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Regnoverblik" }));
   expect(
-    screen.getByRole("button", { name: "Vis prognosedetaljer" }),
+    screen.getByRole("button", { name: /^Vis prognosedetaljer/ }),
   ).toHaveAttribute("aria-expanded", "false");
   view.unmount();
   client.clear();
+});
+
+it("puts rain first on desktop and reveals hourly details without hiding radar", async () => {
+  apiMocks.rain.points = [
+    {
+      startsAt: new Date().toISOString(),
+      endsAt: new Date(Date.now() + 900_000).toISOString(),
+      intensity: "none",
+      precipitationMm: 0,
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Tørt den næste time")).toBeVisible();
+  expect(
+    screen.queryByRole("heading", { name: "Punktprognose" }),
+  ).not.toBeInTheDocument();
+  const toggle = screen.getByRole("button", {
+    name: "Vis prognosedetaljer · Temperatur og vind",
+  });
+  const rainPanel = document.getElementById("rain-outlook")!;
+  expect(
+    rainPanel.compareDocumentPosition(toggle) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(screen.getByRole("heading", { name: "Punktprognose" })).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Minimer seneste observation" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("Tørt den næste time")).toBeVisible();
+});
+
+it("chooses observed/future radar explicitly and pauses playback on manual navigation", async () => {
+  const time = Date.now();
+  const observedAt = new Date(time - 300_000).toISOString();
+  apiMocks.manifest.frames = ["old", "latest"].map((id, index) => ({
+    id,
+    observedAt: new Date(
+      time - (index === 0 ? 600_000 : 300_000),
+    ).toISOString(),
+    fetchedAt: new Date(time).toISOString(),
+    url: `/frames/${id}.webp`,
+    bounds: [7, 54, 13, 58],
+    product: "DBZH",
+    unit: "dBZ",
+  }));
+  apiMocks.nowcast.basedOnObservedAt = observedAt;
+  apiMocks.nowcast.frames = [
+    {
+      id: "future",
+      generatedAt: new Date(time).toISOString(),
+      predictedAt: new Date(time + 300_000).toISOString(),
+      basedOnObservedAt: observedAt,
+      leadMinutes: 10,
+      confidence: 0.42,
+      url: "/nowcast/future.webp",
+      bounds: [7, 54, 13, 58],
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Prognose" }));
+  expect(useWeatherStore.getState().playing).toBe(false);
+  expect(screen.getByTestId("active-frame")).toHaveTextContent("future");
+  expect(screen.getByRole("button", { name: "Prognose" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Minimer seneste observation" }),
+  );
+  expect(screen.getByText("Estimeret sikkerhed 42%")).toBeVisible();
+  act(() => useWeatherStore.setState({ playing: true }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Gå til seneste observation" }),
+  );
+  expect(useWeatherStore.getState().playing).toBe(false);
+  expect(screen.getByTestId("active-frame")).toHaveTextContent("latest");
+});
+
+it("does not offer a forecast shortcut when there are no matching future frames", async () => {
+  apiMocks.manifest.frames = [
+    {
+      id: "latest",
+      observedAt: new Date().toISOString(),
+      fetchedAt: new Date().toISOString(),
+    },
+  ];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  expect(
+    await screen.findByRole("button", { name: "Prognose" }),
+  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Historik" })).toBeDisabled();
+});
+
+it("explains radar age with keyboard-accessible details and labels empty data unavailable", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Radar utilgængelig")).toBeVisible();
+  const disclosure = document.querySelector(".freshness-details")!;
+  expect(disclosure.tagName).toBe("DETAILS");
+  expect(disclosure.querySelector("summary")).toHaveTextContent(
+    "Radar utilgængelig",
+  );
+  expect(disclosure).toHaveTextContent("DMI-radar udgives normalt");
+  expect(
+    screen.getByRole("button", { name: "Gå til seneste observation" }),
+  ).toBeDisabled();
 });
 
 it("labels future optical-flow frames as nowcasts with confidence", async () => {
@@ -481,7 +615,7 @@ it("guides an iPhone browser to installation without asking for notification per
     </QueryClientProvider>,
   );
   fireEvent.click(
-    await screen.findByRole("button", { name: "Vis prognosedetaljer" }),
+    await screen.findByRole("button", { name: /^Vis prognosedetaljer/ }),
   );
   fireEvent.click(
     await screen.findByRole("button", {
@@ -521,10 +655,10 @@ it("updates the radar age after resuming and revalidates a restored page", async
       <App />
     </QueryClientProvider>,
   );
-  await screen.findByText(/5 min siden/);
+  await screen.findByText(/^Opdateret · 5 min siden$/);
   vi.spyOn(Date, "now").mockReturnValue(initialNow + 2_400_000);
   fireEvent(document, new Event("visibilitychange"));
-  await screen.findByText(/45 min siden/);
+  await screen.findByText(/^Forsinket · 45 min siden$/);
   const restored = new Event("pageshow");
   Object.defineProperty(restored, "persisted", { value: true });
   fireEvent(window, restored);
@@ -761,7 +895,7 @@ it("explains the next-hour rain estimate and handles blocked alerts", async () =
   expect(
     await screen.findByText("Regn forventes 10.30–10.45"),
   ).toBeInTheDocument();
-  expect(screen.getByText("Forventet 0.90 mm")).toBeInTheDocument();
+  expect(screen.getByText("Forventet 0,90 mm")).toBeInTheDocument();
   expect(screen.getByText("Sikkerhed ikke opgjort")).toBeInTheDocument();
   expect(screen.getByText("HARMONIE-model")).toBeInTheDocument();
   expect(screen.getByText("45 min regn")).toBeInTheDocument();

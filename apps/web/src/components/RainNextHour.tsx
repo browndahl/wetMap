@@ -332,6 +332,7 @@ export default function RainNextHour({
 
   return (
     <section
+      id="rain-outlook"
       className={`rain-card ${compact ? "is-compact" : ""}`}
       aria-labelledby="rain-title"
     >
@@ -362,8 +363,14 @@ export default function RainNextHour({
               {!compact && (
                 <span>
                   {t("rainTotal")}{" "}
-                  {rainEta.totalPrecipitationMm.toFixed(
-                    rainEta.totalPrecipitationMm < 1 ? 2 : 1,
+                  {rainEta.totalPrecipitationMm.toLocaleString(
+                    locale === "da" ? "da-DK" : "en-GB",
+                    {
+                      minimumFractionDigits:
+                        rainEta.totalPrecipitationMm < 1 ? 2 : 1,
+                      maximumFractionDigits:
+                        rainEta.totalPrecipitationMm < 1 ? 2 : 1,
+                    },
                   )}{" "}
                   mm{isFetching ? " · …" : ""}
                 </span>
@@ -373,7 +380,7 @@ export default function RainNextHour({
               <p className="rain-eta-window">{etaWindowText}</p>
             )}
             <div className="rain-eta-meta">
-              {!compact && (
+              {!compact && rainEta.peakIntensity !== "none" && (
                 <span>{t(intensityKey(rainEta.peakIntensity))}</span>
               )}
               {!compact && rainEta.durationMinutes > 0 && (
@@ -381,7 +388,7 @@ export default function RainNextHour({
                   {rainEta.durationMinutes} {t("rainEtaDuration")}
                 </span>
               )}
-              <span>
+              <span className={`rain-confidence is-${rainEta.confidenceLevel}`}>
                 {t(confidenceKey)}
                 {!compact && rainEta.confidence !== null
                   ? ` · ${Math.round(rainEta.confidence * 100)}%`
@@ -464,7 +471,8 @@ export default function RainNextHour({
                       >
                         {point.source === "radar-nowcast"
                           ? `${t("radarSource")}${
-                              point.reflectivityDbz == null
+                              point.reflectivityDbz == null ||
+                              point.intensity === "none"
                                 ? ""
                                 : ` · ${point.reflectivityDbz}`
                             }`
