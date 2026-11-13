@@ -71,4 +71,5 @@ weather event, independently reconstruct published v2 records (including Brier),
 and evaluate long-lead challengers on a fixed held-out set. Activation requires a
 separate reviewed transition with representative evidence. The earlier 64-pair
 legacy reconstruction and 85-pair local v2 oracle replay do not replace this.
-Redis remains unjustified by the measured bottleneck; no new cost was introduced.
+Redis remains unjustified by the measured bottleneck. No new service or paid tier
+was activated; existing free quotas and storage growth still require monitoring.
