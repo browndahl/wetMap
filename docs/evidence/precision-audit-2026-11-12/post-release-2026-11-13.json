@@ -1,0 +1,67 @@
+{
+  "checkedAt": "2026-11-13T13:18:09.537101+00:00",
+  "codeCommit": "fbd4ae9aecb31a21ad0147d864d40441167fc027",
+  "runsSinceMerge": {
+    "total": 159,
+    "radarSuccess": 95,
+    "syntheticSuccess": 60,
+    "releaseSuccess": 1,
+    "deploySuccess": 1,
+    "ciSuccess": 1,
+    "securitySuccess": 1,
+    "unsuccessful": 0
+  },
+  "publicReportGeneratedAt": "2026-11-13T13:16:20.285149Z",
+  "verificationBatch": {
+    "eligiblePairs": 53,
+    "alreadyVerified": 41,
+    "planned": 12,
+    "completed": 12,
+    "errors": 0,
+    "deferred": 0,
+    "rejectedForecasts": 0,
+    "durationMs": 4255,
+    "coverageFraction": 1.0,
+    "complete": true
+  },
+  "comparisonAudit": {
+    "comparisonVersion": "shared-coverage-v2",
+    "sampleCount": 1115,
+    "failedPairCount": 0,
+    "mode": "shadow-only",
+    "canAffectForecasts": false,
+    "promotionEnabled": false
+  },
+  "publicProbe": {
+    "allSixChecksPassed": true,
+    "pointForecastMissMs": 427,
+    "pointForecastHitMs": 55,
+    "scope": "one-controlled-local-sequence-not-p95"
+  },
+  "rawSourceCoverage": [
+    {
+      "id": "dk.com.202611131300.500_max",
+      "sha256": "3eae66f70b53fefe454e1a264c82ef9860b32f23bbffbb1a907e76fae585555e",
+      "bytes": 74534,
+      "shape": [1728, 1984],
+      "nodata": 255,
+      "undetect": 0,
+      "validPixels": 1845644,
+      "coveredReferenceLocations": 20,
+      "totalReferenceLocations": 20
+    },
+    {
+      "id": "dk.com.202611131305.500_max",
+      "sha256": "72aadea0c770a389418713067c773de1860bef27707424cdccd54047f0c2f478",
+      "bytes": 60304,
+      "shape": [1728, 1984],
+      "nodata": 255,
+      "undetect": 0,
+      "validPixels": 725382,
+      "coveredReferenceLocations": 20,
+      "totalReferenceLocations": 20
+    }
+  ],
+  "publishedV2LedgerIndependentlyChecked": false,
+  "fullIndependentAcceptancePassed": false
+}
