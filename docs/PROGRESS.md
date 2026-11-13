@@ -172,6 +172,13 @@ or archive-retention change. Dependency migration and V6 remain separate work.
 
 ## Earlier completed work relevant to this programme
 
+13 November release follow-up: PRs #27/#28 deployed, 159 successful GitHub runs
+since merge at inspection, 1,115 v2 pairs with no calculation errors, latest retained
+window 53/53 covered. All six public probes passed. Direct DMI raw files confirm
+changing source footprints; both checked files cover all 20 reference cities.
++45/+60 legacy quality remains degraded; v2 is still diagnostic only.
+[Post-release evidence and remaining work](SHARED_COVERAGE_RELEASE_2026-11-13.md).
+
 12 November shared-coverage-v2: added an explicitly shadow-only, algorithm-separated
 comparison against persistence and the exact archived operational incumbent, with
 same-mask probability evidence and visible coverage loss. Legacy gates and scores

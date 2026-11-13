@@ -1,6 +1,6 @@
 # WetMap system context
 
-Last updated: 2026-11-12
+Last updated: 2026-11-13
 
 ## Purpose
 
@@ -182,10 +182,14 @@ checked metric mismatches, passing the unchanged 50-pair implementation-audit fl
 This does not establish full independent forecast acceptance. The original 21-pair
 checkpoint remains historical in `PRECISION_AUDIT_2026-11-12.md`.
 
-The next staged release adds `shared-coverage-v2` as separate shadow-only evidence,
+PR #28 adds `shared-coverage-v2` as separate shadow-only evidence,
 with same-mask Brier and the actual archived incumbent. It cannot enter forecast
 selection, calibration, alert gates or promotion; old scores are not rescored.
 See `SHARED_COVERAGE_V2_2026-11-12.md` and ADR 0012 for the activation boundary.
+Post-release checks found 1,115 v2 pairs without calculation errors and 159
+successful GitHub runs, but +45/+60 forecast quality remains degraded. See
+`SHARED_COVERAGE_RELEASE_2026-11-13.md` for current evidence and source-footprint
+limitations. Redis remains deferred; no new service or paid tier was activated.
 
 The original Phase 0 measurement and ranked findings are in `BASELINE.md`. Dated
 audit/reliability checkpoints qualify that historical baseline; neither they nor
