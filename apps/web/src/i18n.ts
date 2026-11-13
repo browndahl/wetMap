@@ -2,6 +2,10 @@ const messages = {
   da: {
     radar: "Radar",
     rainOverview: "Dit regnoverblik",
+    temperature: "Temperatur",
+    weatherAt: "Vejr ved",
+    temperatureForecast: "Timeprognose",
+    temperatureUnavailable: "Ikke tilgængelig",
     forecastDetails: "Temperatur og vind",
     rainDetails: "Regndetaljer og varsler",
     radarViews: "Vælg radarvisning",
@@ -214,6 +218,10 @@ const messages = {
   en: {
     radar: "Radar",
     rainOverview: "Your rain outlook",
+    temperature: "Temperature",
+    weatherAt: "Weather for",
+    temperatureForecast: "Hourly forecast",
+    temperatureUnavailable: "Unavailable",
     forecastDetails: "Temperature and wind",
     rainDetails: "Rain details and alerts",
     radarViews: "Choose radar view",

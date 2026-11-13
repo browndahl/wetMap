@@ -101,7 +101,9 @@ export const useWeatherStore = create<WeatherState>((set) => ({
     }
     set({ precise2d });
   },
-  setSelectedLocation: (selectedLocation) => set({ selectedLocation }),
+  // Re-selecting the current favorite should still reveal its weather overview.
+  setSelectedLocation: (selectedLocation) =>
+    set({ selectedLocation: { ...selectedLocation } }),
   toggleFavoriteLocation: (location) =>
     set((state) => {
       const exists = state.favoriteLocations.some(
