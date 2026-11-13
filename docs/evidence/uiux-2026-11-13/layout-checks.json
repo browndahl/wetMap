@@ -1,0 +1,204 @@
+{
+  "scope": "in-app-browser-viewport-testing-not-physical-devices",
+  "defaultChecks": [
+    {
+      "headerDockGap": 224,
+      "height": 568,
+      "mode": "default-rain",
+      "panels": [
+        {
+          "fits": true,
+          "height": 111,
+          "selector": ".app-header",
+          "width": 304,
+          "x": 8,
+          "y": 8
+        },
+        {
+          "fits": true,
+          "height": 196,
+          "selector": ".weather-dock",
+          "width": 304,
+          "x": 8,
+          "y": 343
+        }
+      ],
+      "width": 320
+    },
+    {
+      "headerDockGap": 500,
+      "height": 844,
+      "mode": "default-rain",
+      "panels": [
+        {
+          "fits": true,
+          "height": 111,
+          "selector": ".app-header",
+          "width": 374,
+          "x": 8,
+          "y": 8
+        },
+        {
+          "fits": true,
+          "height": 196,
+          "selector": ".weather-dock",
+          "width": 374,
+          "x": 8,
+          "y": 619
+        }
+      ],
+      "width": 390
+    },
+    {
+      "headerDockGap": 680,
+      "height": 1024,
+      "mode": "default-rain",
+      "panels": [
+        {
+          "fits": true,
+          "height": 111,
+          "selector": ".app-header",
+          "width": 752,
+          "x": 8,
+          "y": 8
+        },
+        {
+          "fits": true,
+          "height": 196,
+          "selector": ".weather-dock",
+          "width": 752,
+          "x": 8,
+          "y": 799
+        }
+      ],
+      "width": 768
+    },
+    {
+      "headerDockGap": 46,
+      "height": 390,
+      "mode": "default-rain",
+      "panels": [
+        {
+          "fits": true,
+          "height": 111,
+          "selector": ".app-header",
+          "width": 828,
+          "x": 8,
+          "y": 8
+        },
+        {
+          "fits": true,
+          "height": 196,
+          "selector": ".weather-dock",
+          "width": 456,
+          "x": 380,
+          "y": 165
+        }
+      ],
+      "width": 844
+    },
+    {
+      "headerDockGap": null,
+      "height": 768,
+      "mode": "default-rain",
+      "panels": [
+        {
+          "fits": true,
+          "height": 59,
+          "selector": ".topbar",
+          "width": 453,
+          "x": 16,
+          "y": 16
+        },
+        {
+          "fits": true,
+          "height": 54,
+          "selector": ".location-search",
+          "width": 432,
+          "x": 16,
+          "y": 80
+        },
+        {
+          "fits": true,
+          "height": 512,
+          "selector": ".weather-card",
+          "width": 336,
+          "x": 16,
+          "y": 144
+        },
+        {
+          "fits": true,
+          "height": 302,
+          "selector": ".timeline",
+          "width": 640,
+          "x": 368,
+          "y": 445
+        },
+        {
+          "fits": true,
+          "height": 79,
+          "selector": ".legend",
+          "width": 336,
+          "x": 16,
+          "y": 668
+        }
+      ],
+      "width": 1024
+    },
+    {
+      "headerDockGap": null,
+      "height": 900,
+      "mode": "default-rain",
+      "panels": [
+        {
+          "fits": true,
+          "height": 59,
+          "selector": ".topbar",
+          "width": 453,
+          "x": 16,
+          "y": 16
+        },
+        {
+          "fits": true,
+          "height": 54,
+          "selector": ".location-search",
+          "width": 432,
+          "x": 504,
+          "y": 16
+        },
+        {
+          "fits": true,
+          "height": 537,
+          "selector": ".weather-card",
+          "width": 336,
+          "x": 16,
+          "y": 96
+        },
+        {
+          "fits": true,
+          "height": 302,
+          "selector": ".timeline",
+          "width": 672,
+          "x": 464,
+          "y": 577
+        },
+        {
+          "fits": true,
+          "height": 79,
+          "selector": ".legend",
+          "width": 192,
+          "x": 1232,
+          "y": 800
+        }
+      ],
+      "width": 1440
+    }
+  ],
+  "expandedBehavior": "The outer dock stays in the viewport; expanded content scrolls inside it.",
+  "additionalChecks": [
+    "320px English radar and settings",
+    "Native data-age disclosure opened with Enter",
+    "Manual latest selection pauses playback",
+    "Phone rain/radar/more view isolation"
+  ]
+}

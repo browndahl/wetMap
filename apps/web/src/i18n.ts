@@ -1,6 +1,17 @@
 const messages = {
   da: {
     radar: "Radar",
+    rainOverview: "Dit regnoverblik",
+    forecastDetails: "Temperatur og vind",
+    rainDetails: "Regndetaljer og varsler",
+    radarViews: "Vælg radarvisning",
+    radarHistory: "Historik",
+    radarLatest: "Seneste måling",
+    radarFuture: "Prognose",
+    radarSettings: "Kortindstillinger og datagrundlag",
+    radarDataHelp: "Om radardata",
+    loadingRadar: "Henter radar…",
+    radarUnavailable: "Radar utilgængelig",
     observed: "Observeret",
     latestObservation: "Seneste observation",
     observedHistory: "Observationshistorik",
@@ -18,7 +29,8 @@ const messages = {
     nowcastNote:
       "Nowcast bruger verificeret optisk flow og skifter automatisk til en stabilitetsmodel, hvis den er mere præcis. Usikkerheden vokser frem mod +60 min.",
     noData: "Venter på radardata",
-    noDataDetail: "Kør workeren for at hente de seneste DMI-observationer.",
+    noDataDetail:
+      "Vi prøver automatisk igen. Radar vises, når data er tilgængelige.",
     play: "Afspil radar",
     pause: "Sæt radar på pause",
     collapseTimeline: "Minimer seneste observation",
@@ -35,11 +47,16 @@ const messages = {
     mobileRain: "Regn",
     mobileMore: "Mere",
     iphoneInstallTitle: "Installer på iPhone",
-    iphoneInstallReason: "Regnvarsler på iPhone kræver, at WetMap åbnes fra hjemmeskærmen.",
-    iphoneInstallShare: "Åbn WetMap i Safari, og tryk på Del (eventuelt via sidemenuen).",
-    iphoneInstallAdd: "Vælg Føj til hjemmeskærm. Slå Åbn som webapp til, hvis valget vises, og tryk Tilføj.",
-    iphoneInstallOpen: "Åbn WetMap-ikonet på hjemmeskærmen. Vælg Regn, vis prognosedetaljer og tryk Varsl mig.",
-    iphoneInstallVersion: "Baggrundsvarsler kræver iOS 16.4 eller nyere. Fokus og notifikationsindstillinger kan påvirke leveringen.",
+    iphoneInstallReason:
+      "Regnvarsler på iPhone kræver, at WetMap åbnes fra hjemmeskærmen.",
+    iphoneInstallShare:
+      "Åbn WetMap i Safari, og tryk på Del (eventuelt via sidemenuen).",
+    iphoneInstallAdd:
+      "Vælg Føj til hjemmeskærm. Slå Åbn som webapp til, hvis valget vises, og tryk Tilføj.",
+    iphoneInstallOpen:
+      "Åbn WetMap-ikonet på hjemmeskærmen. Vælg Regn, vis prognosedetaljer og tryk Varsl mig.",
+    iphoneInstallVersion:
+      "Baggrundsvarsler kræver iOS 16.4 eller nyere. Fokus og notifikationsindstillinger kan påvirke leveringen.",
     iphoneInstallAlerts: "Installer for at få regnvarsler",
     now: "Nu",
     fresh: "Opdateret",
@@ -87,7 +104,7 @@ const messages = {
     rainStops: "Regn stopper ca.",
     rainContinues: "Regn hele næste time",
     rainIntermittent: "Byger den næste time",
-    rainEtaLabel: "Regn-ETA",
+    rainEtaLabel: "Næste time",
     rainEtaExpected: "Regn forventes",
     rainEtaRaining: "Regn nu",
     rainEtaArrivalWindow: "Første regn",
@@ -196,6 +213,17 @@ const messages = {
   },
   en: {
     radar: "Radar",
+    rainOverview: "Your rain outlook",
+    forecastDetails: "Temperature and wind",
+    rainDetails: "Rain details and alerts",
+    radarViews: "Choose radar view",
+    radarHistory: "History",
+    radarLatest: "Latest reading",
+    radarFuture: "Forecast",
+    radarSettings: "Map settings and data sources",
+    radarDataHelp: "About radar data",
+    loadingRadar: "Loading radar…",
+    radarUnavailable: "Radar unavailable",
     observed: "Observed",
     latestObservation: "Latest observation",
     observedHistory: "Observation history",
@@ -213,7 +241,8 @@ const messages = {
     nowcastNote:
       "The nowcast uses verified optical flow and automatically switches to persistence when it is more accurate. Uncertainty increases towards +60 min.",
     noData: "Waiting for radar data",
-    noDataDetail: "Run the worker to fetch the latest DMI observations.",
+    noDataDetail:
+      "We retry automatically. Radar will appear when data is available.",
     play: "Play radar",
     pause: "Pause radar",
     collapseTimeline: "Minimize latest observation",
@@ -230,11 +259,16 @@ const messages = {
     mobileRain: "Rain",
     mobileMore: "More",
     iphoneInstallTitle: "Install on iPhone",
-    iphoneInstallReason: "Rain alerts on iPhone require opening WetMap from your Home Screen.",
-    iphoneInstallShare: "Open WetMap in Safari and tap Share (possibly through the page menu).",
-    iphoneInstallAdd: "Choose Add to Home Screen. Enable Open as Web App if shown, then tap Add.",
-    iphoneInstallOpen: "Open the WetMap icon on your Home Screen. Choose Rain, show forecast details and tap Notify me.",
-    iphoneInstallVersion: "Background alerts require iOS 16.4 or later. Focus and notification settings can affect delivery.",
+    iphoneInstallReason:
+      "Rain alerts on iPhone require opening WetMap from your Home Screen.",
+    iphoneInstallShare:
+      "Open WetMap in Safari and tap Share (possibly through the page menu).",
+    iphoneInstallAdd:
+      "Choose Add to Home Screen. Enable Open as Web App if shown, then tap Add.",
+    iphoneInstallOpen:
+      "Open the WetMap icon on your Home Screen. Choose Rain, show forecast details and tap Notify me.",
+    iphoneInstallVersion:
+      "Background alerts require iOS 16.4 or later. Focus and notification settings can affect delivery.",
     iphoneInstallAlerts: "Install to get rain alerts",
     now: "Now",
     fresh: "Updated",
@@ -282,7 +316,7 @@ const messages = {
     rainStops: "Rain stops around",
     rainContinues: "Rain throughout the next hour",
     rainIntermittent: "Showers during the next hour",
-    rainEtaLabel: "Rain ETA",
+    rainEtaLabel: "Next hour",
     rainEtaExpected: "Rain expected",
     rainEtaRaining: "Raining now",
     rainEtaArrivalWindow: "First rain",

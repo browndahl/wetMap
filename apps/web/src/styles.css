@@ -79,8 +79,7 @@ a {
   background: var(--surface-1);
   border: 1px solid oklch(0.8 0.04 220 / 16%);
   box-shadow: var(--shadow-panel);
-  backdrop-filter: blur(14px) saturate(125%);
-  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  /* Opaque panels stay readable over radar without live-map blur work. */
 }
 .topbar {
   position: fixed;
@@ -292,6 +291,38 @@ a {
   color: var(--warning);
   background: oklch(0.5 0.12 80 / 18%);
 }
+.freshness-details {
+  position: relative;
+}
+.freshness-details summary {
+  cursor: pointer;
+  list-style: none;
+  min-height: 36px;
+}
+.freshness-details summary::-webkit-details-marker {
+  display: none;
+}
+.freshness-popover {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 0.8rem);
+  left: 0;
+  width: min(19rem, calc(100vw - 3rem));
+  padding: 1rem;
+  border: 1px solid oklch(1 0 0 / 14%);
+  border-radius: 1rem;
+  background: var(--surface-0);
+  box-shadow: var(--shadow-panel);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.freshness-popover strong {
+  color: var(--text-1);
+}
+.freshness-popover p {
+  margin: 0.5rem 0 0;
+}
 .icon-button,
 .play-button,
 .mode-button,
@@ -316,7 +347,12 @@ a {
   z-index: 4;
   top: 6rem;
   left: 1rem;
-  width: min(20rem, calc(100vw - 2rem));
+  width: min(21rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 8rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: var(--surface-1);
   padding: 1rem;
   border-radius: var(--radius-lg);
 }
@@ -333,6 +369,12 @@ a {
 .weather-card h2 {
   font-size: 1rem;
   margin: 0.35rem 0 0.6rem;
+}
+.weather-context h2 {
+  margin: 0.35rem 0 1rem;
+  font-size: 1.4rem;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
 }
 .forecast-row {
   display: grid;
@@ -352,9 +394,7 @@ a {
   font-size: 1rem;
 }
 .rain-card {
-  margin-top: 0.55rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid oklch(1 0 0 / 10%);
+  margin-top: 0;
 }
 .rain-heading,
 .rain-summary {
@@ -394,7 +434,7 @@ a {
 }
 .rain-eta {
   margin-top: 0.55rem;
-  padding: 0.55rem;
+  padding: 0.85rem;
   border: 1px solid oklch(1 0 0 / 9%);
   border-radius: 0.65rem;
   background: linear-gradient(
@@ -417,22 +457,25 @@ a {
   text-transform: uppercase;
 }
 .rain-summary {
-  align-items: baseline;
+  align-items: start;
+  flex-direction: column;
+  gap: 0.4rem;
   margin-top: 0.25rem;
 }
 .rain-summary strong {
-  font-size: 0.84rem;
-  line-height: 1.2;
+  font-size: 1.15rem;
+  letter-spacing: -0.025em;
+  line-height: 1.35;
 }
 .rain-summary span {
   color: var(--text-2);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 .rain-eta-window {
   margin: 0.3rem 0 0;
   color: var(--text-2);
-  font-size: 0.6rem;
+  font-size: 0.75rem;
 }
 .rain-eta-meta {
   display: flex;
@@ -446,13 +489,17 @@ a {
   border-radius: 999px;
   color: var(--text-2);
   background: oklch(0.11 0.02 235 / 32%);
-  font-size: 0.48rem;
+  font-size: 0.65rem;
   white-space: nowrap;
+}
+.rain-eta-meta .rain-confidence.is-low {
+  color: var(--warning);
+  border-color: oklch(0.78 0.15 80 / 24%);
 }
 .rain-eta-details {
   margin-top: 0.4rem;
   color: var(--text-2);
-  font-size: 0.52rem;
+  font-size: 0.7rem;
 }
 .rain-eta-details summary {
   width: fit-content;
@@ -467,11 +514,11 @@ a {
   font-variant-numeric: tabular-nums;
 }
 .rain-chart {
-  height: 4.4rem;
+  height: 6rem;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 0.35rem;
-  margin-top: 0.45rem;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
 }
 .rain-column {
   min-width: 0;
@@ -485,8 +532,8 @@ a {
   display: grid;
   align-content: start;
   justify-items: center;
-  gap: 0.08rem;
-  padding: 0.34rem 0.18rem;
+  gap: 0.25rem;
+  padding: 0.6rem 0.18rem;
   border: 1px solid oklch(1 0 0 / 7%);
   border-radius: 0.3rem;
   background: oklch(1 0 0 / 5%);
@@ -526,7 +573,7 @@ a {
   border-radius: 999px;
   color: var(--text-2);
   background: oklch(0.2 0.03 230 / 58%);
-  font-size: 0.4rem;
+  font-size: 0.5rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   line-height: 1.15;
@@ -539,18 +586,18 @@ a {
   background: oklch(0.76 0.13 205 / 12%);
 }
 .rain-amount {
-  font-size: 0.62rem;
+  font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .rain-amount small {
   color: var(--text-2);
-  font-size: 0.45rem;
+  font-size: 0.6rem;
   font-weight: 600;
 }
 .rain-intensity {
   color: var(--text-2);
-  font-size: 0.47rem;
+  font-size: 0.6rem;
   font-weight: 750;
   letter-spacing: 0.05em;
   line-height: 1;
@@ -584,7 +631,7 @@ a {
 .rain-column time {
   overflow: hidden;
   color: var(--text-2);
-  font-size: 0.55rem;
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -602,12 +649,13 @@ a {
   justify-content: center;
   gap: 0.35rem;
   margin-top: 0.55rem;
-  padding: 0.45rem 0.55rem;
+  padding: 0.65rem 0.55rem;
+  min-height: 44px;
   border: 1px solid oklch(1 0 0 / 10%);
   border-radius: 0.65rem;
   color: var(--text-1);
   background: var(--surface-2);
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   cursor: pointer;
 }
 .rain-alert:hover,
@@ -617,6 +665,7 @@ a {
 }
 .rain-alert-note {
   text-align: center;
+  font-size: 0.65rem;
 }
 .rain-alert-note.is-error {
   color: var(--warning);
@@ -1113,7 +1162,7 @@ a {
 .timeline {
   position: fixed;
   z-index: 5;
-  left: 22rem;
+  left: 24rem;
   right: 14rem;
   bottom: 1.3rem;
   width: auto;
@@ -1142,7 +1191,76 @@ a {
 .timeline-actions {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: 0.5rem;
+}
+.timeline-latest {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--accent);
+  cursor: pointer;
+}
+.timeline-latest:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.timeline-compact-context {
+  margin: 0.35rem 0 0;
+  color: var(--text-2);
+  font-size: 0.72rem;
+}
+.radar-views {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin-top: 0.85rem;
+  padding: 0.2rem;
+  border-radius: 0.75rem;
+  background: oklch(0.08 0.02 245 / 45%);
+}
+.radar-views button {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  color: var(--text-2);
+  background: transparent;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.radar-views button[aria-pressed="true"] {
+  background: var(--surface-2);
+  border-color: oklch(0.76 0.13 205 / 30%);
+  color: var(--accent);
+}
+.radar-views button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.radar-settings {
+  margin-top: 0.6rem;
+  border-top: 1px solid oklch(1 0 0 / 10%);
+}
+.radar-settings summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 40px;
+  gap: 0.7rem;
+  list-style: none;
+  color: var(--text-2);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.radar-settings summary::-webkit-details-marker {
+  display: none;
+}
+.radar-settings .timeline-note {
+  text-align: left;
+  line-height: 1.5;
 }
 .timeline-toggle {
   width: 2.25rem;
@@ -1337,7 +1455,26 @@ a {
   display: contents;
 }
 .forecast-toggle {
-  display: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0;
+  border: 0;
+  border-top: 1px solid oklch(1 0 0 / 10%);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  text-align: left;
+}
+.forecast-toggle strong {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 .iphone-install-help {
   margin: 0.75rem 0;
@@ -1371,6 +1508,17 @@ a {
   }
   .weather-card {
     top: 9rem;
+    max-height: calc(100dvh - 16rem);
+  }
+  .timeline {
+    left: 23rem;
+    right: 1rem;
+    max-width: none;
+  }
+  .legend {
+    left: 1rem;
+    right: auto;
+    width: 21rem;
   }
 }
 
@@ -1412,6 +1560,12 @@ a {
     background: transparent;
     font-size: 0.62rem;
   }
+  .freshness-details summary {
+    min-height: 44px;
+  }
+  .freshness-popover {
+    left: -0.4rem;
+  }
   .mobile-map-time {
     margin-left: auto;
     color: var(--text-2);
@@ -1425,7 +1579,7 @@ a {
     transform: none;
   }
   .location-results {
-    top: calc(100% + 1.8rem);
+    top: calc(100% + 3.25rem);
     max-height: 50dvh;
     overflow-y: auto;
   }
@@ -1447,7 +1601,7 @@ a {
     flex-direction: column;
     max-height: calc(
       100dvh - max(0.5rem, env(safe-area-inset-top)) -
-        env(safe-area-inset-bottom) - 8rem
+        env(safe-area-inset-bottom) - 9rem
     );
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1471,6 +1625,8 @@ a {
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    max-height: none;
+    overflow: visible;
   }
   .weather-dock > [hidden] {
     display: none;
@@ -1486,7 +1642,7 @@ a {
     justify-content: space-between;
     width: 100%;
     min-height: 44px;
-    padding: 0;
+    padding: 0.4rem 0;
     border: 0;
     background: transparent;
     text-align: left;
@@ -1549,6 +1705,9 @@ a {
   .weather-dock .is-compact .rain-eta-meta {
     margin-top: 0.6rem;
     gap: 0;
+  }
+  .weather-dock .is-compact .rain-eta-meta .rain-confidence.is-low {
+    color: var(--warning);
   }
   .weather-dock .is-compact .rain-eta-meta span {
     padding: 0;
@@ -1640,6 +1799,14 @@ a {
     min-height: 44px;
     min-width: 44px;
   }
+  .timeline-latest,
+  .radar-views button,
+  .radar-settings summary {
+    min-height: 44px;
+  }
+  .timeline-latest {
+    min-width: 44px;
+  }
   .weather-dock .rain-alert-note {
     display: block;
   }
@@ -1692,7 +1859,7 @@ a {
     min-height: 44px;
   }
   .map .maplibregl-ctrl-top-right {
-    top: calc(max(0.5rem, env(safe-area-inset-top)) + 6rem);
+    top: calc(max(0.5rem, env(safe-area-inset-top)) + 7.25rem);
     right: max(0.5rem, env(safe-area-inset-right));
   }
   .app-shell:not(.mobile-more) .maplibregl-ctrl-top-right {
@@ -1712,15 +1879,35 @@ a {
   }
 }
 
+@media (max-width: 380px) {
+  .timeline-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+  }
+  .timeline-heading > div:first-child {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .timeline-heading h1 {
+    flex: 0 0 auto;
+  }
+  .timeline-actions {
+    justify-content: space-between;
+  }
+}
+
 @media (max-width: 850px) and (max-height: 500px) {
   .weather-dock {
     left: 45%;
-    max-height: calc(100dvh - env(safe-area-inset-bottom) - 8rem);
+    max-height: calc(100dvh - env(safe-area-inset-bottom) - 10rem);
   }
   .map .maplibregl-ctrl-top-right {
     right: auto;
     left: max(0.5rem, env(safe-area-inset-left));
-    top: 6rem;
+    top: 7.5rem;
   }
 }
 

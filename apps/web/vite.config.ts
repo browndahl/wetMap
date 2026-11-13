@@ -61,6 +61,16 @@ export default defineConfig({
     }),
   ],
   server: {
-    proxy: { "/api": { target: "http://localhost:8080", changeOrigin: true } },
+    // Optional public backend for local UI review, without widening
+    // production CORS. Default compose development remains unchanged.
+    proxy: Object.fromEntries(
+      ["/api", "/frames", "/nowcast"].map((path) => [
+        path,
+        {
+          target: process.env.WETMAP_DEV_API_TARGET || "http://localhost:8080",
+          changeOrigin: true,
+        },
+      ]),
+    ),
   },
 });

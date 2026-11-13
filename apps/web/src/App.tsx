@@ -291,6 +291,11 @@ export default function App() {
     state.setPlaying(true);
   };
 
+  const selectRadarView = (index: number) => {
+    state.setPlaying(false);
+    state.setSelectedFrame(index);
+  };
+
   const mapControls = (
     <div className="control-grid">
       <label>
@@ -366,17 +371,34 @@ export default function App() {
               {state.selectedLocation.name} · {forecastLatitude.toFixed(2)}°n
             </span>
           </div>
-          <span
-            className={`freshness ${isStale ? "is-stale" : ""}`}
-            role="status"
-            title={t("freshnessHelp")}
-          >
-            <Radio size={13} aria-hidden="true" />
-            {isStale ? t("stale") : t("fresh")} ·{" "}
-            {Number.isFinite(ageMinutes)
-              ? formatAge(ageMinutes, state.locale)
-              : "–"}
-          </span>
+          <details className="freshness-details">
+            <summary
+              className={`freshness ${isStale || !latestFrame ? "is-stale" : ""}`}
+            >
+              <Radio size={13} aria-hidden="true" />
+              <span role="status">
+                {latestFrame
+                  ? `${isStale ? t("stale") : t("fresh")} · ${formatAge(ageMinutes, state.locale)}`
+                  : manifest.isPending
+                    ? t("loadingRadar")
+                    : t("radarUnavailable")}
+              </span>
+              <ChevronDown size={12} aria-hidden="true" />
+            </summary>
+            <div className="freshness-popover">
+              <strong>{t("radarDataHelp")}</strong>
+              {latestFrame && (
+                <p>
+                  {t("measured")}{" "}
+                  <time dateTime={latestFrame.observedAt}>
+                    {formatTime(latestFrame.observedAt, state.locale)}
+                  </time>{" "}
+                  · {formatAge(ageMinutes, state.locale)}
+                </p>
+              )}
+              <p>{t("freshnessHelp")}</p>
+            </div>
+          </details>
           {compactLayout && activeFrameTime && (
             <span className="mobile-map-time">
               {activeIsNowcast ? t("nowcast") : t("measured")}{" "}
@@ -408,38 +430,54 @@ export default function App() {
           hidden={compactLayout && mobileView !== "rain"}
           id="weather-panel"
           className="weather-card glass"
-          aria-labelledby={
-            compactLayout ? "mobile-forecast-title" : "forecast-title"
-          }
+          aria-labelledby="rain-title"
           tabIndex={-1}
         >
-          {compactLayout && (
-            <button
-              className="forecast-toggle"
-              aria-label={
-                forecastExpanded ? t("collapseForecast") : t("expandForecast")
-              }
-              aria-expanded={forecastExpanded}
-              aria-controls="forecast-details"
-              onClick={() => {
-                setForecastExpanded(!forecastExpanded);
-                if (!forecastExpanded) setTimelineCollapsed(true);
-              }}
-            >
-              <span>
-                <strong id="mobile-forecast-title">{t("rainNextHour")}</strong>
-              </span>
-              {forecastExpanded ? (
-                <ChevronDown aria-hidden="true" />
-              ) : (
-                <ChevronUp aria-hidden="true" />
-              )}
-            </button>
+          {!compactLayout && (
+            <div className="weather-context">
+              <span className="eyebrow">{t("rainOverview")}</span>
+              <h2>{state.selectedLocation.name}</h2>
+            </div>
           )}
-          <div
-            id="forecast-details"
-            hidden={compactLayout && !forecastExpanded}
+          <RainNextHour
+            compact={compactLayout && !forecastExpanded}
+            data={rain.data}
+            isLoading={rain.isLoading}
+            isFetching={rain.isFetching}
+            isError={rain.isError}
+            locale={state.locale}
+            locationName={state.selectedLocation.name}
+            latitude={state.selectedLocation.latitude}
+            longitude={state.selectedLocation.longitude}
+          />
+          <button
+            className="forecast-toggle"
+            aria-label={`${forecastExpanded ? t("collapseForecast") : t("expandForecast")} · ${t(compactLayout ? "rainDetails" : "forecastDetails")}`}
+            aria-expanded={forecastExpanded}
+            aria-controls="forecast-details rain-outlook"
+            onClick={() => {
+              setForecastExpanded(!forecastExpanded);
+              if (compactLayout && !forecastExpanded)
+                setTimelineCollapsed(true);
+            }}
           >
+            <span>
+              <strong>
+                {compactLayout ? (
+                  <CloudRain size={16} aria-hidden="true" />
+                ) : (
+                  <Wind size={16} aria-hidden="true" />
+                )}
+                {t(compactLayout ? "rainDetails" : "forecastDetails")}
+              </strong>
+            </span>
+            {forecastExpanded === compactLayout ? (
+              <ChevronDown aria-hidden="true" />
+            ) : (
+              <ChevronUp aria-hidden="true" />
+            )}
+          </button>
+          <div id="forecast-details" hidden={!forecastExpanded}>
             <div className="eyebrow">
               <Wind size={15} aria-hidden="true" /> DMI HARMONIE
               {forecast.isFetching && !forecast.isLoading && (
@@ -476,22 +514,11 @@ export default function App() {
                 <span>
                   {point.windSpeedMs == null
                     ? "–"
-                    : `${point.windSpeedMs.toFixed(1)} m/s`}
+                    : `${point.windSpeedMs.toLocaleString(state.locale === "da" ? "da-DK" : "en-GB", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m/s`}
                 </span>
               </div>
             ))}
           </div>
-          <RainNextHour
-            compact={compactLayout && !forecastExpanded}
-            data={rain.data}
-            isLoading={rain.isLoading}
-            isFetching={rain.isFetching}
-            isError={rain.isError}
-            locale={state.locale}
-            locationName={state.selectedLocation.name}
-            latitude={state.selectedLocation.latitude}
-            longitude={state.selectedLocation.longitude}
-          />
         </section>
 
         <aside className="legend glass" aria-label={t("reflectivity")}>
@@ -530,6 +557,16 @@ export default function App() {
               </h1>
             </div>
             <div className="timeline-actions">
+              <button
+                className="timeline-latest"
+                type="button"
+                aria-label={t("jumpToLatest")}
+                title={t("jumpToLatest")}
+                disabled={!latestFrame || safeIndex === latestObservationIndex}
+                onClick={() => selectRadarView(latestObservationIndex)}
+              >
+                <SkipForward size={18} aria-hidden="true" />
+              </button>
               <button
                 className="timeline-toggle"
                 onClick={() => {
@@ -572,10 +609,48 @@ export default function App() {
             </div>
           </div>
 
+          {timelineCollapsed && activeFrame && (
+            <p className="timeline-compact-context">
+              {activeIsNowcast
+                ? `${t("nowcastConfidence")} ${Math.round(activeFrame.confidence * 100)}%`
+                : `${activeAgeMinutes} ${t("minutesBehindNow")}`}
+            </p>
+          )}
           {!timelineCollapsed && (
             <div id="timeline-details">
               {radarFrames.length ? (
                 <>
+                  <div
+                    className="radar-views"
+                    role="group"
+                    aria-label={t("radarViews")}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={
+                        !activeIsNowcast && safeIndex < latestObservationIndex
+                      }
+                      disabled={frames.length < 2}
+                      onClick={() => selectRadarView(0)}
+                    >
+                      {t("radarHistory")}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={safeIndex === latestObservationIndex}
+                      onClick={() => selectRadarView(latestObservationIndex)}
+                    >
+                      {t("radarLatest")}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={activeIsNowcast}
+                      disabled={!nowcastFrames.length}
+                      onClick={() => selectRadarView(frames.length)}
+                    >
+                      {t("radarFuture")}
+                    </button>
+                  </div>
                   <div className="timeline-context">
                     {activeIsNowcast ? (
                       <>
@@ -626,17 +701,6 @@ export default function App() {
                         </span>
                       </>
                     )}
-                    {safeIndex !== latestObservationIndex && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          state.setSelectedFrame(latestObservationIndex)
-                        }
-                      >
-                        <SkipForward size={14} aria-hidden="true" />
-                        {t("jumpToLatest")}
-                      </button>
-                    )}
                   </div>
                   <input
                     className="scrubber"
@@ -671,11 +735,6 @@ export default function App() {
                       )}
                     </time>
                   </div>
-                  <p className="timeline-note">
-                    {nowcastFrames.length
-                      ? t("nowcastNote")
-                      : t("futureRadarNote")}
-                  </p>
                 </>
               ) : (
                 <div className="empty-state" role="status">
@@ -684,7 +743,18 @@ export default function App() {
                 </div>
               )}
 
-              {!compactLayout && mapControls}
+              <details className="radar-settings">
+                <summary>
+                  {t("radarSettings")}
+                  <SlidersHorizontal size={15} aria-hidden="true" />
+                </summary>
+                <p className="timeline-note">
+                  {nowcastFrames.length
+                    ? t("nowcastNote")
+                    : t("futureRadarNote")}
+                </p>
+                {!compactLayout && mapControls}
+              </details>
             </div>
           )}
         </section>
