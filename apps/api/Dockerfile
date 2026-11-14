@@ -5,7 +5,7 @@ RUN dotnet restore
 COPY . ./
 RUN dotnet publish -c Release -o /app --no-restore /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-alpine AS runtime
 WORKDIR /app
 COPY --from=build /app ./
 USER $APP_UID
