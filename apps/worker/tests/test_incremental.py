@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from wetmap_worker import cli
 from wetmap_worker.model import Frame, manifest
 from wetmap_worker.storage import write_json_atomic
@@ -32,7 +34,10 @@ def test_promotes_calibration_only_after_matching_nowcast_quality_is_verified() 
     assert gauge_history["calibration"]["appliedThresholdDbz"] == 15
 
 
-def test_upload_run_only_processes_new_frames(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("failure_stage", ["none", "derived", "publication"])
+def test_upload_run_only_processes_new_frames_and_publishes_before_derivation(
+    tmp_path: Path, monkeypatch, failure_stage: str
+) -> None:
     old_frame = Frame(
         "old",
         "2026-10-10T20:00:00Z",
@@ -63,8 +68,19 @@ def test_upload_run_only_processes_new_frames(tmp_path: Path, monkeypatch) -> No
         return SimpleNamespace(bounds=[7, 54, 13, 58], product="DBZH", unit="dBZ", sha256="new-sha")
 
     uploaded: list[Path] = []
+    derived_called = False
+
+    def fake_upload(_output: Path, paths: list[Path]):
+        if failure_stage == "publication":
+            raise OSError("Cannot publish observations")
+        uploaded.extend(paths)
 
     def fake_download_frames(output: Path, names: list[str]):
+        nonlocal derived_called
+        derived_called = True
+        assert [path.name for path in uploaded] == ["new.webp"]
+        if failure_stage == "derived":
+            raise TimeoutError("Derived computation cannot delay published radar")
         paths = []
         for name in names:
             path = output / name
@@ -90,9 +106,16 @@ def test_upload_run_only_processes_new_frames(tmp_path: Path, monkeypatch) -> No
         },
     )
     monkeypatch.setattr(cli, "generate_nowcast", lambda *_args, **_kwargs: ({}, {}, []))
-    monkeypatch.setattr(cli, "upload_r2", lambda _output, paths: uploaded.extend(paths))
+    monkeypatch.setattr(cli, "upload_r2", fake_upload)
 
+    if failure_stage == "publication":
+        with pytest.raises(OSError, match="Cannot publish observations"):
+            cli.run(tmp_path, limit=2, upload=True)
+        assert uploaded == []
+        assert not derived_called
+        return
     cli.run(tmp_path, limit=2, upload=True)
 
+    assert derived_called
     assert [path.name for path in uploaded] == ["new.webp"]
     assert not (tmp_path / "old.webp").exists()

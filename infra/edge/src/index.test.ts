@@ -21,6 +21,7 @@ class MemoryCache {
 
 class MemoryR2 {
   values = new Map<string, string | Uint8Array>();
+  revisions = new Map<string, number>();
 
   async get(
     key: string,
@@ -37,6 +38,7 @@ class MemoryR2 {
         )
       : allBytes;
     return {
+      etag: `${key}:${this.revisions.get(key) ?? 0}`,
       json: async () =>
         JSON.parse(
           typeof value === "string" ? value : new TextDecoder().decode(value),
@@ -48,7 +50,16 @@ class MemoryR2 {
     };
   }
 
-  async put(key: string, value: string | ReadableStream | ArrayBuffer) {
+  async put(
+    key: string,
+    value: string | ReadableStream | ArrayBuffer,
+    options?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } },
+  ) {
+    const etag = `${key}:${this.revisions.get(key) ?? 0}`;
+    if (options?.onlyIf?.etagMatches && options.onlyIf.etagMatches !== etag)
+      return null;
+    if (options?.onlyIf?.etagDoesNotMatch === "*" && this.values.has(key))
+      return null;
     this.values.set(
       key,
       typeof value === "string"
@@ -57,6 +68,8 @@ class MemoryR2 {
           ? new Uint8Array(value)
           : new Uint8Array(await new Response(value).arrayBuffer()),
     );
+    this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+    return { etag: `${key}:${this.revisions.get(key)}` };
   }
 
   async delete(key: string) {
@@ -483,7 +496,7 @@ describe("forecast edge endpoint", () => {
     });
     vi.spyOn(r2, "put").mockImplementation(async (key, value) => {
       await blocked;
-      await originalPut(key, value);
+      return originalPut(key, value);
     });
     const upstream = vi.fn(async () => dmiResponse());
     vi.stubGlobal("fetch", upstream);
@@ -1305,13 +1318,17 @@ describe("radar freshness scheduler", () => {
         frames: [{ observedAt: "2026-10-11T05:50:00Z" }],
       }),
     );
-    const upstream = vi.fn(async () => new Response(null, { status: 204 }));
+    const upstream = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? new Response(null, { status: 204 })
+        : Response.json({ workflow_runs: [] }),
+    );
     vi.stubGlobal("fetch", upstream);
 
     await worker.scheduled({} as ScheduledController, env, context);
     await Promise.all(waits);
 
-    expect(upstream).toHaveBeenCalledOnce();
+    expect(upstream).toHaveBeenCalledTimes(2);
     expect(upstream).toHaveBeenCalledWith(
       "https://api.github.com/repos/browndahl/wetMap/actions/workflows/radar.yml/dispatches",
       expect.objectContaining({
@@ -1335,7 +1352,11 @@ describe("radar freshness scheduler", () => {
         frames: [{ observedAt: "2026-10-11T05:50:00Z" }],
       }),
     );
-    const upstream = vi.fn(async () => new Response(null, { status: 204 }));
+    const upstream = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? new Response(null, { status: 204 })
+        : Response.json({ workflow_runs: [] }),
+    );
     vi.stubGlobal("fetch", upstream);
 
     await worker.scheduled({} as ScheduledController, env, context);
@@ -1343,7 +1364,7 @@ describe("radar freshness scheduler", () => {
     await worker.scheduled({} as ScheduledController, env, context);
     await Promise.all(waits);
 
-    expect(upstream).toHaveBeenCalledOnce();
+    expect(upstream).toHaveBeenCalledTimes(2);
     expect(r2.values.has("scheduler/radar-dispatch.json")).toBe(true);
   });
 

@@ -13,15 +13,22 @@ permissions:
 jobs:
   process:
     if: vars.R2_CONFIGURED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     environment: production
     steps:
       - uses: actions/checkout@v6
+        timeout-minutes: 1
       - uses: actions/setup-python@v6
-        with: { python-version: "3.12", cache: pip }
-      - run: pip install -e apps/worker
+        timeout-minutes: 1
+        # Dependency cache restore/save is not allowed on the live-data path.
+        # A cache-service failure previously consumed the entire job deadline.
+        with: { python-version: "3.12" }
+      - name: Install worker without the Actions cache service
+        timeout-minutes: 2
+        run: python -m pip install --disable-pip-version-check --no-cache-dir --retries 2 --timeout 20 -e apps/worker
       - name: Process and upload idempotently
+        timeout-minutes: 4
         run: wetmap-worker --output /tmp/wetmap-frames --limit 13 --upload-r2
         env:
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
@@ -29,6 +36,7 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
       - name: Validate freshness
+        timeout-minutes: 1
         run: |
           if [ -n "$API_URL" ]; then
             python .github/scripts/check_freshness.py /tmp/wetmap-frames/frames.json 25 --managed-status-url "$API_URL/api/v1/operations/status"
@@ -37,6 +45,7 @@ jobs:
           fi
         env: { API_URL: "${{ vars.API_URL }}" }
       - name: Retire inactive derived images older than 48h, at most once per day
+        timeout-minutes: 2
         if: vars.NOWCAST_RETENTION_ENABLED == 'true'
         run: python -m wetmap_worker.retention --apply --once-per-day --report /tmp/retention-report.json
         env:

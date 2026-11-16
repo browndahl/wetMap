@@ -371,3 +371,39 @@ it("keeps independent scheduled tasks alive when monitoring dispatch fails", asy
     "rejected",
   ]);
 });
+
+it("exposes bounded radar recovery diagnostics without changing the observation freshness gate", async () => {
+  const { env, bucket } = setup();
+  await receiveOperationsReport(request(report()), env);
+  await bucket.put(
+    "monitoring/scheduler.json",
+    JSON.stringify({ checkedAt: now }),
+  );
+  await bucket.put(
+    "frames/frames.json",
+    JSON.stringify({
+      generatedAt: now,
+      frames: [{ observedAt: "2026-10-30T11:10:00Z" }],
+    }),
+  );
+  await bucket.put(
+    "scheduler/radar-dispatch.json",
+    JSON.stringify({
+      checkedAt: now,
+      decision: "active-run",
+      activeRunId: 123,
+    }),
+  );
+  const response = await operationsStatus(env);
+  const value = await response.json<any>();
+  expect(response.status).toBe(503);
+  expect(value.radar).toMatchObject({ code: "source-delayed", ageMinutes: 50 });
+  expect(value.radarRecovery).toMatchObject({
+    decision: "active-run",
+    activeRunId: 123,
+  });
+  await bucket.put("scheduler/radar-dispatch.json", "invalid json");
+  const corrupt = await (await operationsStatus(env)).json<any>();
+  expect(corrupt.radarRecovery).toBeNull();
+  expect(corrupt.radar.code).toBe("source-delayed");
+});

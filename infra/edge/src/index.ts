@@ -10,6 +10,7 @@ import {
   scheduleOperations,
 } from "./operations";
 import { coalesceResponse } from "./singleFlight";
+import { ensureFreshRadar } from "./radarScheduler";
 
 interface Env {
   RADAR: R2Bucket;
@@ -35,9 +36,6 @@ const forecastCacheSeconds = 10 * 60;
 const forecastStaleSeconds = 6 * 60 * 60;
 const precipitationCacheSeconds = 5 * 60;
 const precipitationStaleSeconds = 30 * 60;
-const radarDispatchAgeMs = 20 * 60 * 1000;
-const radarDispatchCooldownMs = 8 * 60 * 1000;
-const radarDispatchStateKey = "scheduler/radar-dispatch.json";
 const locationCacheSeconds = 24 * 60 * 60;
 const reverseLocationCacheSeconds = 7 * 24 * 60 * 60;
 const dmiPrimaryHeadStartMs = 400;
@@ -765,73 +763,6 @@ async function nowcastFrame(
   headers.set("ETag", object.httpEtag);
   headers.set("Cache-Control", "public,max-age=300");
   return new Response(object.body, { headers });
-}
-
-async function dispatchRadarIngestion(env: Env): Promise<boolean> {
-  if (!env.GITHUB_DISPATCH_TOKEN) {
-    console.error("radar.scheduler.missing-token");
-    return false;
-  }
-  const repository = env.GITHUB_REPOSITORY ?? "browndahl/wetMap";
-  const workflow = env.GITHUB_RADAR_WORKFLOW ?? "radar.yml";
-  const ref = env.GITHUB_REF ?? "main";
-  const response = await fetch(
-    `https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
-        "Content-Type": "application/json",
-        "User-Agent": "wetmap-radar-scheduler/1.0",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      body: JSON.stringify({ ref }),
-    },
-  );
-  if (!response.ok)
-    throw new Error(`GitHub workflow dispatch returned ${response.status}`);
-  console.log("radar.scheduler.dispatched", { repository, workflow, ref });
-  return true;
-}
-
-async function ensureFreshRadar(env: Env): Promise<void> {
-  const object = await env.RADAR.get("frames/frames.json");
-  if (object) {
-    try {
-      const manifest = await object.json<{
-        frames?: Array<{ observedAt?: string }>;
-      }>();
-      const observedAt = manifest.frames?.at(-1)?.observedAt;
-      const observedTime = observedAt ? Date.parse(observedAt) : Number.NaN;
-      if (
-        Number.isFinite(observedTime) &&
-        Date.now() - observedTime <= radarDispatchAgeMs
-      )
-        return;
-    } catch (error) {
-      console.error("radar.scheduler.invalid-manifest", { error });
-    }
-  }
-  try {
-    const state = await env.RADAR.get(radarDispatchStateKey);
-    const lastDispatchedAt = Date.parse(
-      (await state?.json<{ lastDispatchedAt?: string }>())?.lastDispatchedAt ??
-        "",
-    );
-    if (
-      Number.isFinite(lastDispatchedAt) &&
-      Date.now() - lastDispatchedAt < radarDispatchCooldownMs
-    )
-      return;
-  } catch (error) {
-    console.error("radar.scheduler.invalid-state", { error });
-  }
-  if (await dispatchRadarIngestion(env))
-    await env.RADAR.put(
-      radarDispatchStateKey,
-      JSON.stringify({ lastDispatchedAt: new Date().toISOString() }),
-    );
 }
 
 function forecastHeaders(
