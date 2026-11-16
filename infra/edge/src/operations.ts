@@ -1,3 +1,8 @@
+import {
+  radarDispatchStateKey,
+  type RadarRecoveryState,
+} from "./radarScheduler";
+
 export interface OperationsEnv {
   RADAR: R2Bucket;
   OPERATIONS_MONITOR_ENABLED?: string;
@@ -89,12 +94,15 @@ export function classifyRadar(
 
 export async function operationsStatus(env: OperationsEnv): Promise<Response> {
   try {
-    const [probe, scheduler, manifest] = await Promise.all([
+    const [probe, scheduler, manifest, radarRecovery] = await Promise.all([
       read<ProbeState>(env.RADAR, probeKey),
       read<SchedulerState>(env.RADAR, schedulerKey),
       read<Parameters<typeof classifyRadar>[0]>(
         env.RADAR,
         "frames/frames.json",
+      ),
+      read<RadarRecoveryState>(env.RADAR, radarDispatchStateKey).catch(
+        () => null,
       ),
     ]);
     const schedulerOk =
@@ -126,6 +134,7 @@ export async function operationsStatus(env: OperationsEnv): Promise<Response> {
           runId: probe?.runId ?? null,
         },
         radar,
+        radarRecovery,
         checks: probe?.checks ?? [],
         activeIncident: probe?.incident ?? null,
         lastIncident: probe?.lastIncident ?? null,

@@ -117,6 +117,12 @@ def run(output: Path, limit: int, upload: bool) -> None:
         if old_frame.name not in keep:
             old_frame.unlink()
     write_json_atomic(existing_path, manifest(frames))
+    if upload:
+        # Observations are the critical path. Publish immutable images followed by
+        # their manifest before any derived computation or verification download.
+        # A slow/failed nowcast must not hold already-processed radar hostage.
+        upload_r2(output, new_frame_paths)
+        logging.info("radar.observations.published")
 
     nowcast_paths: list[Path] = []
     upload_verification_assets = False
@@ -283,7 +289,6 @@ def run(output: Path, limit: int, upload: bool) -> None:
     for downloaded_source in downloaded_source_paths:
         downloaded_source.unlink(missing_ok=True)
     if upload:
-        upload_r2(output, new_frame_paths)
         if nowcast_paths:
             upload_nowcast_r2(
                 output / "nowcast",
