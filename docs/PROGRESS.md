@@ -89,6 +89,23 @@ Documentation PR #49 records this checkpoint and updates quota/input/race runboo
 historical budget/test-result pages now point to the dated master evidence. No
 private handoff/raw snapshot is published and no new approval boundary is waived.
 
+### 18 November follow-up — separate Release workflow
+
+Final inspection found one extra historical failure in 91 runs since 21:45 UTC:
+Release 44186050603, remote GitHub Internal Server Error pushing notes after tag
+creation. Tag v1.22.4 is intact; Release API 404. It is not a radar failure and
+no blind replay/old metadata repair is performed. Separate approval requested.
+
+A distinct confirmed release-policy gap is corrected in the follow-up: own main
+push only, exact nominated SHA, CI+Security, serialization and current-head check.
+Only a validated obsolete candidate may explicitly skip publication; every unknown
+or failed gate still fails, including malformed remote refs. ADR 0016 and RCA
+M16 distinguish this from GitHub's provider 500. Four new methods; 54 script /
+**330 total local-suite tests**, not full acceptance. Normal rollout still required.
+The action's runtime npm installer reported 14 high /1 critical advisories;
+packages/reachability and safe remediation are unverified, not an exploit claim
+or evidence of repository Trivy coverage. No blind major dependency upgrade.
+
 ---
 
 The following log records the earlier build-brief programme. Evidence is linked

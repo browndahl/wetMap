@@ -25,3 +25,10 @@ specific reproduced defect, not every historical incident or end-to-end SLO.
 
 Findings are updated after reproduction; no entry is considered fixed merely
 because a later production probe is green.
+
+## 18 November follow-up
+
+| ID  | Severity / impact        | Evidence / cause                                                                                                                                                                          | Scoped action / verification                                                                                                                                                                                              |
+| --- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M16 | P1 release integrity     | Release accepted branch-only CI, floating main, no Security gate/serialization. Separate historical GitHub notes-push 500 left v1.22.4 tag but Release post 404.                          | Trusted exact-push gate + explicit superseded-candidate no-publish; 11 old workflow assertions fail, 13 gate methods /54 script methods pass. ADR 0016. No claim to fix provider 500; old Release repair awaits approval. |
+| M17 | P2 security / unresolved | Historical action runtime install reports 47 npm advisories (14 high, 1 critical); public action package uses dependency ranges. Exact tree/reachability not retained in the failure log. | Separate dependency audit needed; repository CI/Trivy green does not scan this runtime-installed tree. Do not infer exploitation or apply an unreviewed major upgrade.                                                    |

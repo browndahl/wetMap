@@ -22,6 +22,13 @@ No promise that GitHub/DMI/Cloudflare will never fail. Health must stay honest.
 
 ## Required next release assessment
 
+18 November follow-up: GitHub notes-push 500 left old tag v1.22.4 without a
+Release post. No blind publisher replay; separately requested approval for only
+that metadata repair. Exact-SHA Release gating is separate from this provider
+failure. Action runtime installation also reported 14 high/1 critical npm
+advisories; exact packages/reachability need audit before claiming supply-chain
+coverage. No evidence of exploitation, no blind dependency upgrade.
+
 Use a fresh separate acceptance session per WETMAP_MASTER_PROMPT.md. Report
 PASS/FAIL/BLOCKED/HUMAN per check and release only if every blocking check passes.
 This implementation session does not generate a misleading ACCEPTANCE_REPORT.md

@@ -2,6 +2,7 @@ import unittest
 import contextlib
 import io
 import json
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -27,6 +28,110 @@ def run(name, **changes):
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_release_workflow_uses_trusted_exact_push_and_both_checks(self):
+        workflow = (
+            Path(__file__).resolve().parents[1] / "workflows/release.yml"
+        ).read_text()
+        for required in (
+            "github.event.workflow_run.event == 'push'",
+            "github.event.workflow_run.head_repository.full_name == github.repository",
+            'ref: "${{ github.event.workflow_run.head_sha }}"',
+            'RELEASE_SHA: "${{ github.event.workflow_run.head_sha }}"',
+            "actions: read",
+            "group: wetmap-release",
+            "cancel-in-progress: false",
+            "release_gate.py --skip-superseded",
+            "release_gate.py --check-current --skip-superseded",
+            "steps.current.outputs.eligible == 'true'",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, workflow)
+        self.assertNotIn("continue-on-error", workflow)
+        self.assertNotIn("ref: main", workflow)
+
+    def invoke_optional_gate(self, output_path, documents, *, check_current=False):
+        environment = {
+            "GITHUB_REPOSITORY": REPO,
+            "GITHUB_SHA": "b" * 40,
+            "GITHUB_REF": "refs/heads/main",
+            "GH_TOKEN": "synthetic-sensitive-value",
+            "GITHUB_OUTPUT": str(output_path) if output_path else "",
+        }
+        responses = []
+        for document in documents:
+            if isinstance(document, Exception):
+                responses.append(document)
+                continue
+            response = Mock()
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock(return_value=False)
+            response.read.return_value = json.dumps(document).encode()
+            responses.append(response)
+        arguments = ["gate", "--skip-superseded", "--sha", SHA]
+        if check_current:
+            arguments.append("--check-current")
+        with (
+            patch.dict("os.environ", environment),
+            patch("sys.argv", arguments),
+            patch("release_gate.urllib.request.urlopen", side_effect=responses),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            result = main()
+        self.assertNotIn("synthetic-sensitive-value", output.getvalue())
+        return result, output.getvalue()
+
+    def test_optional_superseded_candidate_is_explicitly_not_publishable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "output"
+            result, message = self.invoke_optional_gate(
+                output_path, [{"object": {"sha": "b" * 40}}]
+            )
+            self.assertEqual(result, 0)
+            self.assertEqual(output_path.read_text(), "eligible=false\n")
+            self.assertIn('"decision": "superseded"', message)
+
+    def test_optional_gate_only_enables_current_successfully_checked_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "output"
+            current = {"object": {"sha": SHA}}
+            result, _ = self.invoke_optional_gate(
+                output_path,
+                [
+                    current,
+                    {"workflow_runs": [run("CI"), run("Security")]},
+                    current,
+                ],
+            )
+            self.assertEqual(result, 0)
+            self.assertEqual(output_path.read_text(), "eligible=true\n")
+            output_path.unlink()
+            result, _ = self.invoke_optional_gate(
+                output_path, [current], check_current=True
+            )
+            self.assertEqual(result, 0)
+            self.assertEqual(output_path.read_text(), "eligible=true\n")
+
+    def test_optional_gate_never_masks_failure_or_missing_output(self):
+        current = {"object": {"sha": SHA}}
+        for documents in [
+            [OSError("synthetic-sensitive-value")],
+            [{}],
+            [{"object": {"sha": "malformed"}}],
+            [
+                current,
+                {"workflow_runs": [run("CI", conclusion="failure"), run("Security")]},
+            ],
+        ]:
+            with (
+                self.subTest(documents=documents),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                output_path = Path(directory) / "output"
+                result, _ = self.invoke_optional_gate(output_path, documents)
+                self.assertEqual(result, 1)
+                self.assertFalse(output_path.exists())
+        self.assertEqual(self.invoke_optional_gate(None, [current])[0], 1)
+
     def test_cli_checks_current_commit_and_never_logs_auth_or_raw_errors(self):
         environment = {
             "GITHUB_REPOSITORY": REPO,
