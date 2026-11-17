@@ -49,23 +49,53 @@ def radar_status(manifest: dict, limit: int = 25, now: datetime | None = None) -
     }
 
 
+def source_delay_handoff_reason(
+    status: dict, monitoring: Any, now: datetime | None = None
+) -> str:
+    """Static diagnostics only; never return upstream text or change health gates."""
+    current = now or datetime.now(timezone.utc)
+    if status.get("code") != "source-delayed":
+        return "not-source-delay"
+    if not isinstance(monitoring, dict):
+        return "monitor-invalid-contract"
+    if monitoring.get("monitoringActive") is not True:
+        return "monitor-inactive"
+    try:
+        scheduler_fresh = (
+            -2 <= age_minutes(monitoring["scheduler"]["checkedAt"], current) <= 10
+        )
+    except (KeyError, TypeError, ValueError):
+        scheduler_fresh = False
+    if not scheduler_fresh:
+        return "scheduler-not-fresh"
+    try:
+        probe_fresh = (
+            -2 <= age_minutes(monitoring["probe"]["receivedAt"], current) <= 35
+        )
+    except (KeyError, TypeError, ValueError):
+        probe_fresh = False
+    if not probe_fresh:
+        return "probe-not-fresh"
+    try:
+        same_observation = monitoring["radar"]["observedAt"] == status["observedAt"]
+    except (KeyError, TypeError):
+        same_observation = False
+    if not same_observation:
+        return "observation-mismatch"
+    try:
+        owned = "radar:source-delayed" in monitoring["activeIncident"][
+            "signature"
+        ].split(",")
+    except (KeyError, TypeError, AttributeError):
+        owned = False
+    return "owned" if owned else "incident-not-owned"
+
+
 def managed_source_delay(
     status: dict, monitoring: dict, now: datetime | None = None
 ) -> bool:
     """Only hand off a source incident already recorded by a live alert owner."""
-    current = now or datetime.now(timezone.utc)
-    try:
-        return bool(
-            status["code"] == "source-delayed"
-            and monitoring.get("monitoringActive") is True
-            and -2 <= age_minutes(monitoring["scheduler"]["checkedAt"], current) <= 10
-            and -2 <= age_minutes(monitoring["probe"]["receivedAt"], current) <= 35
-            and monitoring["radar"]["observedAt"] == status["observedAt"]
-            and "radar:source-delayed"
-            in monitoring["activeIncident"]["signature"].split(",")
-        )
-    except (KeyError, TypeError, ValueError, AttributeError):
-        return False
+    return source_delay_handoff_reason(status, monitoring, now) == "owned"
 
 
 def main() -> int:
@@ -82,6 +112,7 @@ def main() -> int:
     if status["ok"]:
         return 0
     if arguments.managed_status_url and status["code"] == "source-delayed":
+        reason = "monitor-unavailable"
         try:
             try:
                 response = urllib.request.urlopen(
@@ -92,14 +123,21 @@ def main() -> int:
                     raise
                 response = error
             with response:
-                monitoring = json.load(response)
-            if managed_source_delay(status, monitoring):
-                print(
-                    "::warning::Radar remains stale. The active operations incident owns repeated source-delay notifications; service status remains HTTP 503."
-                )
-                return 0
-        except (OSError, ValueError):
+                payload = response.read(65_537)
+            if len(payload) > 65_536:
+                reason = "monitor-too-large"
+            else:
+                reason = source_delay_handoff_reason(status, json.loads(payload))
+        except OSError:
             pass
+        except ValueError:
+            reason = "monitor-invalid-json"
+        print(json.dumps({"event": "radar.source-delay-handoff", "reason": reason}))
+        if reason == "owned":
+            print(
+                "::warning::Radar remains stale. The active operations incident owns repeated source-delay notifications; service status remains HTTP 503."
+            )
+            return 0
     print(
         f"Radar data is unhealthy: {status['code']} (limit {arguments.limit_minutes} minutes)"
     )
