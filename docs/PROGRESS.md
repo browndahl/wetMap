@@ -1,7 +1,92 @@
 # WetMap programme progress
 
-This log follows the phase order in the WetMap best-in-class build brief. Evidence is
-linked where it is stored in the repository.
+## Governing master checkpoint — 17 November 2026
+
+Owner adopted [`WETMAP_MASTER_PROMPT.md`](WETMAP_MASTER_PROMPT.md), copied exactly
+from the supplied document (SHA-256
+`9bb74ea151b2f14f8dc866cb71e0737a67f8c6d6623ded8b87921e50ffa977e5`).
+It supersedes the earlier build/review/acceptance inputs and phase numbering:
+**correctness → stability → forecast accuracy → location/UX → performance**.
+Older sections below are historical, not the current order or acceptance verdict.
+The owner explicitly requested uninterrupted work, waiving routine phase pauses,
+not the stop-and-ask boundaries for costs, history, gates or stored personal data.
+
+Phase: **partial master baseline plus confirmed-defect implementation**.
+No full Phase 0/independent acceptance or all-phase completion is claimed.
+
+### Changed / evidence
+
+- [#39](https://github.com/browndahl/wetMap/pull/39): empty/malformed radar catalogue
+  rejected before replacing last-good manifest; 12 initial failing cases, 13 pass.
+- [#40](https://github.com/browndahl/wetMap/pull/40): static quality-validator
+  failure causes and public-report hash; no raw stderr. Historical cause unknown.
+- [#41](https://github.com/browndahl/wetMap/pull/41) and
+  [#42](https://github.com/browndahl/wetMap/pull/42): actual inactive point binary
+  slot, publish ETag after successful binary upload, conditional/version-checked
+  reads. Writer-first normal publication proved before strict reader rollout.
+- [#43](https://github.com/browndahl/wetMap/pull/43): exact-main-commit CI+Security
+  prerequisite, serialized/pinned deploy and superseded-release guard. First
+  normal release proves checks completed before staging/production.
+- [#44](https://github.com/browndahl/wetMap/pull/44): actual 8 KiB push body limit,
+  JSON object/runtime field types. No real push mutation in tests.
+- [#45](https://github.com/browndahl/wetMap/pull/45): bounded weather-only decoded
+  scratch cache, 520→13 decodes per synthetic 40-point scan; local lookup-only
+  p50 38.084→1.034 ms. Not field latency, real delivery or CPU compliance.
+- [#46](https://github.com/browndahl/wetMap/pull/46): safe source-delay ownership
+  reasons, same gates/503 health, bounded existing 64 KiB status read.
+- [#47](https://github.com/browndahl/wetMap/pull/47): missing/blank required
+  coordinates no longer become zero; 10 failing baseline cases, 20 now pass.
+- [#48](https://github.com/browndahl/wetMap/pull/48): apply the existing +2-minute future tolerance
+  before publication, not only after; three failing baseline cases, five now pass.
+  Its PR/normal rollout is tracked in TEST_EVIDENCE.md.
+- Fresh deterministic suite: 124 edge + 38 web + 2 shared + 112 worker + 50 script
+  tests = **326**, not an end-to-end coverage/acceptance percentage. CI also runs
+  portable .NET and container builds plus security. Gzip budgets unchanged/pass;
+  existing map chunk warning remains.
+
+### Raw-data and quota findings
+
+Owner separately approved **one** private local snapshot ≤34 reads / 64 MB,
+without subscriptions/persondata or raw upload. Actual 22 reads / 10,761,702 bytes,
+stable state. Reconstructs **31 published / 43 available pairs, 186 score checks,
+zero mismatches, persistence identity 6/6**. C1 remains **BLOCKED** at unchanged
+minimum 50, with no independent published-v2/Brier full acceptance. Local v2
+oracle is diagnostic only. No second snapshot is implicitly authorised.
+
+Seven-day Cloudflare aggregate usage measured against current official limits.
+Peak Worker requests 3,192/day, R2 A/B 7,870/15,194/day. Storage daily peak
+10.443 GB on 12/11, 1.497 GB on 16/11 after previously approved cleanup, not
+a monthly invoice. Historical cron CPU p99 41.854–52.469 ms; first six post-release
+cron calls p50 12.293 / p95 17.977 ms still exceed documented Free 10 ms. Samples
+aren't matched; actual plan request 403. **Free-tier compliance unresolved**, no
+upgrade/new paid service/hard cost guarantee. No new Redis/KV/monitoring vendor.
+
+### Not done / risks / next step
+
+- Full correctness/quality evidence, held-out V6 and independent acceptance remain.
+- Remote load/chaos blocked: staging shares production API/account. No production
+  destructive scenario or new quota-consuming archive.
+- Main/rulesets/environment protection absent despite workflow release gate.
+  Existing app logs contain location fields/raw errors; a scoped future-log
+  minimisation change awaits explicit owner approval. No existing logs deleted.
+- Physical-device push, WebKit/Firefox, screen readers, wrong-clock/offline/SW
+  update, CWV/FPS/long-memory aren't accepted by six Chrome screenshots.
+- Historical source delay and original quality rejection not retrospectively
+  explained. New diagnostics improve future evidence, not historical certainty.
+
+Quota impact: no new service/request path for validation/decoder fixes; point
+writer adds at most one small R2 read/ingestion (~8,640/month at 5 min). Same two
+point slots, existing retention/history preserved. Existing public standard CI
+runners and bounded release polling; total account artifact/monthly accounting
+still not established. Detailed evidence and next safe steps: BASELINE.md,
+FINDINGS.md, RCA.md, TEST_EVIDENCE.md, PERFORMANCE.md, FREE_TIER.md, RISKS.md,
+MASTER_WORK_PLAN.md and ADRs 0014/0015. Next: close correctness/CPU evidence and
+approval/isolation gaps before new product features or forecast promotion.
+
+---
+
+The following log records the earlier build-brief programme. Evidence is linked
+where it is stored in the repository; historical phase labels aren't master status.
 
 ## Phase 0 — Baseline and audit
 

@@ -1,4 +1,130 @@
-# Phase 0 baseline and verification audit
+# WetMap baseline checkpoints
+
+## Current master audit — 17 November 2026
+
+Initial source `0b90f43` (16 November PR #38), read-only baseline then targeted
+implementation. Owner adopted WETMAP_MASTER_PROMPT.md and requested continuous
+work without routine phase pauses; cost/privacy/history/gate safety boundaries
+remain. **Partial baseline / incomplete acceptance**, not all Phase 0 targets
+measured and not a claim that every phase is complete. October baseline below
+is preserved as historical evidence, not current release truth.
+
+### What actually failed since the previous fix
+
+323 workflow runs in the inspected window from 16 November 19:59:40 to
+17 November about 21:37 UTC; five failures, not five new code defects:
+
+| UTC time | Copenhagen | Run | Evidence / conclusion |
+| --- | --- | --- | --- |
+| 16/11 20:20 | 21:20 | Synthetic 43948778540 | Quality child validator failed; captured stderr/rejected report lost. Exact historical invariant unknown. |
+| 17/11 07:53 | 08:53 | Radar 44042199730 | Processing completed, zero new frames, source observation 07:25, age 29.2 min. Freshness correctly failed. |
+| 17/11 08:00 | 09:00 | Radar 44043106586 | Same source observation, age 36.3 min. |
+| 17/11 08:01 | 09:01 | Synthetic 44043246264 | radar:source-delayed and dependent performance:radar-unavailable; other checks passed. |
+| 17/11 08:07 | 09:07 | Radar 44044071407 | Same source observation, age 43.5 min. Reason for declined monitoring handoff not retained. |
+
+Radar jobs started roughly five seconds after creation; this was not the old
+22/52-minute dependency-cache queue fault. Normal recovery 44045060247 succeeded,
+incident resolved 08:17:43 UTC. A bounded current source read around 21:39 UTC
+matched WetMap and DMI at observation 21:25 UTC (age 14.2 min). That is not
+evidence of historical DMI-wide unavailability or a publish-latency percentile.
+
+### Handover classification
+
+- **Confirmed, historical/currently removed:** dependency cache could exhaust
+  radar job deadline; removed by PR #38 before this baseline. Not used to explain
+  unrelated subsequent failures.
+- **Confirmed, corrected in this implementation:** malformed/empty catalogue
+  could replace last-good manifest; diagnostics discarded validator failure;
+  active point slot could be overwritten; reader rows not ETag-bound; deploy
+  lacked exact-SHA CI/security prerequisite; push input lacked actual byte/type
+  validation; repeated push weather decode; missing weather query coordinates.
+- **Confirmed limitation:** shared production staging, unequal legacy masks,
+  incomplete independent published metric acceptance, CPU/free-tier uncertainty,
+  missing protected-main/environment policy and app-log privacy scope.
+- **Unknown:** original quality invariant, morning source publication reason and
+  historical monitor-handoff denial. No invented provider-outage explanation.
+- **Obsolete assumption:** all later GitHub failures are the dependency-cache
+  incident. **Unproven claim:** more accumulated data automatically improves the
+  active algorithm. Data enables verification; changes still require held-out
+  evidence and existing promotion gates.
+
+### Data in / processing / data out
+
+```mermaid
+flowchart LR
+  Radar["DMI radar catalogue + ODIM HDF5"] --> Python["GitHub Actions / Python\nQC, projection, nowcast, verification"]
+  Gauges["DMI gauge observations"] --> Python
+  Python --> R2["R2\nobservations, derived images/grids, verification"]
+  R2 --> Edge["Worker API\nversion-bound point reads + caches"]
+  DMI["DMI HARMONIE EDR"] --> Edge
+  Fallback["Open-Meteo DMI fallback"] --> Edge
+  Photon["Photon geocoding"] --> Edge
+  Edge --> Browser["Pages / React / MapLibre / PWA\nmap, temperature, point rain, data age"]
+  Tiles["OpenFreeMap / OSM"] --> Browser
+  Browser -->|"selected point/search; explicit opt-in rounded push location"| Edge
+  Edge -->|"subscription updates / weather caches"| R2
+  Cron["Worker minute cron"] --> Edge
+  Edge -->|"bounded stale-data dispatch"| Python
+  Edge --> Push["Browser push service"] --> Browser
+  Synthetic["GitHub synthetic probe"] -->|"read public surfaces; authenticated report"| Edge
+  CI["same-SHA CI + Security"] --> Deploy["gated staging then production"]
+  Deploy --> Browser
+  Deploy --> Edge
+```
+
+Production is the Worker, not the portable/local .NET API. Browser favourites
+remain local; GPS and push require user interaction. Radar is reflectivity aloft,
+not literal clouds or guaranteed ground rain. Model/nowcast data are estimates;
+valid time, source and observation age must stay visible. API caches: browser →
+data-centre Cache API → isolate-local coalescing → R2 last-good → upstream. No
+Redis/global lock, no new service. Shared caches/images are not one transaction.
+
+### Independent raw verification checkpoint
+
+Explicitly approved private local snapshot, **22 reads / 10,761,702 bytes**,
+stable state, six cubes and thirteen observations. No subscriptions/persondata
+and no raw upload. Recompute: **31 published pairs, 43 available pairs, 186 score
+comparisons, zero mismatches**, persistence identity 6/6. **BLOCKED:** minimum 50
+published pairs unchanged; published-v2/Brier full agreement not independently
+accepted. Masks differ in 38 available pairs. Local v2 oracle has no mismatches
+but is not a published-ledger acceptance. Safe aggregate: evidence/master-2026-11-17.
+
+The old +15/+30 fail, +45 pass anomaly is not a timestamp-offset explanation in
+the checked records. Different lead-window/method cohorts and unequal legacy
+masks can affect comparative skill; October baseline below describes that sample.
+Do not transplant those historical horizon values to the current report or infer
+that one successful quality snapshot validates seasonal/general forecast skill.
+V2 stays diagnostic-only; no history, metric definition, algorithm or gate change.
+
+Existing numeric gate contract read from nowcast.py/verification.py: alert CSI
+≥0.20, persistence skill ≥0, confidence ≥0.55 and at least 12 version-matched
+validation samples. Shadow promotion additionally requires CSI gain ≥0.02 over
+the operational incumbent and **false-alarm-ratio increase ≤0.02 (2 percentage
+points)**, at least 48 samples / 1,000 event pixels, and applicable probability/recall
+requirements. `falseAlarmRate` is the code's field name for FA/(hits+FA), not the
+false-positive rate FA/(FA+correct negatives). No threshold or definition changed.
+
+### Measured numbers and biggest remaining problems
+
+- Seven complete UTC days: peak Worker 3,192 requests/day; R2 Class A 7,870/day,
+  Class B 15,194/day; storage daily peak 10.443 GB before approved cleanup,
+  1.497 GB on 16/11. This is aggregate usage, not an invoice/hard cost cap.
+- Daily cron CPU p99 41.854–52.469 ms; fetch p99 20.138–28.023 ms. Actual plan
+  API returns 403. Free-tier compliance **UNRESOLVED**; no paid upgrade.
+- Local same-workload risk lookup removes 520→13 decodes, p50 38.084→1.034 ms;
+  not actual Cloudflare CPU, full push delivery or field p95.
+- Six normal Chrome UI states DA/EN, desktop/small screen: no page exceptions
+  or horizontal overflow, temperature/map visible. Not actual iPhone/CWV/FPS.
+- Ranked open work: independent published metrics/held-out accuracy; measured
+  CPU/plan/quota guardrails; isolated test backend; release account protection;
+  app-log privacy approval; full cross-browser/device/time/offline acceptance.
+
+Details: FINDINGS.md, RCA.md, TEST_EVIDENCE.md, PERFORMANCE.md, FREE_TIER.md,
+RISKS.md and ADRs 0014/0015. A green normal probe isn't full release readiness.
+
+---
+
+## Archived Phase 0 baseline — 22 October 2026
 
 Measured: 2026-10-22 17:23–17:45 UTC
 

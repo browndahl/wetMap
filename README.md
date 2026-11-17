@@ -4,6 +4,12 @@ WetMap is a dark-first, accessible 3D weather radar for Denmark. It renders **ob
 
 Production: **https://wetmap.pages.dev** · API: **https://wetmap-api.wetmap-edge.workers.dev**
 
+Engineering status (17 November 2026): [master brief](docs/WETMAP_MASTER_PROMPT.md),
+[current baseline](docs/BASELINE.md), [test evidence](docs/TEST_EVIDENCE.md),
+[open risks](docs/RISKS.md). The earlier build/acceptance documents are historical.
+Independent full acceptance and zero-cost compliance are **not established**;
+see [measured free-tier audit](docs/FREE_TIER.md), especially CPU and metered R2.
+
 On first load, the radar automatically animates recent observations and continues into a separately labelled **radar nowcast** up to +60 minutes. The nowcast estimates motion from the latest two or three measured radar fields with dense optical flow, then advects the newest field. Once a lead time has at least 12 optical-flow verification samples, WetMap can fall back to no-motion persistence when optical flow is demonstrably worse. Confidence is metadata and never attenuates the displayed dBZ field. It is a short-term extrapolation—not a future measurement. “Rain next 60 min” is anchored to the same 500 m DMI radar/nowcast around the selected point, while HARMONIE is an explicitly labelled per-interval fallback when radar coverage is unavailable. Radar intervals show their peak dBZ and estimate millimetres with the composite's Z–R relation. Optional Web Push alerts are sent by the Cloudflare Worker and can arrive while the installed PWA/browser is closed, subject to operating-system and browser delivery policies.
 
 ## Run locally
@@ -23,11 +29,11 @@ flowchart LR
   DMI["DMI Open Data\nRadar + HARMONIE"]
   OM["Open-Meteo\nDMI forecast cache"]
   Photon["Photon\nDanish place search"]
-  Scheduler["Cloudflare Cron\nfreshness check every 5 minutes"]
+  Scheduler["Cloudflare minute cron\npublication heartbeat + recovery"]
   GH["GitHub Actions\nradar processing"]
   PW["Python worker\nODIM HDF5 + optical-flow nowcast"]
   R2["Cloudflare R2\nframes, nowcast, push subscriptions"]
-  Verify["Multi-horizon verification\n+5 to +60 min, 3 thresholds"]
+  Verify["Multi-horizon verification\n+5 to +60 min, separate quality cohorts"]
   Gauges["DMI raw rain gauges\nground-level cross-check"]
   Edge["Cloudflare Worker\nAPI, cache + Web Push"]
   Push["Browser push service\nbackground delivery"]
@@ -35,7 +41,7 @@ flowchart LR
   Map["OpenFreeMap\nvector tiles"]
   User["Browser\nMapLibre 3D"]
 
-  Scheduler -->|dispatch when >20 min old| GH
+  Scheduler -->|bounded recovery after missed publication| GH
   DMI --> GH --> PW --> R2
   R2 --> Verify --> R2
   DMI --> Gauges --> Verify
@@ -50,7 +56,7 @@ flowchart LR
   Map --> User
 ```
 
-The production path uses a small Cloudflare Worker because static frames, cached point forecasts, and cached Danish location search fit its free tier and avoid a cold-started container. The location search is Denmark-filtered and degrades independently, so a Photon outage does not remove radar, forecasts, map clicks, or saved browser favorites. The .NET 10 modular monolith remains the canonical, portable API and is used in Compose; see [ADR 0002](docs/adr/0002-edge-production-api.md).
+The production path uses a small Cloudflare Worker for static frames, cached point forecasts and Danish location search, avoiding a cold-started container. Request volume fits the measured included allowance, but CPU/plan and full zero-cost compliance remain unresolved in the dated audit. The location search is Denmark-filtered and degrades independently, so a Photon outage does not remove radar, forecasts, map clicks, or saved browser favorites. The .NET 10 modular monolith remains the canonical, portable API and is used in Compose; see [ADR 0002](docs/adr/0002-edge-production-api.md).
 
 Point forecasts start with DMI's official HARMONIE DINI EDR API. After a 1.5-second head start, a slow or failed request is hedged through Open-Meteo's DMI distribution so an upstream latency spike does not freeze map interaction. Responses expose the selected provider, fallback state, DMI outcome and dependency/cache durations through `X-WetMap-Provider`, `X-WetMap-Fallback`, `X-WetMap-DMI-Outcome` and `Server-Timing`. DMI's accumulated `total-precipitation` is differenced into hourly amounts before any 15-minute interpolation.
 
@@ -85,18 +91,18 @@ docker build -t wetmap-api apps/api
 ## Deploy
 
 1. Keep the ingestion workflow in a public repository so standard GitHub-hosted Actions do not consume a private-repository minutes allowance. Monitor schedule reliability and acceptable-use limits.
-2. Create Cloudflare Pages, R2, and Workers Free resources. R2 activation uses a checkout/subscription flow even within free usage; configure a hard budget alert and lifecycle deletion.
+2. Use the existing Cloudflare resources; do not silently create/upgrade plans. R2 activation requires a payment method and has **no hard spending cap**. Monitor actual included usage and review per-prefix growth; lifecycle deletion must stay within explicitly approved scope, never blanket-delete observations or verification history. See [FREE_TIER.md](docs/FREE_TIER.md).
 3. Apply `infra/tofu` with an API token scoped to R2 write and account ID in environment secrets.
-4. Configure GitHub environments `staging` and `production`. Store credentials such as `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` as secrets. Keep non-sensitive settings such as `R2_ACCOUNT_ID`, `R2_BUCKET`, `PUBLIC_URL`, and `API_URL` as repository variables. Store a fine-grained, repository-scoped Actions-write token as the Cloudflare Worker secret `GITHUB_DISPATCH_TOKEN`; the Worker's minute cron scans alerts and dispatches ingestion only when the newest observation is over 20 minutes old, with an eight-minute recovery-dispatch cooldown. Generate a VAPID key pair and store `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` as Worker secrets; never expose the private key to Pages or GitHub logs.
-5. Run `deploy.yml`; production requires an environment approval. Add the Pages domain to the Worker's `ALLOWED_ORIGIN`.
+4. Configure GitHub environments `staging` and `production`. Store credentials such as `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` as secrets. Keep non-sensitive settings such as `R2_ACCOUNT_ID`, `R2_BUCKET`, `PUBLIC_URL`, and `API_URL` as repository variables. Store a fine-grained, repository-scoped Actions-write token as the Cloudflare Worker secret `GITHUB_DISPATCH_TOKEN`. The minute cron scans alerts and checks the publication heartbeat: recover after six minutes without publication, with a two-minute inspection cooldown, five-minute dispatch cooldown and active-run guard. Observation freshness remains a separate 25-minute SLO, never reset by republishing. Keep existing VAPID private keys secret; never expose them to Pages or logs.
+5. `deploy.yml` waits for **CI and Security on the exact main commit**, then stages and publishes, rejecting a superseded release. Environment names alone do not enforce approval: protection rules were empty at the current audit. Configure owner-approved protection before claiming enforced human approval. Staging currently shares production API/quota, so remote load/chaos is blocked. Add the Pages domain to the Worker's `ALLOWED_ORIGIN`.
 
-Apply the branch and environment protections in [docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md). Conventional commits on a protected `main` are released automatically after CI succeeds.
+Review the branch and environment protections in [docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md) with the owner. `main` was unprotected at the current audit; don't confuse recommended policy with actual enforcement. The deploy workflow now provides its own same-commit check gate.
 
 The current GitHub repository and Cloudflare deployment are public and live. Cloudflare provides the primary freshness scheduler, while both the radar and synthetic GitHub schedules remain recovery triggers. Radar ingestion uses an R2 token restricted to object read/write on the `wetmap-radar` bucket. Secrets remain encrypted in their provider secret stores and are not passed to workflows triggered from untrusted forks.
 
 ## Free-tier limits & what happens when exceeded
 
-The dated, sourced table is in [docs/FREE-TIER-BUDGET.md](docs/FREE-TIER-BUDGET.md). Key risks are the Workers 100,000 requests/day cap, R2's billing-enabled subscription flow, scheduled-workflow delays, Open-Meteo's free access being non-commercial, and OpenFreeMap having no contractual SLA. The application degrades to last-known-good radar and forecast data when an upstream is unavailable.
+The current dated measurements and official sources are in [docs/FREE_TIER.md](docs/FREE_TIER.md); [FREE-TIER-BUDGET.md](docs/FREE-TIER-BUDGET.md) is an earlier planning document. Key risks are Workers CPU and the 100,000 requests/day cap, metered R2 without a hard spending cap, scheduled-workflow delays, Open-Meteo's free access being non-commercial, and OpenFreeMap having no contractual SLA. Last-known-good data must remain visibly stale, not presented as fresh after an upstream failure.
 
 ## Data and privacy
 
@@ -104,4 +110,4 @@ Browser geolocation is requested only when the user presses the location button.
 
 ## Status
 
-The real 2026-10-10 DMI composite schema was inspected before implementation; see [docs/DMI-DATA-NOTES.md](docs/DMI-DATA-NOTES.md). Current verification evidence, including live Cloudflare checks, is recorded in [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md).
+The real 2026-10-10 DMI composite schema was inspected before implementation; see [docs/DMI-DATA-NOTES.md](docs/DMI-DATA-NOTES.md). The latest master checkpoint is in [TEST_EVIDENCE.md](docs/TEST_EVIDENCE.md) and [PROGRESS.md](docs/PROGRESS.md). [TEST-RESULTS.md](docs/TEST-RESULTS.md) retains earlier evidence; none is a full independent acceptance verdict.

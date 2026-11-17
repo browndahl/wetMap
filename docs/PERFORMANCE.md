@@ -41,6 +41,19 @@ Initial deterministic work-count tests failed; the original implementation made
 was corrected before the actual baseline run; that compilation failure is not
 counted as a product defect or performance evidence.
 
+## First post-release provider CPU sample — not compliance
+
+Read-only account analytics for `wetmap-api`, 22:38–22:44 UTC, after #45's
+22:37:01 deployment. Six successful cron invocations: CPU p50 **12.293 ms**,
+p95/p99 **17.977 ms**; seven successful fetches: p50 **3.437 ms**, p95/p99
+**28.708 ms**, zero reported errors. These are aggregate provider CPU, not local
+lookup timings. Workload/sample differs from seven complete historical days;
+don't subtract percentiles or claim causally matched before/after field improvement.
+
+Importantly, this small sample still exceeds the documented Free 10 ms allowance.
+It does not resolve plan/CPU compliance or validate real push delivery. The
+bounded decoder removes proven work; other CPU contributors remain to profile.
+
 ## Read-only point microprobes
 
 - 21:51 UTC: MISS 630 ms / HIT 77 ms, six operations checks passed.
