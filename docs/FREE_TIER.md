@@ -80,6 +80,13 @@ explicit approval. Existing narrowly approved WebP cleanup remains unchanged.
 
 ## Plan access and bounded CPU follow-up
 
+18 November release-policy follow-up reuses the existing bounded GitHub gate:
+at most 36 check polls plus three current-ref GETs per candidate, 10 s HTTP and
+360 s poll deadline, 10-minute standard-public-runner job cap. No R2/Worker
+runtime requests or new service. Unknown/failed gates still fail; superseded
+candidate is explicitly not published. Account-wide Actions/storage accounting
+is still unresolved. No whole-publisher automatic side-effect retry.
+
 The existing authorised CLI login can read account analytics. Its read-only
 account-subscriptions request returned **HTTP 403 / code 10000**, so the actual
 Workers subscription cannot be established here. No broader token scope or plan

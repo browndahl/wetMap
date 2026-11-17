@@ -199,3 +199,31 @@ Five tests pass (future by 120.001 s / a day, exact now / +120 s boundaries,
 last-good bytes and no download/upload). Full worker suite 112, Ruff passes.
 No new request, service, retention or forecast gate. Residual: the ingestion
 host's UTC clock remains a trusted dependency. Rollback: revert the input guard.
+
+## M16: release publisher accepts a different/unsecured candidate
+
+Closing inspection found an additional historical Release failure 44186050603:
+GitHub returned Internal Server Error while pushing semantic-release notes after
+v1.22.4 tag creation. The tag points at `fda019b`; the Release API returns 404.
+Remote GitHub failure is confirmed, its internal provider cause unknown. No
+production weather failure or proof of a concurrency cause. Do not replay a
+partially completed publisher or claim this 500 is permanently prevented.
+
+Separate confirmed workflow defect: branch-name-only successful CI trigger,
+floating-main checkout, no Security prerequisite or serialization. That can
+publish a different commit than was checked. Existing monitoring tests covered
+deployment prerequisites, not the distinct tag/release workflow.
+
+Fix/alternatives in ADR 0016: nominate only own main-push SHA; pinned checkout,
+same-SHA CI+Security gate, serialized publisher, current-main recheck. Only an
+explicit obsolete candidate can output eligible=false. Every unknown/failed
+check remains fatal; existing deploy strict behavior is unchanged. No automatic
+whole-action retry, release repair, tag rewrite or dependency upgrade.
+
+Baseline: eleven workflow-policy assertions fail. Three new optional-CLI tests
+are interface coverage, not extra historical product failures. All thirteen
+release-gate tests and the full 54-script suite pass; default strict, output
+enable/disable, failed checks, missing output and no raw credential/error logging
+are covered. Normal rollout must still be observed. No runtime weather/gate cost
+or privacy change; rollback by reviewed revert. Old missing Release metadata and
+action installer advisory warnings remain separately documented follow-ups.

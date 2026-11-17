@@ -43,9 +43,10 @@ WRANGLER_LOG_PATH=/private/tmp/wetmap-master-build-logs pnpm --filter @wetmap/ed
 ```
 
 The final force run executes all 12 workspace tasks with **0 cached tasks**:
-124 edge, 38 web, 2 shared = 164 TypeScript tests. Worker 112 and script suite 50
-give **326 tests** across these suites, not coverage percentage or end-to-end
-acceptance. The script suite's 50 methods include subcases not separately counted.
+124 edge, 38 web, 2 shared = 164 TypeScript tests. Worker 112 and the 18 November
+follow-up script suite 54 give **330 tests** across these suites, not coverage
+percentage or end-to-end acceptance. Script methods include subcases not
+separately counted; the previous #49 checkpoint had 326.
 Earlier normal `pnpm check` replayed some Turbo cache entries. Both normal and
 forced Turbo runs emitted sandbox Wrangler log-path EPERM while exiting zero:
 Turbo's strict environment filters the log-path override. This is **not** an
@@ -56,6 +57,30 @@ chunk warning remains. Existing CI independently runs .NET tests and container
 builds, plus all three CodeQL languages, secrets and Trivy/SBOM.
 
 ## Normal production rollout evidence (not fault/load testing)
+
+### 18 November follow-up: distinct GitHub Release gate
+
+Closing inspection of 91 runs since 21:45 UTC found Release 44186050603 failing
+at 22:02:58 UTC (17/11): remote GitHub Internal Server Error on a notes push.
+Read-only API confirms v1.22.4 tag at `fda019b`, Release post HTTP 404. No replay,
+tag rewrite or repair performed; metadata repair approval requested separately.
+
+Separate workflow defect: branch-only CI trigger, floating main, no Security wait
+or serialization. Eleven policy assertions fail old release.yml. Four new test
+methods (three optional-interface, one workflow policy) pass; all thirteen gate
+methods and 54 script methods pass. Optional skip enables **only** a valid obsolete
+candidate as eligible=false; malformed remote refs, missing output, failed checks
+and transport errors fail. Two malformed-ref cases caught an initial new-option
+implementation gap before commit; not historical production failures. Deploy's
+default superseded behavior remains failing. Exact SHA is an ordinary CLI argument,
+not an override of reserved GitHub environment variables. ADR 0016 records scope.
+
+Command: `python3 -m unittest discover -s .github/scripts -p 'test_*.py'`, Ruff on
+release_gate.py/test_release_gate.py and Prettier YAML syntax/style check pass.
+No model, cloud runtime, history or personal-data change. Remote GitHub 500 and
+action installer warnings aren't claimed fixed by release serialization/gating.
+
+### Earlier normal rollouts
 
 - Each PR's required CI and security passed before an exact-head squash merge.
 - Writer rollout preceded reader: normal radar run

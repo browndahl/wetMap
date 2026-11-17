@@ -131,6 +131,17 @@ not an untested force-push or raw object rewrite.
 
 ## Rollback and recovery
 
+### Partially completed GitHub Release
+
+A publisher failure after tag creation isn't safe to replay blindly. Example:
+44186050603 received GitHub Internal Server Error on notes push; tag v1.22.4 is
+intact, Release post missing. Read the exact failure phase, verify tag target,
+inspect Release/notes presence, and distinguish metadata from production deploy.
+Do not move/delete a tag, overwrite history or create a duplicate. Request scoped
+owner approval for any old Release metadata repair. Own main-push CI+Security
+and exact candidate/current-head gates govern future releases; an explicitly
+superseded candidate isn't published. Provider 5xx can still fail visibly.
+
 Retired nowcast WebPs: run **Retired nowcast image cleanup** with apply=false;
 inspect/download the retention-report artifact before setting apply=true and an
 explicit max_delete. Only exact derived-image keys with both upload and valid times

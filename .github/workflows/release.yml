@@ -4,19 +4,42 @@ on:
     workflows: [CI]
     types: [completed]
 permissions:
+  actions: read
   contents: write
   issues: write
   pull-requests: write
+concurrency:
+  group: wetmap-release
+  cancel-in-progress: false
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_SHA: "${{ github.event.workflow_run.head_sha }}"
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: main
+          ref: "${{ github.event.workflow_run.head_sha }}"
+      - name: Require CI and Security on the exact release candidate
+        id: checks
+        run: python .github/scripts/release_gate.py --skip-superseded --sha "$RELEASE_SHA"
+        env:
+          GH_TOKEN: "${{ github.token }}"
+      - name: Reject superseded candidate immediately before publication
+        id: current
+        if: steps.checks.outputs.eligible == 'true'
+        run: python .github/scripts/release_gate.py --check-current --skip-superseded --sha "$RELEASE_SHA"
+        env:
+          GH_TOKEN: "${{ github.token }}"
       - uses: cycjimmy/semantic-release-action@v7
+        if: steps.current.outputs.eligible == 'true'
         with:
           semantic_version: 25.0.9
         env:
