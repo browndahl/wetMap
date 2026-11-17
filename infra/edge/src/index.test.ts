@@ -997,6 +997,7 @@ describe("next-hour precipitation edge endpoint", () => {
         frameCount: frames.length,
         encoding: "pixel-major-uint8-dbz-plus-32",
         dataKey: "nowcast/point-risk-1.bin",
+        dataEtag: "nowcast/point-risk-1.bin:0",
         neighborhoodRadiusPixels: 1,
         frames,
       }),
