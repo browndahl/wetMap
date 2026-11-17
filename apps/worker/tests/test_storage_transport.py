@@ -45,7 +45,15 @@ def test_upload_keeps_verification_bytes_and_keys_unchanged(tmp_path: Path, monk
         assert kwargs["Config"].max_concurrency == 2
         uploads[key] = Path(filename).read_bytes()
 
-    monkeypatch.setattr(storage, "_r2_client", lambda: Mock(upload_file=upload))
+    from botocore.exceptions import ClientError
+
+    def put(**kwargs):
+        uploads[kwargs["Key"]] = kwargs["Body"].read()
+        return {"ETag": '"' + "a" * 32 + '"'}
+
+    client = Mock(upload_file=upload, put_object=put)
+    client.get_object.side_effect = ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+    monkeypatch.setattr(storage, "_r2_client", lambda: client)
     storage.upload_nowcast_r2(tmp_path, [])
     assert uploads["nowcast/verification-history.json"] == history
     assert uploads["nowcast/point-risk-1.bin"] == b"grid"

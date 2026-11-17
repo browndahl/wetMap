@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -163,6 +164,39 @@ def upload_nowcast_r2(
     """Replace short-lived nowcast assets, publishing manifests last."""
     bucket = os.environ["R2_BUCKET"]
     client = _r2_client()
+    from botocore.exceptions import ClientError
+
+    point_metadata_path = nowcast_directory / "point-risk.json"
+    point_metadata = json.loads(point_metadata_path.read_text())
+    proposed_key = point_metadata.get("dataKey", "nowcast/point-risk-0.bin")
+    if not isinstance(proposed_key, str) or not re.fullmatch(
+        r"nowcast/point-risk-[01]\.bin", proposed_key
+    ):
+        raise ValueError("Invalid point-grid output key")
+    try:
+        previous = client.get_object(Bucket=bucket, Key="nowcast/point-risk.json")
+        with previous["Body"] as body:
+            previous_bytes = body.read(65_537)
+        if len(previous_bytes) > 65_536:
+            raise ValueError("Point-grid pointer exceeds metadata budget")
+        previous_metadata = json.loads(previous_bytes)
+        active_key = previous_metadata.get("dataKey", "nowcast/point-risk.bin")
+        if active_key not in (
+            "nowcast/point-risk-0.bin",
+            "nowcast/point-risk-1.bin",
+            "nowcast/point-risk.bin",
+        ):
+            raise ValueError("Invalid active point-grid key")
+        # Observation parity does not alternate when ingestion skips a scan.
+        # Choose against the actual pointer, never overwrite its active bytes.
+        proposed_key = (
+            "nowcast/point-risk-1.bin"
+            if active_key == "nowcast/point-risk-0.bin"
+            else "nowcast/point-risk-0.bin"
+        )
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") not in {"404", "NoSuchKey", "NotFound"}:
+            raise
     for frame in frame_paths:
         client.upload_file(
             str(frame),
@@ -171,17 +205,19 @@ def upload_nowcast_r2(
             Config=_transfer_config(),
             ExtraArgs={"ContentType": "image/webp", "CacheControl": "public,max-age=300"},
         )
-    point_metadata = json.loads((nowcast_directory / "point-risk.json").read_text())
-    client.upload_file(
-        str(nowcast_directory / "point-risk.bin"),
-        bucket,
-        point_metadata["dataKey"],
-        Config=_transfer_config(),
-        ExtraArgs={
-            "ContentType": "application/octet-stream",
-            "CacheControl": "no-cache",
-        },
-    )
+    with (nowcast_directory / "point-risk.bin").open("rb") as point_data:
+        uploaded = client.put_object(
+            Bucket=bucket,
+            Key=proposed_key,
+            Body=point_data,
+            ContentType="application/octet-stream",
+            CacheControl="no-cache",
+        )
+    etag = uploaded.get("ETag", "").strip('"')
+    if not re.fullmatch(r"[a-fA-F0-9]{32}(?:-\d+)?", etag):
+        raise ValueError("Point-grid upload returned no usable object version")
+    point_metadata.update(schemaVersion=2, dataKey=proposed_key, dataEtag=etag)
+    write_json_atomic(point_metadata_path, point_metadata)
     verification_forecast_path = nowcast_directory / "verification-forecast.json"
     verification_cube_path = nowcast_directory / "verification-cube.npz"
     if (
@@ -220,3 +256,4 @@ def upload_nowcast_r2(
                 "CacheControl": "public,max-age=60,stale-while-revalidate=300",
             },
         )
+    logging.getLogger(__name__).info("point-grid.published version-bound=true")

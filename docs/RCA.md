@@ -56,3 +56,20 @@ six probes continue and injected secret-like error text never reaches logs.
 This makes future incidents diagnosable, not retrospectively “fixed”. No claim
 that the underlying historical rejection was a false alarm. Rollback: revert the
 diagnostics commit; classification changes but service-health gates do not.
+
+## M10: point-grid publication can overwrite the active slot
+
+Confirmed by source and deterministic reproduction: the key was selected by
+five-minute observation parity. If ingestion advances ten minutes, parity is the
+same and the currently referenced binary is overwritten before metadata changes.
+Reader range GETs were also not version-bound. Geographic self-checks over generated
+files do not exercise live publication/read races. This is a reproduced failure
+mode, not proof of a specific historical user's map/box mismatch.
+
+Old writer suite: **7 failed / 1 passed**. New writer suite: **8 passed**, full
+worker **107 passed**, Ruff passed. The new tests preserve existing ledger bytes
+and fail closed on missing pointer reads, binary writes and returned object version.
+ADR 0014 documents the two-step writer-first rollout and bounded extra GET.
+
+Reader enforcement is the next separate step, after normal production ingestion
+has published the new ETag-bearing pointer. No algorithm, history or gate change.
