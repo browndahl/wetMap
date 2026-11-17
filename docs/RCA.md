@@ -71,5 +71,12 @@ worker **107 passed**, Ruff passed. The new tests preserve existing ledger bytes
 and fail closed on missing pointer reads, binary writes and returned object version.
 ADR 0014 documents the two-step writer-first rollout and bounded extra GET.
 
-Reader enforcement is the next separate step, after normal production ingestion
-has published the new ETag-bearing pointer. No algorithm, history or gate change.
+Reader regression: 7/8 tests failed before enforcement; three additional cases
+exposed invalid per-frame metadata and unhandled range-read errors. All 11 pass
+after enforcement, including overwritten objects, mixed rows, missing versions,
+malformed bounds/frames, invalid timestamps and range transport failure. Every row
+is now conditional on the published ETag and checked again against the returned
+object. Invalid/legacy unversioned inputs fail closed to the existing labelled
+model path, never to fabricated dry radar. Range transport failure logs a fixed
+event code without raw errors. The strict reader is released only after normal
+writer publication is confirmed. No algorithm, history or gate change.

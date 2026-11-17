@@ -257,7 +257,7 @@ type NowcastForecastMethod =
   | "recall-calibrated-ensemble";
 
 interface PointRiskMetadata {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   generatedAt: string;
   basedOnObservedAt: string;
   method:
@@ -268,6 +268,7 @@ interface PointRiskMetadata {
   frameCount: number;
   encoding: "pixel-major-uint8-dbz-plus-32";
   dataKey?: string;
+  dataEtag?: string;
   neighborhoodRadiusPixels: number;
   rainThresholdDbz?: number;
   frames: Array<{
@@ -1179,7 +1180,7 @@ function pointMercatorY(latitude: number): number {
   return Math.log(Math.tan(Math.PI / 4 + radians / 2));
 }
 
-async function radarPointSamples(
+export async function radarPointSamples(
   latitude: number,
   longitude: number,
   env: Env,
@@ -1189,12 +1190,38 @@ async function radarPointSamples(
 } | null> {
   const metadataObject = await env.RADAR.get("nowcast/point-risk.json");
   if (!metadataObject) return null;
+  if (metadataObject.size > 65_536) return null;
   let metadata: PointRiskMetadata;
   try {
     metadata = await metadataObject.json<PointRiskMetadata>();
   } catch {
     return null;
   }
+  if (
+    !metadata ||
+    ![1, 2].includes(metadata.schemaVersion) ||
+    !Array.isArray(metadata.bounds) ||
+    metadata.bounds.length !== 4 ||
+    !metadata.bounds.every(Number.isFinite) ||
+    !Array.isArray(metadata.frames) ||
+    !metadata.frames.every(
+      (frame, index) =>
+        frame &&
+        frame.leadMinutes === index * 5 &&
+        typeof frame.predictedAt === "string" &&
+        Date.parse(frame.predictedAt) ===
+          Date.parse(metadata.basedOnObservedAt) + index * 5 * 60_000 &&
+        Number.isFinite(frame.confidence) &&
+        frame.confidence >= 0 &&
+        frame.confidence <= 1,
+    ) ||
+    !Number.isSafeInteger(metadata.width) ||
+    !Number.isSafeInteger(metadata.height) ||
+    !Number.isSafeInteger(metadata.frameCount) ||
+    typeof metadata.dataEtag !== "string" ||
+    !/^[\x21\x23-\x7E]{1,128}$/.test(metadata.dataEtag)
+  )
+    return null;
   const observationAge = Date.now() - Date.parse(metadata.basedOnObservedAt);
   const [west, south, east, north] = metadata.bounds;
   const dataKey = metadata.dataKey ?? "nowcast/point-risk.bin";
@@ -1263,16 +1290,21 @@ async function radarPointSamples(
       const pixelCount = xEnd - xStart + 1;
       const offset = (row * metadata.width + xStart) * metadata.frameCount;
       const object = await env.RADAR.get(dataKey, {
+        onlyIf: { etagMatches: metadata.dataEtag },
         range: { offset, length: pixelCount * metadata.frameCount },
       });
-      if (!object || !("body" in object)) return null;
+      if (!object || !("body" in object) || object.etag !== metadata.dataEtag)
+        return null;
       const bytes = new Uint8Array(
         await new Response(object.body).arrayBuffer(),
       );
       return bytes.length === pixelCount * metadata.frameCount ? bytes : null;
     }),
-  );
-  if (rowBytes.some((bytes) => bytes === null)) return null;
+  ).catch(() => {
+    console.error("radar.point-grid.read-failed");
+    return null;
+  });
+  if (!rowBytes || rowBytes.some((bytes) => bytes === null)) return null;
   const pixelCount = xEnd - xStart + 1;
   for (const bytes of rowBytes) {
     if (!bytes) return null;
