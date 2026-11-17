@@ -29,6 +29,12 @@ failure. Action runtime installation also reported 14 high/1 critical npm
 advisories; exact packages/reachability need audit before claiming supply-chain
 coverage. No evidence of exploitation, no blind dependency upgrade.
 
+See RELEASE_DEPENDENCY_AUDIT_2026-11-18.md: current gated publisher still logs
+14 high/1 critical; fresh same-core isolated lock probe still has 10 high and
+isn't adopted. No unreviewed runtime shipped. Requested owner choice for a
+temporary Release-only pause; not applied. Do not infer that green CI/security
+or successful release means this separately installed tree is accepted.
+
 Use a fresh separate acceptance session per WETMAP_MASTER_PROMPT.md. Report
 PASS/FAIL/BLOCKED/HUMAN per check and release only if every blocking check passes.
 This implementation session does not generate a misleading ACCEPTANCE_REPORT.md

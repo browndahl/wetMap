@@ -82,6 +82,15 @@ action installer warnings aren't claimed fixed by release serialization/gating.
 
 ### Earlier normal rollouts
 
+- Follow-through for #50: main `b2de29c` CI 44197225264 and Security 44197225223
+  succeeded. [Release 44197456654](https://github.com/browndahl/wetMap/actions/runs/44197456654)
+  checks gate ready and current-head check pass at 23:13:38 UTC, before publisher;
+  completes 23:14:04 UTC and publishes v1.22.12. Deployment 44197225088 and
+  synthetic 44197478872 succeed. The eleven code fixes are merged, not a full
+  acceptance pass. Runtime installer warnings remain; the separate two-request
+  public-lock audit and failed same-core fresh-lock experiment are documented in
+  RELEASE_DEPENDENCY_AUDIT_2026-11-18.md. No unsafe replacement is shipped.
+
 - Each PR's required CI and security passed before an exact-head squash merge.
 - Writer rollout preceded reader: normal radar run
   [44186552753](https://github.com/browndahl/wetMap/actions/runs/44186552753)
