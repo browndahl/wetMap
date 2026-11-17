@@ -1,5 +1,10 @@
 # Operations runbooks
 
+Master safety boundary (17 November 2026): procedures are not blanket authority
+to mutate production. Account/cost/privacy/retention changes and any radar or
+verification-history rewrite/deletion require explicit owner approval. Prefer
+read-only diagnosis and reviewed code reverts; never inject faults into production.
+
 ## 0. Local Compose startup
 
 Start Docker Desktop and wait until its engine reports ready before running `docker compose up --build`. If Compose reports that `~/.docker/run/docker.sock` is missing, Docker Desktop is installed but its daemon is not running; launch Docker Desktop and confirm with `docker info` before retrying. On a healthy first start, `worker` exits with status 0 after producing the radar manifest, while `api`, `web`, and `otel-collector` remain running. Open `http://localhost:8080` and use `docker compose down` when finished.
@@ -38,6 +43,13 @@ synthetic workflow and deploy; keep radar recovery/push enabled. Two bounded
 
 ## 2. DMI unavailable or rate-limiting
 
+Source admission now rejects empty/malformed catalogues, invalid required fields
+and timestamps >2 minutes in the future **before** download/publication. Preserve
+the last-good state, inspect the static rejection, and compare source UTC with
+the ingestion host's clock. Do not bypass the guard or fabricate/retimestamp a
+frame. Static source-delay ownership reasons appear as
+`radar.source-delay-handoff`; `owned` is notification ownership, not recovery.
+
 For R2 timeouts, distinguish transport from source freshness: history bytes must
 not be truncated to meet a workflow deadline. Transport uses bounded retries and
 at most two multipart threads; ordinary ledgers use a single PUT. Synthetic
@@ -49,7 +61,7 @@ Confirm dependency status and `Retry-After`. Stop manual polling, allow circuit 
 
 ## 3. Map unavailable
 
-Verify OpenFreeMap status/network/CSP. Radar controls and forecast should remain usable, but geographic context is degraded. At a sustained incident, switch a reviewed style URL or self-host vector tiles; preserve OSM attribution.
+Verify OpenFreeMap status/network/CSP. Radar controls and forecast should remain usable, but geographic context is degraded. At a sustained incident, review a free alternative style; self-hosting or new capacity needs explicit cost/operational approval. Preserve OSM attribution.
 
 ## 4. API error/latency spike
 
@@ -57,7 +69,7 @@ Separate cached R2 reads from DMI forecast misses using traces. Validate Workers
 
 ## 5. Corrupt/misaligned frame
 
-Disable the bad manifest entry (do not overwrite its immutable object), compare SHA-256, run `wetmap-worker --inspect file.h5`, and confirm projection/corners. Republish a new manifest pointing at the last good frames. Add the case to the synthetic fixture.
+Compare SHA-256, inspect the local file and projection/corners, and reproduce in a synthetic fixture. Do not overwrite immutable objects or silently remove history. Propose a specific manifest repair to the owner before a production data change; reviewed code reverts remain the normal deployment rollback.
 
 ## 6. Nowcast precision degradation
 
@@ -72,6 +84,51 @@ inspect common/observed coverage, and never substitute this cohort for legacy
 promotion or alert evidence. A small/empty v2 cohort is normal during rollout;
 do not backfill by replacing historical scores. See ADR 0012 and the dated v2 report.
 
+## 7. Quota exhaustion or CPU/storage budget risk
+
+Start with [FREE_TIER.md](FREE_TIER.md), dated provider analytics and official
+allowances, not the old storage estimate. Read account aggregates only; don't
+download subscriptions or issue bursts against a failing upstream. Distinguish:
+
+- **Workers requests/day:** Free cap resets 00:00 UTC. If reached, public API and
+  cron/push may be unavailable until reset; static Pages or a cached view isn't
+  proof of live weather. Keep stale/offline copy honest. Don't automatically
+  upgrade, fan out requests across accounts or disable safeguards.
+- **Workers CPU:** inspect actual event type/outcome and plan before inferring
+  compliance. A successful call can still exceed the documented 10 ms Free
+  allowance through burst flexibility. The first post-optimization sample is
+  still above it. Profile local synthetic work and compare real matched windows;
+  no arbitrary retry/timeout or gate relaxation as a “CPU fix”.
+- **R2:** storage/operations above included amounts can cost money; there is no
+  hard spending cap. Daily peak bytes aren't GB-month billing. An allowance
+  warning requires owner review of nonessential writes/capacity, not a paid
+  upgrade. Existing derived-WebP cleanup is narrowly approved; no blanket
+  history/cube/subscription deletion or lifecycle change.
+- **Actions:** confirm public repository and standard runner. Distinguish failed
+  work, runner queue and upstream stale data. No recursive redispatch/retry storm;
+  use the existing bounded recovery guard. Artifact/cache billing isn't unlimited
+  merely because execution is free.
+
+Escalate missing telemetry/plan permission explicitly. Current account-plan API
+403 is unresolved, not permission to broaden scopes/copy credentials. No live
+quota-exhaustion drill is safe on shared staging/prod account. Disabling cron,
+new retention or changing account/security/billing policy needs owner direction.
+
+## 8. Point binary/pointer race or storage mismatch
+
+Writer uses the actual inactive one of two slots and publishes schema-v2 metadata
+only after a successful version-returning binary PUT. Reader binds every range
+to `dataEtag` and rejects a different/missing version. A rejected read uses the
+existing labelled model fallback; it must not become “dry radar”. Inspect static
+read-failure logs and normal next publication, not private point data in public
+logs. Test partial reads/publication failures locally with the regression fixtures.
+
+For rollout/rollback keep writer-first order (ADR 0014). Never remove reader
+version checks to hide a mismatch. Independent map/model caches still have their
+own lifetimes; don't claim a transaction across all weather assets. Revert a
+specific reviewed commit through the exact-SHA CI/security deploy gate (ADR 0015),
+not an untested force-push or raw object rewrite.
+
 ## Rollback and recovery
 
 Retired nowcast WebPs: run **Retired nowcast image cleanup** with apply=false;
@@ -84,8 +141,13 @@ prefix also contains private history. Deletion is permanent; rollback does not
 restore the retired derived images. Radar observations and verification history
 are not targets. See [November evidence](NOVEMBER_RELIABILITY.md).
 
-Pages/Worker: redeploy the prior Git SHA. Worker: revert and dispatch once; idempotency skips existing objects. R2: restore `frames.json` from the previous workflow log/staging copy. Target RTO/RPO are in `SLO.md`. No v1 database exists; if Phase 2 adds one, automated daily backups plus a quarterly isolated restore test become a release gate.
+Pages/Worker: reviewed revert of the specific commit through the exact-SHA CI/security gate. Worker ingestion: check active runs before at most one manual recovery; idempotency skips existing observations. Any R2 pointer/manifest restore must be explicitly scoped and owner-approved; never overwrite verification/radar history as a generic rollback. Target RTO/RPO are in `SLO.md`. There is no user database; any future database/backup adoption requires architecture, privacy and cost review.
 
 ## Local and Grafana telemetry
 
 Compose uses `infra/observability/otel-collector.yaml`, which emits received telemetry to the collector debug exporter and requires no cloud credentials. For Grafana Cloud, mount `otel-collector.grafana.yaml` instead and provide `GRAFANA_OTLP_ENDPOINT` plus the complete `GRAFANA_OTLP_AUTH` authorization value through the deployment secret store.
+
+That is an optional configuration reference, not evidence of an active hosted
+dashboard. No new Grafana/Sentry/service is authorised here; verify free/no-card
+terms and privacy/budget before any adoption. Existing Worker logs, analytics,
+public status and Actions summaries remain the current operational tools.

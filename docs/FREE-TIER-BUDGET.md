@@ -1,5 +1,9 @@
 # Free-tier budget
 
+Historical planning/checkpoints below. Current measured seven-day usage, verified
+limits and unresolved CPU/plan/cost risks are in [FREE_TIER.md](FREE_TIER.md),
+17 November 2026. Do not treat old estimates as actual compliance or a spend cap.
+
 12 November 2026: recent maximum R2 payload reached **10.42 GB** (56,951 objects),
 up from 8.21 GB on 30 October. Owner approved only retired derived nowcast WebPs
 older than 48 hours, with active-image protection and a reviewed dry-run. No broad

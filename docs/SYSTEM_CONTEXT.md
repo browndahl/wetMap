@@ -1,6 +1,14 @@
 # WetMap system context
 
-Last updated: 2026-11-13
+Last updated: 2026-11-17
+
+Current governing checkpoint: WETMAP_MASTER_PROMPT.md supersedes the earlier build
+brief. BASELINE.md (November section), FINDINGS.md, TEST_EVIDENCE.md, FREE_TIER.md
+and RISKS.md qualify the historical results below. New correctness/release fixes
+include last-good input protection, ETag-bound point publication/reads and
+same-commit CI/security release gating (ADRs 0014/0015). Existing forecast gates,
+v2 shadow-only policy and history are unchanged. Actual Free CPU/plan compliance
+and independent full acceptance remain unresolved; no “all phases complete”.
 
 ## Purpose
 

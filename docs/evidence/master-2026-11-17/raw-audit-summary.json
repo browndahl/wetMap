@@ -1,0 +1,46 @@
+{
+  "reproductionStatus": "blocked",
+  "minimumPairs": 50,
+  "pairCount": 31,
+  "availablePairCount": 43,
+  "scoreComparisons": 186,
+  "mismatchCount": 0,
+  "persistenceIdentity": {
+    "checked": 6,
+    "missing": 0,
+    "mismatched": 0
+  },
+  "blockedReasons": ["minimum-pairs"],
+  "inputInventory": {
+    "fileCount": 19,
+    "bytes": 10657795
+  },
+  "coverageComparison": {
+    "differentMaskPairs": 38,
+    "maximumMaskDifferencePixels": 1488,
+    "diagnosticOnly": true
+  },
+  "limitations": [
+    "Overlapping forecast pairs/pixels are not independent weather events; no IID confidence intervals.",
+    "Common-mask skill is an additive diagnostic, not a new production metric or a promotion decision.",
+    "This sample cannot establish seasonal/regional skill or independent published Brier agreement.",
+    "Projected WebP bounds/encoding are checked; ODIM georeprojection is not independently reconstructed.",
+    "No model tuning, archive write, gate change or Redis service is performed."
+  ],
+  "snapshot": {
+    "objectReads": 22,
+    "downloadedBytes": 10761702,
+    "stableState": true,
+    "selectedForecasts": 6,
+    "excludedMissingPersistenceSource": 1
+  },
+  "localV2Oracle": {
+    "rawPairs": 43,
+    "scoreChecks": 176,
+    "candidateComparisons": 30,
+    "brierChecks": 18,
+    "mismatches": 0,
+    "publishedV2LedgerChecked": false,
+    "promotionEnabled": false
+  }
+}
