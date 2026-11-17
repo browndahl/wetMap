@@ -137,3 +137,25 @@ p95 39.006 → 1.274 ms. This is lookup-only local wall time, not Cloudflare CPU
 network/encryption/provider delivery or a field percentile. Actual post-release
 CPU and active plan remain unresolved; see PERFORMANCE.md and FREE_TIER.md.
 Rollback: revert this optimization; alert decisions remain unchanged.
+
+## M08: source-delay ownership denial has no diagnostic reason
+
+The three failed morning radar runs leave no reason for declining the monitor
+handoff. The exact historical cause remains unknown. Reproduction captures main's
+output for an owned 503 incident, HTTP failure, invalid JSON/contract and oversized
+response: five diagnostic assertions fail on the previous implementation. The
+new reason-helper tests are new interface tests, not extra historical failures.
+
+Fix: static reason codes for inactive monitor, scheduler/probe freshness,
+observation mismatch, missing incident ownership, network/JSON/contract/size
+failure. Read at most 65,537 bytes to enforce a 64 KiB status-document ceiling,
+with the existing 10-second HTTP timeout. No raw URL, response, exception text or
+signature is logged. No added request and no retry of a side effect.
+
+Seven new tests cover the unchanged exact ownership policy, malformed/future
+monitor times, owned HTTP 503, unavailable monitor, bounded reads, healthy and
+stalled ingestion. The full script suite is 50 passing tests. Owned repeated
+source delay still emits a warning and returns success only for notification
+ownership; public unhealthy status stays 503. Unknown/unowned/invalid/stalled
+states still fail. The 25-minute freshness gate is unchanged. Rollback: revert
+this diagnostics commit, never relabel an underlying incident as resolved.
