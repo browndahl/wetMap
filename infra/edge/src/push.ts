@@ -65,6 +65,39 @@ const observedNotificationLifetimeMs = 5 * 60_000;
 // Bucket 3 begins at the calibrated boundary declared by the worker.
 const minimumAlertIntensity = 3;
 
+class PushBodyTooLarge extends Error {}
+
+async function readPushBody(
+  request: Request,
+): Promise<Record<string, unknown>> {
+  if (Number(request.headers.get("Content-Length") ?? 0) > 8_192)
+    throw new PushBodyTooLarge();
+  const reader = request.body?.getReader();
+  if (!reader) throw new SyntaxError("Missing JSON object");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const next = await reader.read();
+    if (next.done) break;
+    size += next.value.length;
+    if (size > 8_192) {
+      await reader.cancel().catch(() => undefined);
+      throw new PushBodyTooLarge();
+    }
+    chunks.push(next.value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw new SyntaxError("Expected JSON object");
+  return body as Record<string, unknown>;
+}
+
 const validBase64Url = (value: unknown, minimumLength: number) =>
   typeof value === "string" &&
   value.length >= minimumLength &&
@@ -120,8 +153,13 @@ export async function savePushSubscription(
 
   let body: Record<string, unknown>;
   try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
+    body = await readPushBody(request);
+  } catch (error) {
+    if (error instanceof PushBodyTooLarge)
+      return Response.json(
+        { title: "Payload too large", status: 413 },
+        { status: 413 },
+      );
     return Response.json(
       { title: "Invalid subscription", status: 400 },
       { status: 400 },
@@ -134,9 +172,11 @@ export async function savePushSubscription(
         keys?: { auth?: string; p256dh?: string };
       }
     | undefined;
-  const latitude = Number(body.latitude);
-  const longitude = Number(body.longitude);
-  const locationName = String(body.locationName ?? "")
+  const latitude = body.latitude;
+  const longitude = body.longitude;
+  const locationName = (
+    typeof body.locationName === "string" ? body.locationName : ""
+  )
     .trim()
     .slice(0, 80);
   const locale = body.locale === "en" ? "en" : "da";
@@ -145,9 +185,15 @@ export async function savePushSubscription(
     !validEndpoint(subscription.endpoint) ||
     !validBase64Url(subscription.keys?.p256dh, 80) ||
     !validBase64Url(subscription.keys?.auth, 16) ||
+    (subscription.expirationTime != null &&
+      (typeof subscription.expirationTime !== "number" ||
+        !Number.isFinite(subscription.expirationTime) ||
+        subscription.expirationTime < 0)) ||
+    typeof latitude !== "number" ||
     !Number.isFinite(latitude) ||
     latitude < 54.4 ||
     latitude > 58 ||
+    typeof longitude !== "number" ||
     !Number.isFinite(longitude) ||
     longitude < 7.5 ||
     longitude > 15.5 ||
@@ -198,8 +244,13 @@ export async function deletePushSubscription(
 ): Promise<Response> {
   let endpoint: unknown;
   try {
-    endpoint = ((await request.json()) as { endpoint?: unknown }).endpoint;
-  } catch {
+    endpoint = (await readPushBody(request)).endpoint;
+  } catch (error) {
+    if (error instanceof PushBodyTooLarge)
+      return Response.json(
+        { title: "Payload too large", status: 413 },
+        { status: 413 },
+      );
     endpoint = undefined;
   }
   if (!validEndpoint(endpoint))

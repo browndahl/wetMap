@@ -93,3 +93,25 @@ serialized deploys, superseded-release check before publishing. Nine determinist
 gate tests plus the full script suite (**43 passed**) cover positive and negative
 outcomes. No production failing release is injected. Live rollout must verify gate
 ordering. Repository rulesets/environment protection are not silently configured.
+
+## M11: push input can throw on JSON null and bypass its byte limit
+
+Confirmed local adapter tests: JSON `null` throws before validation; a valid body
+preceded by >9 KB whitespace with no Content-Length is accepted/stored despite the
+declared 8 KB limit. Coordinates/location labels and subscription expiration can
+also have invalid runtime types hidden by TypeScript assertions/coercion.
+
+Root cause: trusting Content-Length and `as Record`/subscription type assertions
+instead of bounding the actual body stream and checking JSON shape. Four initial
+new cases failed; a further expiration-type test failed after the first correction.
+No real subscription or production mutation was used in reproduction.
+
+Fix: read at most 8,192 actual bytes, reject oversized input as 413 (including
+unsubscribe), reject non-object JSON and field-type violations as 400. Existing
+valid subscription fields, coordinate rounding, opt-in flow, deletion behavior and
+retention are unchanged; no new personal data or logs of request content.
+
+Local suite: 11 input cases pass; edge total 99, strict types pass. Includes valid
+registration/rounding and no storage mutation on invalid input. CORS and alert
+quality/expiry rules stay unchanged. Does not establish provider delivery, rate
+limits or complete endpoint allowlisting. Rollback: revert this input-only change.
