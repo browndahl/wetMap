@@ -267,6 +267,37 @@ function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
+type RiskFrame = RiskManifest["frames"][number];
+const decodedRisk = new WeakMap<
+  RiskManifest,
+  {
+    frames: WeakMap<RiskFrame, { value: string; bytes: Uint8Array }>;
+    byteCount: number;
+    entryCount: number;
+  }
+>();
+
+function frameBytes(risk: RiskManifest, frame: RiskFrame): Uint8Array {
+  let cache = decodedRisk.get(risk);
+  if (!cache) {
+    cache = { frames: new WeakMap(), byteCount: 0, entryCount: 0 };
+    decodedRisk.set(risk, cache);
+  }
+  const previous = cache.frames.get(frame);
+  if (previous && previous.value === frame.intensity) return previous.bytes;
+  const bytes = decodeBase64(frame.intensity);
+  const nextBytes =
+    cache.byteCount - (previous?.bytes.length ?? 0) + bytes.length;
+  // Per-manifest weather-only scratch data, never coordinates/subscriptions.
+  // Weak ownership and explicit budgets prevent an isolate cache from growing.
+  if (nextBytes <= 128 * 1024 && (previous || cache.entryCount < 13)) {
+    cache.frames.set(frame, { value: frame.intensity, bytes });
+    cache.byteCount = nextBytes;
+    if (!previous) cache.entryCount++;
+  }
+  return bytes;
+}
+
 function mercatorY(latitude: number): number {
   const limited = Math.max(-85.051129, Math.min(85.051129, latitude));
   const radians = (limited * Math.PI) / 180;
@@ -307,6 +338,7 @@ export function riskAtLocation(
   const index = y * risk.width + x;
   const observedAt = Date.parse(risk.basedOnObservedAt);
   for (const frame of risk.frames) {
+    if (frame.alertEligible !== true) continue;
     const predictedAt = Date.parse(frame.predictedAt);
     if (!Number.isFinite(predictedAt)) continue;
     const kind = frame.leadMinutes === 0 ? "observed" : "forecast";
@@ -317,7 +349,7 @@ export function riskAtLocation(
       (kind === "forecast" && predictedAt < now)
     )
       continue;
-    const intensity = decodeBase64(frame.intensity)[index] ?? 0;
+    const intensity = frameBytes(risk, frame)[index] ?? 0;
     if (frame.alertEligible === true && intensity >= minimumAlertIntensity)
       return {
         leadMinutes: frame.leadMinutes,

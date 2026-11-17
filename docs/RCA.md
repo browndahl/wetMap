@@ -115,3 +115,25 @@ Local suite: 11 input cases pass; edge total 99, strict types pass. Includes val
 registration/rounding and no storage mutation on invalid input. CORS and alert
 quality/expiry rules stay unchanged. Does not establish provider delivery, rate
 limits or complete endpoint allowlisting. Rollback: revert this input-only change.
+
+## M12: repeated risk-grid decoding within the same push scan
+
+Measured seven-day cron CPU p99 is 41.854–52.469 ms; its complete cause is not yet
+established. A confirmed contributor in local reproduction is decoding every
+frame's identical base64 weather grid for each of up to 40 subscriptions. The old
+code also decodes alert-ineligible frames before rejecting them. Deterministic
+tests observed 520 decodes per scan rather than 13, and 13 rather than zero for
+ineligible frames. These two work-count regressions failed before the change.
+
+Fix: weakly owned, weather-only per-manifest decoded scratch data, at most 13
+entries / 128 KiB, with encoded-content invalidation and no coordinates or
+subscription data retained. Oversized frames are decoded but not cached. Skip
+already ineligible frames before decoding; no quality/expiry/scan-cap change.
+Five tests pass, including content replacement and oversized-frame non-retention;
+all 104 edge tests and strict types pass. No extra cloud requests or new service.
+
+Same isolated 12-batch synthetic 40-location lookup: p50 38.084 → 1.034 ms and
+p95 39.006 → 1.274 ms. This is lookup-only local wall time, not Cloudflare CPU,
+network/encryption/provider delivery or a field percentile. Actual post-release
+CPU and active plan remain unresolved; see PERFORMANCE.md and FREE_TIER.md.
+Rollback: revert this optimization; alert decisions remain unchanged.
