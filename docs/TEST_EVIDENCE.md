@@ -90,6 +90,12 @@ builds, plus all three CodeQL languages, secrets and Trivy/SBOM.
   succeeded; normal radar
   [44193458457](https://github.com/browndahl/wetMap/actions/runs/44193458457)
   passed on `e32aa47`. This does not require injecting a real bad input.
+- Future-time admission deployment
+  [44194026781](https://github.com/browndahl/wetMap/actions/runs/44194026781)
+  succeeded on `72b34d8`; normal radar
+  [44194543306](https://github.com/browndahl/wetMap/actions/runs/44194543306)
+  also passed on that exact version. All ten code PRs #39–#48 are now merged;
+  this normal rollout is not a full independent release acceptance.
 
 ## Approved private raw-data audit — actually executed once
 

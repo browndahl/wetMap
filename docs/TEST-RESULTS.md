@@ -1,5 +1,9 @@
 # Verification results
 
+Historical results below are preserved, not refreshed acceptance. Current master
+implementation evidence and limitations are in [TEST_EVIDENCE.md](TEST_EVIDENCE.md)
+and [RISKS.md](RISKS.md), 17 November 2026. No full independent acceptance claim.
+
 This file is updated by maintainers/CI. Do not interpret configured workflows as executed evidence.
 
 | Check                                            | Result                                                                                                                                                                                                                                                                        | Environment                                                                        |

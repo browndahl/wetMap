@@ -83,6 +83,12 @@ FINDINGS.md, RCA.md, TEST_EVIDENCE.md, PERFORMANCE.md, FREE_TIER.md, RISKS.md,
 MASTER_WORK_PLAN.md and ADRs 0014/0015. Next: close correctness/CPU evidence and
 approval/isolation gaps before new product features or forecast promotion.
 
+Normal rollout follow-through: all ten code PRs #39–#48 merged after CI/security.
+Last code deploy 44194026781 and radar 44194543306 passed on `72b34d8`.
+Documentation PR #49 records this checkpoint and updates quota/input/race runbooks;
+historical budget/test-result pages now point to the dated master evidence. No
+private handoff/raw snapshot is published and no new approval boundary is waived.
+
 ---
 
 The following log records the earlier build-brief programme. Evidence is linked
