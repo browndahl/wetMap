@@ -5,14 +5,32 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
   deployments: write
+concurrency:
+  group: wetmap-deploy
+  cancel-in-progress: false
 jobs:
+  validate:
+    if: vars.CLOUDFLARE_CONFIGURED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        timeout-minutes: 1
+        with: { ref: "${{ github.sha }}" }
+      - name: Require CI and Security for this exact main commit
+        run: python3 .github/scripts/release_gate.py
+        env: { GH_TOKEN: "${{ github.token }}" }
   staging:
     if: vars.CLOUDFLARE_CONFIGURED == 'true'
+    needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: staging
     steps:
       - uses: actions/checkout@v6
+        with: { ref: "${{ github.sha }}" }
       - uses: pnpm/action-setup@v4
         with: { version: 10.34.6 }
       - uses: actions/setup-node@v6
@@ -32,9 +50,11 @@ jobs:
     if: vars.CLOUDFLARE_CONFIGURED == 'true'
     needs: staging
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: production
     steps:
       - uses: actions/checkout@v6
+        with: { ref: "${{ github.sha }}" }
       - uses: pnpm/action-setup@v4
         with: { version: 10.34.6 }
       - uses: actions/setup-node@v6
@@ -43,6 +63,9 @@ jobs:
         env:
           VITE_API_BASE_URL: https://wetmap-api.wetmap-edge.workers.dev
           VITE_FRAMES_BASE_URL: https://wetmap-api.wetmap-edge.workers.dev
+      - name: Reject a superseded release before publishing
+        run: python3 .github/scripts/release_gate.py --check-current
+        env: { GH_TOKEN: "${{ github.token }}" }
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

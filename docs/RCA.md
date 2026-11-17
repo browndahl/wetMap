@@ -80,3 +80,16 @@ object. Invalid/legacy unversioned inputs fail closed to the existing labelled
 model path, never to fabricated dry radar. Range transport failure logs a fixed
 event code without raw errors. The strict reader is released only after normal
 writer publication is confirmed. No algorithm, history or gate change.
+
+## M04: deployment can precede independent CI/security completion
+
+Confirmed by deploy.yml: push-to-main starts deploy independently; staging checks
+only the pnpm workspace. No exact-commit prerequisite on CI's .NET/containers or
+the Security workflow. Existing manual PR review does not enforce all future
+main pushes. The new workflow-dependency regression fails against the old config.
+
+Fix in ADR 0015: bounded exact-SHA main/own-repo CI+Security gate; pinned checkouts,
+serialized deploys, superseded-release check before publishing. Nine deterministic
+gate tests plus the full script suite (**43 passed**) cover positive and negative
+outcomes. No production failing release is injected. Live rollout must verify gate
+ordering. Repository rulesets/environment protection are not silently configured.
