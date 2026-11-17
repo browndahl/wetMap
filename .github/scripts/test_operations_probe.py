@@ -1,4 +1,7 @@
 import unittest
+import contextlib
+import io
+import subprocess
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -6,6 +9,90 @@ from operations_probe import collect_checks, report_exit_code
 
 
 class OperationsProbeTests(unittest.TestCase):
+    @patch("operations_probe.check_live_performance")
+    @patch("operations_probe.get_document")
+    def test_quality_validator_rejections_have_safe_specific_codes(
+        self, document, performance
+    ):
+        document.side_effect = None
+
+        def response(url):
+            if url.endswith("health/live"):
+                return {"status": "ok"}
+            if url.endswith("radar/frames"):
+                return {"frames": [{"observedAt": "2026-10-30T11:50:00Z"}]}
+            if url.endswith("operations/status"):
+                return {
+                    "monitoringEnabled": True,
+                    "scheduler": {"checkedAt": "2026-10-30T12:00:00Z"},
+                }
+            return '<div id="root"></div>' if url.endswith("/") else {}
+
+        document.side_effect = response
+        cases = [
+            ("Nowcast verification is stale (50.0 minutes)", "quality-stale"),
+            (
+                "ValueError: Invalid shared-coverage metric",
+                "quality-shared-coverage-invalid",
+            ),
+            (
+                "ValueError: Inconsistent verification accounting",
+                "quality-verification-invalid",
+            ),
+            ("Shadow candidate promoted below the CSI floor", "quality-promotion-csi"),
+            ("KeyError: 'untrusted-secret-field'", "quality-contract-invalid"),
+            ("UNEXPECTED private-token=must-not-be-logged", "quality-validator-failed"),
+        ]
+        for stderr, expected in cases:
+            with (
+                self.subTest(expected=expected),
+                patch(
+                    "operations_probe.subprocess.run",
+                    side_effect=subprocess.CalledProcessError(
+                        1, ["validator"], stderr=stderr
+                    ),
+                ),
+                contextlib.redirect_stdout(io.StringIO()) as output,
+            ):
+                checks = collect_checks(
+                    "https://web.test",
+                    "https://api.test",
+                    now=datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc),
+                )
+                self.assertEqual(checks[3]["code"], expected)
+                self.assertFalse(checks[3]["ok"])
+                self.assertEqual(len(checks), 6)
+                self.assertTrue(checks[-1]["ok"])
+                self.assertNotIn("must-not-be-logged", output.getvalue())
+                self.assertNotIn("untrusted-secret-field", output.getvalue())
+
+    @patch("operations_probe.check_live_performance")
+    @patch("operations_probe.get_document")
+    def test_validator_timeout_is_not_relabelled_as_an_opaque_failure(
+        self, document, performance
+    ):
+        document.side_effect = [
+            '<div id="root"></div>',
+            {"status": "ok"},
+            {"frames": [{"observedAt": "2026-10-30T11:50:00Z"}]},
+            {},
+            {
+                "monitoringEnabled": True,
+                "scheduler": {"checkedAt": "2026-10-30T12:00:00Z"},
+            },
+        ]
+        with patch(
+            "operations_probe.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["validator"], 15),
+        ):
+            checks = collect_checks(
+                "https://web.test",
+                "https://api.test",
+                now=datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc),
+            )
+        self.assertEqual(checks[3]["code"], "quality-validator-timeout")
+        self.assertFalse(checks[3]["ok"])
+
     @patch(
         "operations_probe.check_live_performance",
         side_effect=SystemExit(

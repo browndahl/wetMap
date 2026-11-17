@@ -7,6 +7,7 @@ remains 503; the summary and warning never imply that stale radar became healthy
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -20,6 +21,101 @@ from pathlib import Path
 
 from check_freshness import age_minutes, radar_status
 from check_live_performance import check_live_performance
+
+
+class QualityValidationError(ValueError):
+    def __init__(self, code: str, report_bytes: bytes, exit_code: int | None):
+        super().__init__(code)
+        self.code = code
+        self.details = {
+            "validatorExitCode": exit_code,
+            "reportBytes": len(report_bytes),
+            "reportSha256": hashlib.sha256(report_bytes).hexdigest(),
+        }
+
+
+def quality_failure_code(stderr: str | None) -> str:
+    """Map only known validator messages; never log arbitrary child output.
+
+    The child validates public data, which can still contain untrusted strings.
+    Static codes identify the rejected invariant without echoing URLs, fields,
+    traceback text or anything inherited from the process environment.
+    """
+    tail = stderr[-1024:].splitlines() if isinstance(stderr, str) else []
+    message = tail[-1].strip() if tail else ""
+    if message.startswith(("KeyError:", "TypeError:", "JSONDecodeError:")):
+        return "quality-contract-invalid"
+    message = message.removeprefix("ValueError: ")
+    groups = {
+        "quality-stale": ("Nowcast verification is stale (",),
+        "quality-empty": ("Nowcast quality has no verification samples",),
+        "quality-leads-incomplete": ("Multi-horizon verification is incomplete;",),
+        "quality-observatory-invalid": ("Precision Observatory is incomplete;",),
+        "quality-calibration-invalid": (
+            "Radar threshold calibration grid is incomplete;",
+        ),
+        "quality-geographic-mismatch": (
+            "Map/point geographic consistency is degraded:",
+            "Geographic consistency covers too few Danish test locations",
+            "Geographic consistency does not cover observation plus 60-minute nowcast",
+            "Geographic consistency comparison count is incomplete",
+            "Map and point dBZ values disagree",
+        ),
+        "quality-verification-invalid": (
+            "Unknown verification completeness scope",
+            "Invalid verification accounting counts",
+            "Inconsistent verification accounting",
+            "False verification completeness claim",
+            "Verification forecast contracts were rejected",
+            "Empty window must not claim perfect verification",
+            "Invalid verification coverage fraction",
+            "Retained-window verification completeness is below the existing 95% SLO",
+        ),
+        "quality-shared-coverage-invalid": (
+            "Invalid shared coverage counts",
+            "Invalid shared coverage fraction",
+            "Comparison members do not use the same coverage",
+            "Invalid shared-coverage metric",
+            "Shared-coverage evidence must remain versioned and shadow-only",
+            "Shared-coverage comparison has failed pairs",
+            "Duplicate comparison cohort",
+            "Invalid comparison sample accounting",
+            "Invalid per-lead comparison accounting",
+            "Comparison is missing the actual incumbent",
+        ),
+        "quality-shadow-contract": (
+            "Unknown shadow nowcast candidate ",
+            "Shadow candidate has invalid leads ",
+            "Shadow candidate has an invalid promotion status",
+        ),
+        "quality-promotion-samples": (
+            "Shadow candidate promoted without 48 paired samples",
+        ),
+        "quality-promotion-events": (
+            "Shadow candidate promoted without enough rain evidence",
+        ),
+        "quality-promotion-csi": ("Shadow candidate promoted below the CSI floor",),
+        "quality-promotion-improvement": (
+            "Shadow candidate promoted without enough CSI improvement",
+        ),
+        "quality-promotion-skill": (
+            "Shadow candidate promoted below persistence skill",
+        ),
+        "quality-promotion-false-alarms": (
+            "Shadow candidate promoted with too many additional false alarms",
+        ),
+        "quality-promotion-brier": (
+            "Adaptive ensemble promoted below persistence Brier skill",
+        ),
+        "quality-promotion-calibration": (
+            "V5 promoted before probability calibration completed",
+        ),
+        "quality-promotion-recall": ("V5 promoted below its calibrated recall floor",),
+    }
+    return next(
+        (code for code, prefixes in groups.items() if message.startswith(prefixes)),
+        "quality-validator-failed",
+    )
 
 
 def get_document(url: str):
@@ -55,18 +151,28 @@ def validate_quality(report: dict) -> None:
     # monitoring-specific approximation. This process never mutates forecasts.
     with tempfile.TemporaryDirectory(prefix="wetmap-quality-probe-") as directory:
         path = Path(directory) / "quality.json"
-        path.write_text(json.dumps(report), encoding="utf-8")
-        subprocess.run(
-            [
-                sys.executable,
-                str(Path(__file__).with_name("check_nowcast_quality.py")),
-                str(path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        serialized = json.dumps(report).encode("utf-8")
+        path.write_bytes(serialized)
+        try:
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("check_nowcast_quality.py")),
+                    str(path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except subprocess.CalledProcessError as error:
+            raise QualityValidationError(
+                quality_failure_code(error.stderr), serialized, error.returncode
+            ) from None
+        except subprocess.TimeoutExpired:
+            raise QualityValidationError(
+                "quality-validator-timeout", serialized, None
+            ) from None
 
 
 def collect_checks(
@@ -81,6 +187,10 @@ def collect_checks(
             code = operation() or "ok"
         except (Exception, SystemExit) as error:
             code = "probe-failed"
+            details = {}
+            if name == "quality" and isinstance(error, QualityValidationError):
+                code = error.code
+                details = error.details
             # Stable, non-secret diagnostics instead of swallowing the cause of
             # every incident into an opaque probe-failed. Thresholds unchanged.
             message = str(error)
@@ -100,6 +210,7 @@ def collect_checks(
                         "check": name,
                         "code": code,
                         "exceptionType": type(error).__name__,
+                        **details,
                     }
                 )
             )

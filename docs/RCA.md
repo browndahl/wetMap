@@ -29,3 +29,30 @@ passed. Publication-failure/derived-failure tests remain. CI/deploy results will
 linked after release. Residual: a valid but non-advancing source can still be stale;
 this fix does not establish the historical source-delay root cause or validate
 every ODIM semantic property. Rollback: revert the input-contract commit.
+
+## M01: validator failure loses the rejected invariant
+
+Historical run 43948778540 reports only `CalledProcessError`/`probe-failed`.
+The child validator did reject a report; its particular historical cause cannot
+be reconstructed because that rejected report and stderr were not retained.
+
+Confirmed root cause of diagnostic loss: `capture_output=True` plus a generic
+exception handler discards stderr and produces the same code for every quality
+invariant and validator timeout. Existing tests mocked validation success or a
+generic surface failure, never real subprocess failure classification.
+
+New tests on old implementation failed **7 assertions**: stale report, shared-mask
+metric, verification accounting, promotion CSI floor, malformed contract, unknown
+error and timeout all collapsed to `probe-failed`.
+
+Fix: keep the complete child validator, its 15-second timeout and every gate.
+Map only allow-listed static rejection prefixes to stable quality codes; never
+log arbitrary child stdout/stderr, keys, URLs or traceback content. Include report
+byte count/SHA-256 and child exit code to correlate the public report without
+uploading raw private data or adding paid storage. Unknown errors still fail.
+
+Verification: 34 monitoring/workflow tests pass; new negative cases prove that all
+six probes continue and injected secret-like error text never reaches logs.
+This makes future incidents diagnosable, not retrospectively “fixed”. No claim
+that the underlying historical rejection was a false alarm. Rollback: revert the
+diagnostics commit; classification changes but service-health gates do not.
