@@ -326,6 +326,31 @@ function coordinate(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function weatherCoordinates(
+  url: URL,
+): { latitude: number; longitude: number } | null {
+  const latitude = coordinate(url.searchParams.get("lat"));
+  const longitude = coordinate(url.searchParams.get("lon"));
+  if (
+    latitude === null ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude === null ||
+    longitude < -180 ||
+    longitude > 180
+  )
+    return null;
+  return { latitude, longitude };
+}
+
+function invalidWeatherCoordinates(): Response {
+  return problem(
+    400,
+    "Invalid coordinates",
+    "Latitude must be -90..90 and longitude -180..180.",
+  );
+}
+
 function normalizeLocation(feature: PhotonFeature): LocationResult | null {
   const properties = feature.properties;
   const coordinates = feature.geometry?.coordinates;
@@ -1054,21 +1079,9 @@ async function forecast(
   context: ExecutionContext,
 ): Promise<Response> {
   const startedAt = performance.now();
-  const latitude = Number(url.searchParams.get("lat"));
-  const longitude = Number(url.searchParams.get("lon"));
-  if (
-    !Number.isFinite(latitude) ||
-    latitude < -90 ||
-    latitude > 90 ||
-    !Number.isFinite(longitude) ||
-    longitude < -180 ||
-    longitude > 180
-  )
-    return problem(
-      400,
-      "Invalid coordinates",
-      "Latitude must be -90..90 and longitude -180..180.",
-    );
+  const point = weatherCoordinates(url);
+  if (!point) return invalidWeatherCoordinates();
+  const { latitude, longitude } = point;
   // HARMONIE is a 2 km model. A 0.01-degree cache grid avoids needless
   // upstream calls while retaining the model's useful spatial resolution.
   const roundedLat = latitude.toFixed(2);
@@ -1744,21 +1757,9 @@ async function modelPrecipitation(
   context: ExecutionContext,
 ): Promise<Response> {
   const startedAt = performance.now();
-  const latitude = Number(url.searchParams.get("lat"));
-  const longitude = Number(url.searchParams.get("lon"));
-  if (
-    !Number.isFinite(latitude) ||
-    latitude < -90 ||
-    latitude > 90 ||
-    !Number.isFinite(longitude) ||
-    longitude < -180 ||
-    longitude > 180
-  )
-    return problem(
-      400,
-      "Invalid coordinates",
-      "Latitude must be -90..90 and longitude -180..180.",
-    );
+  const point = weatherCoordinates(url);
+  if (!point) return invalidWeatherCoordinates();
+  const { latitude, longitude } = point;
 
   const roundedLat = latitude.toFixed(2);
   const roundedLon = longitude.toFixed(2);
@@ -1853,15 +1854,9 @@ async function precipitation(
   context: ExecutionContext,
 ): Promise<Response> {
   const startedAt = performance.now();
-  const latitude = Number(url.searchParams.get("lat"));
-  const longitude = Number(url.searchParams.get("lon"));
-  const coordinatesAreValid =
-    Number.isFinite(latitude) &&
-    latitude >= -90 &&
-    latitude <= 90 &&
-    Number.isFinite(longitude) &&
-    longitude >= -180 &&
-    longitude <= 180;
+  const point = weatherCoordinates(url);
+  if (!point) return invalidWeatherCoordinates();
+  const { latitude, longitude } = point;
   const pointCache = (caches as unknown as { default: Cache }).default;
   const pointCacheUrl = new URL("https://cache.wetmap/precipitation/point/v2");
   pointCacheUrl.search = new URLSearchParams({
@@ -1869,7 +1864,7 @@ async function precipitation(
     lon: longitude.toFixed(3),
   }).toString();
   const pointCacheKey = new Request(pointCacheUrl);
-  if (coordinatesAreValid) {
+  {
     const pointCacheStartedAt = performance.now();
     const cachedPoint = await pointCache.match(pointCacheKey);
     if (cachedPoint) {
@@ -1889,16 +1884,16 @@ async function precipitation(
     }
   }
   const radarStartedAt = performance.now();
-  const radarPromise = coordinatesAreValid
-    ? radarPointSamples(latitude, longitude, env).catch((error) => {
-        console.error("precipitation.radar.failed", {
-          error,
-          latitude,
-          longitude,
-        });
-        return null;
-      })
-    : Promise.resolve(null);
+  const radarPromise = radarPointSamples(latitude, longitude, env).catch(
+    (error) => {
+      console.error("precipitation.radar.failed", {
+        error,
+        latitude,
+        longitude,
+      });
+      return null;
+    },
+  );
   const measuredRadarPromise = radarPromise.then((value) => ({
     value,
     durationMs: elapsed(radarStartedAt),
