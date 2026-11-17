@@ -88,9 +88,14 @@ def run(output: Path, limit: int, upload: bool) -> None:
     fetched_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     frames: list[Frame] = []
     new_frame_paths: list[Path] = []
+    items = client.newest_composites(limit)
+    if not items:
+        # An empty/upstream-invalid feed is not a successful empty radar product.
+        # Keep the existing local/remote manifest and immutable frames untouched.
+        raise ValueError("Cannot replace radar manifest from an empty catalogue")
     with tempfile.TemporaryDirectory(prefix="wetmap-") as temporary_directory:
         temporary = Path(temporary_directory)
-        for item in reversed(client.newest_composites(limit)):
+        for item in reversed(items):
             target = output / f"{item.id}.webp"
             if item.id in existing and (target.exists() or upload):
                 frames.append(Frame(**existing[item.id]))
