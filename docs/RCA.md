@@ -180,3 +180,22 @@ worldwide ranges, valid coordinate rounding and response contracts are unchanged
 The 20 cases now pass, full edge suite 124, strict types pass. Does not claim full
 OpenAPI compliance or independently validate every upstream weather field.
 Rollback: revert the coordinate-validation commit.
+
+## M15: future source timestamps pass the publication input boundary
+
+The freshness validator already rejects observations more than two minutes in
+the future, but it executes after processing/publication. Catalogue validation
+checked UTC syntax only, so a future-dated input could reach download and replace
+the last-good manifest before that existing gate fails. This is a reproduced
+failure mode, not proof that DMI historically supplied a future observation.
+
+New fixed-clock tests on the previous code: **3 failed / 2 passed**, including
+the preservation test reaching download instead of rejecting. The fix applies
+the **same existing two-minute tolerance** at the adapter input boundary, once
+per catalogue. It rejects before download, output mutation or remote publication;
+it doesn't change historical data or make stale observations fresh.
+
+Five tests pass (future by 120.001 s / a day, exact now / +120 s boundaries,
+last-good bytes and no download/upload). Full worker suite 112, Ruff passes.
+No new request, service, retention or forecast gate. Residual: the ingestion
+host's UTC clock remains a trusted dependency. Rollback: revert the input guard.
