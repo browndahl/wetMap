@@ -4,7 +4,7 @@ import logging
 import random
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -55,6 +55,7 @@ class DmiClient:
             raise ValueError("DMI catalogue contains no usable observations")
         items: list[RadarItem] = []
         identifiers: set[str] = set()
+        latest_allowed = datetime.now(timezone.utc) + timedelta(minutes=2)
         for feature in features:
             try:
                 identifier = feature["id"]
@@ -71,6 +72,10 @@ class DmiClient:
                 timestamp = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
                 if timestamp.utcoffset() != timedelta(0):
                     raise ValueError("Observation timestamp must be explicit UTC")
+                # Match the existing freshness gate, but reject before download
+                # or publication can replace a valid last-good manifest.
+                if timestamp > latest_allowed:
+                    raise ValueError("Observation timestamp is in the future")
                 if not isinstance(download_url, str):
                     raise ValueError("Invalid observation asset URL")
                 asset = urlsplit(download_url)
