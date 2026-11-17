@@ -159,3 +159,24 @@ source delay still emits a warning and returns success only for notification
 ownership; public unhealthy status stays 503. Unknown/unowned/invalid/stalled
 states still fail. The 25-minute freshness gate is unchanged. Rollback: revert
 this diagnostics commit, never relabel an underlying incident as resolved.
+
+## M14: missing required query coordinates silently become zero
+
+OpenAPI requires numeric `lat` and `lon` for both weather endpoints, but handlers
+used `Number(url.searchParams.get(...))`. JavaScript converts null/blank strings
+to zero. Missing one or both coordinates therefore passed validation, touched
+cache/R2 and attempted upstream weather at a manufactured point; with mocked
+unavailable upstreams the result was 503 rather than the required 400.
+
+Reproduction: a new 20-case adapter suite has **10 failed / 10 passed** on the
+previous implementation. The failed cases are missing/blank required parameters
+on both endpoints; range/nonfinite and explicitly provided zero remain controls.
+No real upstream calls, coordinates or production request mutations were used.
+
+Fix: use the existing null/blank-aware coordinate parser in a shared weather
+coordinate contract, validate before any cache/storage/radar/upstream I/O, and
+return the existing 400 ProblemDetails response. Valid explicit zeros, finite
+worldwide ranges, valid coordinate rounding and response contracts are unchanged.
+The 20 cases now pass, full edge suite 124, strict types pass. Does not claim full
+OpenAPI compliance or independently validate every upstream weather field.
+Rollback: revert the coordinate-validation commit.
