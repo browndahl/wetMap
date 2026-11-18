@@ -4,6 +4,7 @@ import { radarPointSamples } from "./index";
 function setup(
   changes: Record<string, unknown> = {},
   versions = ["version-a", "version-a"],
+  rowBytes = [52, 60, 52, 60],
 ) {
   const metadata = {
     schemaVersion: 2,
@@ -24,6 +25,7 @@ function setup(
     ...changes,
   };
   let row = 0;
+  const arrayBuffer = vi.fn(async () => new Uint8Array(rowBytes).buffer);
   const get = vi.fn(async (key: string, options?: R2GetOptions) => {
     if (key === "nowcast/point-risk.json")
       return { json: async () => metadata };
@@ -31,7 +33,11 @@ function setup(
     const condition = options?.onlyIf as R2Conditional | undefined;
     if (condition?.etagMatches && condition.etagMatches !== etag)
       return { etag };
-    return { etag, body: new Response(new Uint8Array([52, 60, 52, 60])).body };
+    return {
+      etag,
+      body: new Response(new Uint8Array(rowBytes)).body,
+      arrayBuffer,
+    };
   });
   const env = {
     RADAR: { get } as unknown as R2Bucket,
@@ -39,7 +45,7 @@ function setup(
     OPEN_METEO_BASE_URL: "https://model.test",
     ALLOWED_ORIGIN: "https://web.test",
   };
-  return { env, get };
+  return { env, get, arrayBuffer };
 }
 beforeEach(() => {
   vi.useFakeTimers();
@@ -77,17 +83,23 @@ afterEach(() => {
 });
 
 it("binds every byte range to the metadata's object ETag", async () => {
-  const { env, get } = setup();
+  const { env, get, arrayBuffer } = setup();
   const result = await radarPointSamples(56, 10, env);
   expect(result?.samples.map((sample) => sample.reflectivityDbz)).toEqual([
     20, 28,
   ]);
+  expect(arrayBuffer).toHaveBeenCalledTimes(2);
   for (const [key, options] of get.mock.calls.filter(([key]) =>
     key.endsWith(".bin"),
   )) {
     expect(key).toBe("nowcast/point-risk-1.bin");
     expect(options?.onlyIf).toEqual({ etagMatches: "version-a" });
   }
+});
+
+it("rejects a short range instead of returning a dry radar sample", async () => {
+  const { env } = setup({}, undefined, [52, 60]);
+  expect(await radarPointSamples(56, 10, env)).toBeNull();
 });
 
 it.each([
