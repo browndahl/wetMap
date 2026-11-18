@@ -35,6 +35,7 @@ import { useWeatherStore } from "./store";
 import LocationSearch from "./components/LocationSearch";
 import PrecisionObservatory from "./components/PrecisionObservatory";
 import RainNextHour from "./components/RainNextHour";
+import ForecastRecovery from "./components/ForecastRecovery";
 import { useCompactLayout } from "./useCompactLayout";
 import { needsIphoneInstallation } from "./platform";
 import IphoneInstallHelp from "./components/IphoneInstallHelp";
@@ -379,6 +380,12 @@ export default function App() {
           frames={radarFrames}
           activeIndex={safeIndex}
           onFrameReady={setRenderedFrameId}
+          onCenterSelected={() => {
+            // The selection reveals the rain view on mobile and hides map tools.
+            requestAnimationFrame(() =>
+              weatherPanelRef.current?.focus({ preventScroll: true }),
+            );
+          }}
         />
       </Suspense>
 
@@ -492,6 +499,7 @@ export default function App() {
             isLoading={rain.isLoading}
             isFetching={rain.isFetching}
             isError={rain.isError}
+            onRetry={() => rain.refetch({ cancelRefetch: false })}
             locale={state.locale}
             locationName={state.selectedLocation.name}
             latitude={state.selectedLocation.latitude}
@@ -532,19 +540,16 @@ export default function App() {
               )}
             </div>
             <h2 id="forecast-title">{t("forecast")}</h2>
-            {forecast.isLoading && (
-              <p className="muted" role="status">
-                {t("loadingForecast")}
-              </p>
-            )}
-            {forecast.isError && (
-              <p className="muted">{t("forecastUnavailable")}</p>
-            )}
-            {!forecast.isLoading &&
-              !forecast.isError &&
-              forecastPoints.length === 0 && (
-                <p className="muted">{t("forecastUnavailable")}</p>
-              )}
+            <ForecastRecovery
+              key={`${forecastLatitude},${forecastLongitude}`}
+              kind="point"
+              locale={state.locale}
+              isLoading={forecast.isLoading}
+              isFetching={forecast.isFetching}
+              isError={forecast.isError}
+              isEmpty={!forecast.isPlaceholderData && !forecastPoints.length}
+              onRetry={() => forecast.refetch({ cancelRefetch: false })}
+            />
             {forecastPoints.map((point) => (
               <div className="forecast-row" key={point.step}>
                 <time dateTime={point.step}>

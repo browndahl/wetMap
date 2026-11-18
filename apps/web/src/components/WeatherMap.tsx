@@ -1,4 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Crosshair } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 import type {
   GeoJSONSource,
@@ -22,10 +24,22 @@ interface Props {
   frames: Array<RadarFrame | NowcastFrame>;
   activeIndex: number;
   onFrameReady?: (id: string) => void;
+  onCenterSelected?: () => void;
 }
 
 const framesBase =
   import.meta.env.VITE_FRAMES_BASE_URL || window.location.origin;
+
+function selectMapPoint({ lat, lng }: { lat: number; lng: number }) {
+  const { locale, setSelectedLocation } = useWeatherStore.getState();
+  setSelectedLocation({
+    id: `map:${lat.toFixed(5)},${lng.toFixed(5)}`,
+    name: `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E`,
+    context: translate(locale, "selectedOnMap"),
+    latitude: lat,
+    longitude: lng,
+  });
+}
 
 function markReady(name: string) {
   if (
@@ -92,18 +106,19 @@ export default function WeatherMap({
   frames,
   activeIndex,
   onFrameReady,
+  onCenterSelected,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const [centerControl, setCenterControl] = useState<HTMLDivElement | null>(
+    null,
+  );
   const visibleBuffer = useRef<0 | 1>(0);
   const opacityRef = useRef(0.7);
   const opacity = useWeatherStore((state) => state.opacity);
   const precise2d = useWeatherStore((state) => state.precise2d);
   const locale = useWeatherStore((state) => state.locale);
   const selectedLocation = useWeatherStore((state) => state.selectedLocation);
-  const setSelectedLocation = useWeatherStore(
-    (state) => state.setSelectedLocation,
-  );
   const frame = frames[activeIndex];
 
   useEffect(() => {
@@ -133,6 +148,19 @@ export default function WeatherMap({
       }),
       "top-right",
     );
+    const control = document.createElement("div");
+    control.className =
+      "maplibregl-ctrl maplibregl-ctrl-group map-center-control";
+    map.addControl(
+      {
+        onAdd: () => {
+          setCenterControl(control);
+          return control;
+        },
+        onRemove: () => control.remove(),
+      },
+      "top-right",
+    );
     map.on("load", () => {
       markReady("wetmap:map-ready");
       if (!useWeatherStore.getState().precise2d) addBuildings(map);
@@ -160,22 +188,13 @@ export default function WeatherMap({
         },
       });
     });
-    map.on("click", (event: MapMouseEvent) => {
-      const point = {
-        id: `map:${event.lngLat.lat.toFixed(5)},${event.lngLat.lng.toFixed(5)}`,
-        name: `${event.lngLat.lat.toFixed(3)}°N, ${event.lngLat.lng.toFixed(3)}°E`,
-        context: translate(useWeatherStore.getState().locale, "selectedOnMap"),
-        latitude: event.lngLat.lat,
-        longitude: event.lngLat.lng,
-      };
-      setSelectedLocation(point);
-    });
+    map.on("click", (event: MapMouseEvent) => selectMapPoint(event.lngLat));
     mapRef.current = map;
     return () => {
       map.remove();
       mapRef.current = null;
     };
-  }, [setSelectedLocation]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -340,6 +359,32 @@ export default function WeatherMap({
       ref={container}
       className="map"
       aria-label={`${translate(locale, "interactiveRadarMap")} ${selectedLocation.name}`}
-    />
+    >
+      <span className="map-center-target" aria-hidden="true">
+        <Crosshair size={28} />
+      </span>
+      {centerControl &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              aria-label={translate(locale, "selectMapCenter")}
+              aria-describedby="map-center-help"
+              title={translate(locale, "selectMapCenter")}
+              onClick={() => {
+                if (!mapRef.current) return;
+                selectMapPoint(mapRef.current.getCenter());
+                onCenterSelected?.();
+              }}
+            >
+              <Crosshair size={17} aria-hidden="true" />
+            </button>
+            <span className="sr-only" id="map-center-help">
+              {translate(locale, "selectMapCenterHelp")}
+            </span>
+          </>,
+          centerControl,
+        )}
+    </div>
   );
 }

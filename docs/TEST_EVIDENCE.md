@@ -304,3 +304,45 @@ Release380825934 remains disabled_manually; all seven other workflows active.
 Latest remains v1.22.12/id449313487 and v1.22.4 tag remains
 fda019bc05abc39cb2a554d8375e134bb1feefe4. No live publication by the new planner.
 The separate radar transfer proposal above isn't part of this deployed commit.
+
+## 18 November — local UI follow-up (no rollout)
+
+The three new regressions failed on the reviewed implementation: no native
+map-centre action and no rain/point recovery action. After implementation,
+`pnpm --filter @wetmap/web run test --reporter=dot` passed **41/41**:
+centre and pointer input produce the same location; an empty rain response is
+not dry, then recovery displays returned dry data; the rain retry stays
+disabled in flight; a failed point refresh uses the existing three retries,
+then recovers without refetching the rain query. The pre-existing radar source
+test now checks the visible dBZ unit and still checks the method tooltip.
+
+`pnpm --filter @wetmap/web run lint`, `typecheck` and `build` passed.
+Gzip budgets (bytes, before → after / limit): entry 97,979 → 98,552 / 110,000;
+lazy map 291,778 → 292,227 / 320,000; worker 147,628 → 147,628 / 170,000.
+The pre-existing MapLibre >500 kB advisory remains. No latency/FPS claim.
+
+- In-app browser, synthetic API on loopback; normal OpenFreeMap basemap only.
+  At 320×568, 390×844 and 844×390, all five mobile More map controls measured
+  44×44 px and passed hit tests at centre and four inset corners. GPS/push
+  were not activated. At 320 px: ArrowRight on canvas, Tab through the map
+  controls, Enter on Select map centre → selected coordinate, Rain view and
+  focus on weather panel. The map buttons showed a solid inset focus ring.
+- Header: language control centre remained clickable at widths 1200, 1201,
+  1280, 1366 and 1440 px. At 1280, the language control switched DA → EN;
+  the header and search retained an 8 px gap in both.
+- Local 503 responses exposed separate manual buttons and automatic retry
+  copy. Activating rain retry with Enter disabled the button during the
+  request. Recovery to valid data is covered by regression tests.
+- At 320 px, four columns, no horizontal document overflow, and fitted
+  12 px labels: dry, weak echo, light, moderate, heavy, radar and model.
+  Browser-computed opaque-panel colours converted to sRGB give approximately
+  9.64:1 (radar label; formerly 1.98:1 over the moderate bar) and 8.19:1
+  (model/intensity). The test covers the visible dark UI, not an unused theme.
+  No radar colour, bucket, source or data-confidence calculation changed.
+
+Local screenshots saved alongside the review (390 px rain, 320 px controls
+and errors, and 1280 px header). The restarted mock recorded 79 local GETs
+and zero mutation attempts, a partial count after a fixture update. Not
+verified: physical iPhone/Safari, screen-reader speech, real 200% browser zoom
+(in-app shortcut did not change viewport or scale), actual OS reduced-motion
+setting, full acceptance matrix or production deployment.

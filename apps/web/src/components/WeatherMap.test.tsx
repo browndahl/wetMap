@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { RadarFrame } from "@wetmap/shared";
 import { beforeEach, expect, it, vi } from "vitest";
 import WeatherMap from "./WeatherMap";
@@ -37,6 +37,7 @@ const map = vi.hoisted(() => {
     removeSource: vi.fn(),
     setPaintProperty: vi.fn(),
     setLayoutProperty: vi.fn(),
+    getCenter: vi.fn(),
     easeTo: vi.fn(),
     remove: vi.fn(),
   };
@@ -97,6 +98,49 @@ it("renders a cached radar frame after the map style finishes loading", () => {
       url: expect.stringMatching(/\/frames\/test-frame\.webp$/),
     }),
   );
+  view.unmount();
+});
+
+it("selects the actual map center with a native button, using the same point model as a map click", () => {
+  const onCenterSelected = vi.fn();
+  map.getCenter.mockReturnValue({ lat: 55.6761, lng: 12.5683 });
+  const view = render(
+    <WeatherMap
+      frames={[]}
+      activeIndex={0}
+      onCenterSelected={onCenterSelected}
+    />,
+  );
+  const control = map.addControl.mock.calls
+    .map(([entry]) => entry)
+    .find((entry) => typeof entry.onAdd === "function");
+  if (control) act(() => view.container.append(control.onAdd()));
+
+  const button = screen.getByRole("button", { name: "Vælg kortets centrum" });
+  fireEvent.click(button);
+  const center = useWeatherStore.getState().selectedLocation;
+  expect(center).toMatchObject({
+    id: "map:55.67610,12.56830",
+    latitude: 55.6761,
+    longitude: 12.5683,
+  });
+  expect(onCenterSelected).toHaveBeenCalledOnce();
+
+  const handleClick = map.on.mock.calls.find(
+    ([event]) => event === "click",
+  )?.[1];
+  act(() => {
+    useWeatherStore.setState({ selectedLocation: { ...center, id: "other" } });
+    (
+      handleClick as unknown as (event: {
+        lngLat: { lat: number; lng: number };
+      }) => void
+    )({
+      lngLat: { lat: 55.6761, lng: 12.5683 },
+    });
+  });
+  expect(useWeatherStore.getState().selectedLocation).toEqual(center);
+  expect(onCenterSelected).toHaveBeenCalledOnce();
   view.unmount();
 });
 

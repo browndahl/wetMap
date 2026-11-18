@@ -157,6 +157,7 @@ const apiMocks = vi.hoisted(() => ({
     isInterpolated: true,
     points: [] as Array<Record<string, unknown>>,
   },
+  rainOverride: undefined as undefined | (() => Promise<unknown>),
   locations: [] as Array<{
     id: string;
     name: string;
@@ -202,7 +203,8 @@ vi.mock("./api", () => ({
     apiMocks.forecastOverride
       ? apiMocks.forecastOverride(latitude, longitude)
       : apiMocks.forecast,
-  getRainNextHour: async () => apiMocks.rain,
+  getRainNextHour: async () =>
+    apiMocks.rainOverride ? apiMocks.rainOverride() : apiMocks.rain,
   getPushConfig: apiMocks.getPushConfig,
   savePushSubscription: apiMocks.savePushSubscription,
   deletePushSubscription: apiMocks.deletePushSubscription,
@@ -228,6 +230,7 @@ beforeEach(() => {
   apiMocks.forecast.points = [];
   apiMocks.forecastOverride = undefined;
   apiMocks.rain.points = [];
+  apiMocks.rainOverride = undefined;
   apiMocks.rain.source = "open-meteo-dmi";
   apiMocks.quality.shadowCandidates = [];
   apiMocks.locations = [];
@@ -247,6 +250,107 @@ beforeEach(() => {
     },
     favoriteLocations: [],
   });
+});
+
+it("distinguishes empty rain from dry and lets the user retry only the rain query", async () => {
+  let resolveRetry!: (value: unknown) => void;
+  const rainRequest = vi
+    .fn()
+    .mockResolvedValueOnce(apiMocks.rain)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+  const temperatureRequest = vi.fn(async () => apiMocks.forecast);
+  apiMocks.rainOverride = rainRequest;
+  apiMocks.forecastOverride = temperatureRequest;
+  const view = render(
+    <QueryClientProvider client={new QueryClient()}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  expect(
+    await screen.findByText("Ingen regnprognose for dette sted endnu."),
+  ).toBeVisible();
+  expect(screen.queryByText("Tørt den næste time")).not.toBeInTheDocument();
+  const retry = screen.getByRole("button", { name: "Hent regnprognosen igen" });
+  fireEvent.click(retry);
+  await waitFor(() => expect(retry).toBeDisabled());
+  fireEvent.click(retry);
+  expect(rainRequest).toHaveBeenCalledTimes(2);
+  expect(temperatureRequest).toHaveBeenCalledOnce();
+
+  const startsAt = new Date().toISOString();
+  await act(async () =>
+    resolveRetry({
+      ...apiMocks.rain,
+      points: [
+        {
+          startsAt,
+          endsAt: new Date(Date.parse(startsAt) + 900_000).toISOString(),
+          precipitationMm: 0,
+          intensity: "none",
+        },
+      ],
+    }),
+  );
+  expect(await screen.findByText("Tørt den næste time")).toBeVisible();
+  expect(retry).not.toBeInTheDocument();
+  view.unmount();
+});
+
+it("retries the point forecast after a failed refresh without refetching rain", async () => {
+  const forecastRequest = vi
+    .fn()
+    .mockResolvedValueOnce(apiMocks.forecast)
+    .mockRejectedValue(new Error("synthetic upstream error"));
+  const rainRequest = vi.fn(async () => apiMocks.rain);
+  apiMocks.forecastOverride = forecastRequest;
+  apiMocks.rainOverride = rainRequest;
+  const client = new QueryClient();
+  const view = render(
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>,
+  );
+
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Vis prognosedetaljer · Temperatur og vind",
+    }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Hent punktprognosen igen" }),
+  );
+  expect(
+    await screen.findByText(
+      "Prognosen er midlertidigt utilgængelig.",
+      {},
+      { timeout: 6000 },
+    ),
+  ).toBeVisible();
+  expect(forecastRequest).toHaveBeenCalledTimes(5); // initial empty response + one fetch with three existing retries
+  expect(rainRequest).toHaveBeenCalledOnce();
+  forecastRequest.mockResolvedValueOnce({
+    ...apiMocks.forecast,
+    points: [
+      { step: new Date().toISOString(), temperatureC: 7, windSpeedMs: 2 },
+    ],
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Hent punktprognosen igen" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("status", { name: "Temperatur" }),
+    ).toHaveTextContent("7°C"),
+  );
+  expect(forecastRequest).toHaveBeenCalledTimes(6);
+  expect(rainRequest).toHaveBeenCalledOnce();
+  view.unmount();
 });
 
 it("shows one phone view at a time and keeps extra controls in More", async () => {
@@ -1094,7 +1198,7 @@ it("labels radar-backed intervals and weak echoes without claiming ground rain",
   );
 
   expect(await screen.findByText("Radar + model")).toBeInTheDocument();
-  expect(screen.getByText("Radar · 14")).toBeInTheDocument();
+  expect(screen.getByText("14 dBZ")).toBeVisible();
   expect(
     screen.getByTitle("Radar · 14 dBZ · Stabilitetsmodel"),
   ).toBeInTheDocument();
