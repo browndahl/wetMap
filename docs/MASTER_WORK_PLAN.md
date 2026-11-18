@@ -62,3 +62,10 @@ compliance unresolved, no upgrade. Remote load blocked by shared prod staging.
 Next priority is not feature expansion: complete correctness evidence and free
 CPU guardrails, agree isolated testing/protection, then held-out V6 evaluation.
 Routine phase pauses were waived, not these scope/resource/approval boundaries.
+
+18 November follow-up: #50 extends exact-SHA/security gating to GitHub Releases,
+separate from deploy; its normal live ordering passes. Remaining action dependency
+warnings aren't fixed by gating. A fresh same-version lock experiment fails the
+high-severity audit and isn't shipped. See the dedicated release audit. Temporary
+Release-only containment, old Release-post repair and future privacy-log changes
+have separate explicit approval questions; no setting/data change is assumed.

@@ -106,6 +106,17 @@ The action's runtime npm installer reported 14 high /1 critical advisories;
 packages/reachability and safe remediation are unverified, not an exploit claim
 or evidence of repository Trivy coverage. No blind major dependency upgrade.
 
+18 November dependency follow-up: the normal #50 Release gate ordering is proven
+in 44197456654; deploy 44197225088 and synthetic 44197478872 pass. Installer still
+reports 14 high/1 critical. A bounded public-lock registry check and local
+same-core 25.0.9 lock-only experiment are recorded in
+RELEASE_DEPENDENCY_AUDIT_2026-11-18.md. Fresh-lock audit still has 10 high, exits 1;
+not adopted. The two public experimental files are moved out of the repo, not
+shipped, and no scripts/publisher run. No automatic major downgrade or ignored
+advisory. Owner asked about temporary **Release-only** pause, not applied; app,
+CI/radar/deploy/monitoring/push remain unaffected. Metadata-repair and privacy-log
+approval questions are separate. This is unresolved security evidence, not PASS.
+
 ---
 
 The following log records the earlier build-brief programme. Evidence is linked
