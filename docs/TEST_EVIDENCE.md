@@ -346,3 +346,28 @@ and zero mutation attempts, a partial count after a fixture update. Not
 verified: physical iPhone/Safari, screen-reader speech, real 200% browser zoom
 (in-app shortcut did not change viewport or scale), actual OS reduced-motion
 setting, full acceptance matrix or production deployment.
+
+## 18 November — dry-window planner, local only
+
+The closed-by-default planner uses the existing point precipitation response
+and the app clock. A recommendation needs contiguous, fresh radar intervals with
+no predicted rain and at least the existing medium-confidence boundary. It
+clips to current time and the point radar horizon, and does not interpret model
+fallback, weak echoes, missing intervals or expired data as reliable dry periods.
+No new dependencies, weather requests, forecast engine or alert changes.
+
+- 52 web tests passed, including the duration rules, clock advancement, stale
+  and model-only inputs, and changing locations without reusing a result.
+  Lint, typecheck and the existing bundle budgets passed; the entry is
+  100,033 of 110,000 gzip bytes.
+- Seven scenarios ran on the built app in local Chrome, with mocked weather
+  and no external requests. Tested Danish and English, 1440/640/390/320 px,
+  emulated reduced motion, arrow keys, accessible names and checked states,
+  visible focus, 44 px targets, stale data and the Copenhagen DST fall-back.
+  Opening and selecting a duration issued zero additional API requests.
+- At 200% root text size, sticky mobile navigation obscured keyboard focus.
+  Added dock scroll padding and verified unobscured focus after the fix.
+  At 320 px, 200% text and a forced RTL direction, the planner itself reflows;
+  the existing dock still overflows horizontally even with the planner hidden.
+  This is not a full WCAG audit, physical iPhone test, screen-reader speech test
+  or production deployment.
