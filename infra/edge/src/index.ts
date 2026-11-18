@@ -1295,9 +1295,7 @@ export async function radarPointSamples(
       });
       if (!object || !("body" in object) || object.etag !== metadata.dataEtag)
         return null;
-      const bytes = new Uint8Array(
-        await new Response(object.body).arrayBuffer(),
-      );
+      const bytes = new Uint8Array(await object.arrayBuffer());
       return bytes.length === pixelCount * metadata.frameCount ? bytes : null;
     }),
   ).catch(() => {

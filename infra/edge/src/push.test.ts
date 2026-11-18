@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
   notificationPayload,
   riskAtLocation,
@@ -139,18 +139,25 @@ it("marks observed rain distinctly and gives every push an expiry", () => {
     activeRainEvent: false,
   };
   const sentAt = Date.parse("2026-10-11T12:10:00Z");
-  const payload = JSON.parse(
-    notificationPayload(
-      subscription,
-      {
-        leadMinutes: 0,
-        predictedAt: "2026-10-11T12:00:00Z",
-        intensity: 3,
-        kind: "observed",
-      },
-      sentAt,
-    ),
-  ) as Record<string, string>;
+  const format = vi.spyOn(Intl, "DateTimeFormat");
+  const payload = (() => {
+    try {
+      const result = notificationPayload(
+        subscription,
+        {
+          leadMinutes: 0,
+          predictedAt: "2026-10-11T12:00:00Z",
+          intensity: 3,
+          kind: "observed",
+        },
+        sentAt,
+      );
+      expect(format).not.toHaveBeenCalled();
+      return JSON.parse(result) as Record<string, string>;
+    } finally {
+      format.mockRestore();
+    }
+  })();
 
   expect(payload).toMatchObject({
     title: "Rain detected",
@@ -178,4 +185,26 @@ it("marks observed rain distinctly and gives every push an expiry", () => {
     kind: "forecast",
     expiresAt: "2026-10-11T12:17:00.000Z",
   });
+
+  // The first and second 02:15 at the Copenhagen DST fall-back are distinct
+  // UTC instants; only the user-facing forecast time repeats.
+  for (const locale of ["da", "en"] as const) {
+    for (const hour of ["00", "01"]) {
+      const predictedAt = `2026-10-25T${hour}:15:00Z`;
+      const payload = JSON.parse(
+        notificationPayload(
+          { ...subscription, locale },
+          {
+            leadMinutes: 15,
+            predictedAt,
+            intensity: 3,
+            kind: "forecast",
+          },
+          Date.parse(predictedAt) - 900_000,
+        ),
+      );
+      expect(payload.predictedAt).toBe(predictedAt);
+      expect(payload.body).toMatch(/02[.:]15\.$/);
+    }
+  }
 });

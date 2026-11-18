@@ -265,7 +265,9 @@ export async function deletePushSubscription(
 
 function decodeBase64(value: string): Uint8Array {
   const binary = atob(value);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 type RiskFrame = RiskManifest["frames"][number];
@@ -396,20 +398,35 @@ function notificationExpiry(hit: RainRiskHit, sentAt: number): number {
   );
 }
 
+const pushTimeFormatters: Partial<
+  Record<StoredSubscription["locale"], Intl.DateTimeFormat>
+> = {};
+
+function forecastDisplayTime(
+  locale: StoredSubscription["locale"],
+  time: string,
+) {
+  const language = locale === "da" ? "da" : "en";
+  const formatter = (pushTimeFormatters[language] ??= new Intl.DateTimeFormat(
+    language === "da" ? "da-DK" : "en-GB",
+    { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Copenhagen" },
+  ));
+  return formatter.format(new Date(time));
+}
+
 export function notificationPayload(
   subscription: StoredSubscription,
   hit: RainRiskHit,
   sentAt = Date.now(),
 ) {
-  const time = new Intl.DateTimeFormat(
-    subscription.locale === "da" ? "da-DK" : "en-GB",
-    { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Copenhagen" },
-  ).format(new Date(hit.predictedAt));
+  const observed = hit.kind === "observed";
+  const time = observed
+    ? ""
+    : forecastDisplayTime(subscription.locale, hit.predictedAt);
   const intensity =
     subscription.locale === "da"
       ? ["", "mulig", "meget svag", "let"][hit.intensity]
       : ["", "possible", "very light", "light"][hit.intensity];
-  const observed = hit.kind === "observed";
   return JSON.stringify({
     title:
       subscription.locale === "da"

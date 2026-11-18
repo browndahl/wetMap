@@ -39,11 +39,13 @@ class MemoryR2 {
       : allBytes;
     return {
       etag: `${key}:${this.revisions.get(key) ?? 0}`,
+      size: allBytes.byteLength,
       json: async () =>
         JSON.parse(
           typeof value === "string" ? value : new TextDecoder().decode(value),
         ),
       body: new Response(bytes).body,
+      arrayBuffer: async () => Uint8Array.from(bytes).buffer,
       httpEtag: `"${key}"`,
       writeHttpMetadata: (headers: Headers) =>
         headers.set("Content-Type", "application/json"),

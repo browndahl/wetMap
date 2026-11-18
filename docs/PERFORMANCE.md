@@ -79,3 +79,38 @@ One extra normal clock diagnostic at 22:19 UTC found browser/server drift **100 
 This does not pass the acceptance test for a deliberately wrong device clock ±10 min.
 Screenshots remain local temporary public-weather/default-Aarhus captures, not
 the owner's location. No private audit cubes/inputs were used for UI captures.
+
+## 18 November follow-up — CPU costs isolated locally
+
+Matched Node 22 runs, eight warm-up and 40 measured batches per case. Times are
+process CPU (user + system), **not** latency, full cron/fetch CPU or Cloudflare
+quota evidence. The point-grid mock is an in-memory R2 response substitute;
+the separate native-runtime smoke test below checks semantics, not performance.
+
+| Synthetic batch | Before p50 / p95 | After p50 / p95 |
+| --- | ---: | ---: |
+| 40 dry push-grid lookups, 13 frames | 1.018 / 1.832 ms | 0.121 / 0.837 ms |
+| 40 push payloads, half observations and half forecasts | 0.879 / 0.955 ms | 0.048 / 0.050 ms |
+| 20 point-grid lookups, three ranges each | 0.940 / 3.606 ms | 0.212 / 1.223 ms |
+
+The decoder copies the same bytes without allocating the per-character iterable
+used by `Uint8Array.from`. Push formats forecasts only, reusing at most two
+locale formatters and no subscriber data. Point sampling reads the R2 body's
+native `arrayBuffer()` instead of wrapping it in a synthetic `Response`. Width,
+ETag and exact byte-length guards remain. The benchmark checks unchanged row
+count and byte totals. No cloud request, polling, dependency or storage change.
+
+Reproduce with `WETMAP_CPU_BENCH=1 pnpm --filter @wetmap/edge exec vitest run src/edgeCpu.test.ts --reporter=dot`.
+This opt-in diagnostic has no CI speed assertion. Regression tests verify native
+reader use, range truncation, no formatter for observation alerts, unchanged
+expiry and the repeated Copenhagen DST hour in Danish and English. The reader
+and observation-work tests fail on the old implementation and pass after it.
+
+The dry-run bundle also passed three local Miniflare route checks using an
+ephemeral R2 emulator and mocked DMI. An exact ETag and complete data returned
+radar-based rain intervals; a stale ETag or short range returned labelled model
+data instead. No Cloudflare deployment, private data or external requests.
+
+Not yet verified: field p95/p99, Free CPU compliance and actual push delivery.
+Repeat Cloudflare analytics only after an approved deployment, using comparable
+time windows and sample counts; aggregate CPU still cannot prove route causality.
