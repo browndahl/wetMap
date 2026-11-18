@@ -262,3 +262,10 @@ disabled_manually; the latest12 scheduled radar/uptime executions are completed
 successfully (last radar44328356445, uptime44327232795). This snapshot isn't
 continuous uptime evidence. CI Node24, Security and post-merge deployment results
 are pending separate live follow-through; local success doesn't imply them.
+
+Initial PR53 head5270400: CI44328989278's release-plan(22)/(24) jobs pass in11/19s,
+each including install-without-scripts, all-severity audit and all53 tests. Security
+44328989277's three CodeQL languages, secrets and Trivy/SBOM also pass. This is
+remote verification of the read-only tool, not a live publisher compatibility or
+app performance/acceptance claim. Final exact-commit checks/deploy follow below
+when available; no merge inferred merely from the initial jobs passing.

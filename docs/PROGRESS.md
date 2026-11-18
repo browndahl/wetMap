@@ -371,3 +371,20 @@ exception fails before safe extraction. 148 edge /56 script /38 web /2 shared /
 112 worker = **356 local-suite tests**. No new cloud requests/service/dependency.
 Contains Release exposure, doesn't remediate packages, CPU compliance, C1 or full
 acceptance. Earlier pending-approval notes are historical; these three were granted.
+
+### 18 November — read-only release planning (#53)
+
+ADR0018 removes the vulnerable dynamic installer from the still-disabled Release
+workflow. Replacement is proposal-only with read permissions, not a full publisher;
+no re-enable, tags, notes, Release posts or history rewrite. The existing trusted
+same-SHA CI/Security gate stays unchanged. Exact-pinned isolated ten-package lock,
+scripts-off install, all-severity npm audit and Node22/24 CI; Dependabot tracks it.
+
+53 planner tests include all13 actual v1.22.0–12 range decisions in a disposable
+clone, source refs unchanged. A synthetic parser stall was reproduced then rejected
+before parsing by whole-batch/line limits. Incorrect fixture assumptions corrected,
+not counted as product fixes. Fresh local suite now411 tests, build/lint/typecheck
+and bundle budgets pass; map chunk warning remains. Both new GitHub Node22/24
+planner jobs and their audits pass on5270400; full rollout evidence belongs in
+TEST_EVIDENCE.md. Publishing/recovery, C1, actual free-plan CPU and independent app
+acceptance remain unresolved. No privacy/storage/model/service/cost change.
