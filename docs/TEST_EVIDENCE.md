@@ -269,3 +269,38 @@ each including install-without-scripts, all-severity audit and all53 tests. Secu
 remote verification of the read-only tool, not a live publisher compatibility or
 app performance/acceptance claim. Final exact-commit checks/deploy follow below
 when available; no merge inferred merely from the initial jobs passing.
+
+## 18 November — separate radar transfer/phase-diagnostic proposal
+
+Read-only inventory since05:22 UTC:82 radar (81 success/1 failure),36 uptime
+successful; two CI/Security runs were still in progress at that snapshot.
+Run44263888361 logs observations published08:05:05.918 UTC, then processing step
+times out08:09:07.623. Exact historical stalled operation unknown; no downstream
+success retrospectively proves it. No private app-log or raw R2 export.
+
+Two local assertions fail before the fix: SDK transfer config and actual broken
+body retry count both5 vs expected1. Real installed boto3 transfer manager,
+botocore Stubber, five queued synthetic response bodies, no sockets or sleeps.
+After explicit stream budget1, four entry points (manifest/image/state/cube)
+fail after one broken-body read without replacing last-good bytes or leaving a
+new partial image. Eight stage tests verify125/750ms synthetic timings, unchanged
+arguments/results/errors, unknown names rejected and all ten CLI boundary sites.
+Full worker **125 tests** and Ruff pass. Repeated fresh script58/planner53 and
+application edge148/web38/shared2 suites, plus lint/typecheck/build/bundle budgets,
+pass on the combined diff: **424 local tests**, not a worker-only inference.
+ADR0019 states the remaining risk:
+this isn't a hard total transfer deadline or proof the morning timeout is fixed.
+CI/normal rollout pending; no workflow timeout increase or production fault test.
+
+### PR53 approved merge and normal rollout closure
+
+Owner explicitly approved PR53's merge/normal deployment after the approval
+check required that authority. Merged main975d7b4189ff5b35aa27ca4692a058b4e1b0e4f6.
+Same-main CI44329987169 and Security44329987461 pass. Deploy44329986843:
+validate14:57:18–14:59:08 UTC, staging14:59:41–15:00:37, production15:01:29–15:02:14,
+all success. Normal read-only dry probe15:02:52 UTC passes all six checks, no POST/
+push/load. Point sequence MISS534ms /HIT70ms atCPH is two observations, **not p95**.
+Release380825934 remains disabled_manually; all seven other workflows active.
+Latest remains v1.22.12/id449313487 and v1.22.4 tag remains
+fda019bc05abc39cb2a554d8375e134bb1feefe4. No live publication by the new planner.
+The separate radar transfer proposal above isn't part of this deployed commit.
