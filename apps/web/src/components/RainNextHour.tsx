@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, BellRing, Droplets, LoaderCircle } from "lucide-react";
+import { Bell, BellRing, Droplets } from "lucide-react";
 import type {
   RainEta,
   RainForecastPoint,
@@ -9,6 +9,7 @@ import type {
 import { translate } from "../i18n";
 import { needsIphoneInstallation } from "../platform";
 import IphoneInstallHelp from "./IphoneInstallHelp";
+import ForecastRecovery from "./ForecastRecovery";
 import {
   deletePushSubscription,
   getPushConfig,
@@ -21,6 +22,7 @@ interface Props {
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;
+  onRetry: () => Promise<unknown>;
   locale: "da" | "en";
   locationName: string;
   latitude: number;
@@ -168,6 +170,7 @@ export default function RainNextHour({
   isLoading,
   isFetching,
   isError,
+  onRetry,
   locale,
   locationName,
   latitude,
@@ -343,16 +346,16 @@ export default function RainNextHour({
         <span>{t(hasRadar ? "radarModelEstimate" : "modelEstimate")}</span>
       </div>
 
-      {isLoading && (
-        <p className="rain-status muted" role="status">
-          <LoaderCircle className="is-spinning" size={14} aria-hidden="true" />
-          {t("loadingForecast")}
-        </p>
-      )}
-      {isError && <p className="rain-status muted">{t("rainUnavailable")}</p>}
-      {!isLoading && !isError && points.length === 0 && (
-        <p className="rain-status muted">{t("rainUnavailable")}</p>
-      )}
+      <ForecastRecovery
+        key={`${latitude},${longitude}`}
+        kind="rain"
+        locale={locale}
+        isLoading={isLoading}
+        isFetching={isFetching}
+        isError={isError}
+        isEmpty={!points.length}
+        onRetry={onRetry}
+      />
 
       {points.length > 0 && (
         <>
@@ -414,13 +417,17 @@ export default function RainNextHour({
           </div>
           {!compact && (
             <>
-              <div className="rain-chart" aria-label={t("rainNextHour")}>
+              <p className="rain-chart-caption" id="rain-chart-caption">
+                {t("rainIntervalEstimate")}
+              </p>
+              <div
+                className="rain-chart"
+                role="group"
+                aria-labelledby="rain-chart-caption"
+              >
                 {points.map((point) => (
                   <div className="rain-column" key={point.startsAt}>
-                    <div
-                      className={`rain-bar-track is-${point.intensity}`}
-                      aria-hidden="true"
-                    >
+                    <div className={`rain-bar-track is-${point.intensity}`}>
                       <strong className="rain-amount">
                         {point.precipitationMm.toLocaleString(
                           locale === "da" ? "da-DK" : "en-GB",
@@ -469,32 +476,37 @@ export default function RainNextHour({
                             : t("modelSource")
                         }
                       >
-                        {point.source === "radar-nowcast"
-                          ? `${t("radarSource")}${
-                              point.reflectivityDbz == null ||
-                              point.intensity === "none"
-                                ? ""
-                                : ` · ${point.reflectivityDbz}`
-                            }`
-                          : t("modelSource")}
+                        {t(
+                          point.source === "radar-nowcast"
+                            ? "radarSource"
+                            : "modelSource",
+                        )}
+                        {point.source === "radar-nowcast" &&
+                          point.reflectivityDbz != null &&
+                          point.intensity !== "none" && (
+                            <span className="rain-reflectivity">
+                              {point.reflectivityDbz.toLocaleString(
+                                locale === "da" ? "da-DK" : "en-GB",
+                              )}{" "}
+                              dBZ
+                            </span>
+                          )}
                       </span>
-                      <span
-                        className={`rain-bar is-${point.intensity}`}
-                        style={{
-                          height: `${Math.max(
-                            point.intensity === "none" ? 4 : 16,
-                            (point.precipitationMm / max) * 62,
-                          )}%`,
-                        }}
-                      />
+                      <div className="rain-plot" aria-hidden="true">
+                        <span
+                          className={`rain-bar is-${point.intensity}`}
+                          style={{
+                            height: `${Math.max(
+                              point.intensity === "none" ? 4 : 16,
+                              (point.precipitationMm / max) * 62,
+                            )}%`,
+                          }}
+                        />
+                      </div>
                     </div>
                     <time dateTime={point.startsAt}>
                       {formatTime(point.startsAt, locale)}
                     </time>
-                    <span className="sr-only">
-                      {t(intensityKey(point.intensity))}:{" "}
-                      {point.precipitationMm} mm
-                    </span>
                   </div>
                 ))}
               </div>

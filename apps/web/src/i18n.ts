@@ -75,6 +75,10 @@ const messages = {
     loadingForecast: "Henter prognose…",
     updatingForecast: "Opdaterer…",
     forecastUnavailable: "Prognosen er midlertidigt utilgængelig.",
+    forecastEmpty: "Ingen punktprognose for dette sted endnu.",
+    forecastAutoRefresh: "WetMap prøver automatisk igen.",
+    retryPointForecast: "Hent punktprognosen igen",
+    retryRainForecast: "Hent regnprognosen igen",
     radarTime: "Radar-tidspunkt",
     locate: "Find min placering",
     language: "Skift sprog",
@@ -96,6 +100,9 @@ const messages = {
     minutesBehindNow: "min bag nu",
     jumpToLatest: "Gå til seneste observation",
     selectedOnMap: "Valgt på kortet",
+    selectMapCenter: "Vælg kortets centrum",
+    selectMapCenterHelp:
+      "Flyt kortet med piletasterne, og vælg derefter centrum.",
     interactiveRadarMap: "Interaktivt radarkort over",
     rainNextHour: "Regn næste 60 min",
     modelEstimate: "Modelestimat",
@@ -126,6 +133,8 @@ const messages = {
     rainEtaUpdated: "Datagrundlag opdateret",
     rainTotal: "Forventet",
     rainUnavailable: "Regnprognosen er midlertidigt utilgængelig.",
+    rainEmpty: "Ingen regnprognose for dette sted endnu.",
+    rainIntervalEstimate: "Estimeret nedbør pr. interval",
     rainMethod:
       "15-min visning er interpoleret fra DMI-modellens timeprognose.",
     rainRadarMethod:
@@ -291,6 +300,10 @@ const messages = {
     loadingForecast: "Loading forecast…",
     updatingForecast: "Updating…",
     forecastUnavailable: "The forecast is temporarily unavailable.",
+    forecastEmpty: "No point forecast for this location yet.",
+    forecastAutoRefresh: "WetMap will try again automatically.",
+    retryPointForecast: "Retry point forecast",
+    retryRainForecast: "Retry rain forecast",
     radarTime: "Radar time",
     locate: "Find my location",
     language: "Change language",
@@ -312,6 +325,9 @@ const messages = {
     minutesBehindNow: "min behind now",
     jumpToLatest: "Go to latest observation",
     selectedOnMap: "Selected on map",
+    selectMapCenter: "Select map centre",
+    selectMapCenterHelp:
+      "Pan the map with the arrow keys, then select its centre.",
     interactiveRadarMap: "Interactive radar map over",
     rainNextHour: "Rain next 60 min",
     modelEstimate: "Model estimate",
@@ -342,6 +358,8 @@ const messages = {
     rainEtaUpdated: "Data basis updated",
     rainTotal: "Expected",
     rainUnavailable: "The rain forecast is temporarily unavailable.",
+    rainEmpty: "No rain forecast for this location yet.",
+    rainIntervalEstimate: "Estimated precipitation per interval",
     rainMethod:
       "The 15-minute view is interpolated from DMI's hourly model forecast.",
     rainRadarMethod:

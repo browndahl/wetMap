@@ -406,3 +406,19 @@ PR53 closure: owner-approved merge975d7b4; same-main CI/Security and normal stag
 production deploy44329986843 pass. Six read-only public checks pass15:02:52 UTC;
 two point samples MISS534ms/HIT70ms aren't p95. Release remains disabled_manually,
 Latest/tag history unchanged. The separate transfer proposal is still not deployed.
+
+### 18 November — local UI fixes after the six-finding review
+
+Added keyboard selection of the actual map centre, sharing the map-click location
+path, with focus handed to the weather panel. The mobile More view now reserves
+a separate row for map controls; the desktop header lays out search and language
+side by side without overlap. Point and rain forecasts distinguish empty data
+from fetch failure and offer scoped, in-flight-guarded manual retries using the
+existing queries. Rain labels are separate from the bars on the opaque panel,
+and source, intensity and hourly temperature context are more readable.
+
+41 web tests, lint, typecheck and bundle budgets pass. See TEST_EVIDENCE.md for
+viewport, keyboard, mock failure and contrast checks and their limitations.
+No production mutation or deployment; backend, weather math, scheduled polling,
+subscriptions and data storage are unchanged. Manual retry can add a request to
+the selected existing query; it adds no background traffic or new service.
