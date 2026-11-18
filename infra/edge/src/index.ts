@@ -11,6 +11,7 @@ import {
 } from "./operations";
 import { coalesceResponse } from "./singleFlight";
 import { ensureFreshRadar } from "./radarScheduler";
+import { logEvent } from "./logging";
 
 interface Env {
   RADAR: R2Bucket;
@@ -473,8 +474,8 @@ async function searchLocations(
     );
     context.waitUntil(caches.default.put(cacheRequest, response.clone()));
     return response;
-  } catch (error) {
-    console.error("location.search.failed", { error });
+  } catch {
+    logEvent("error", "location.search.failed");
     return problem(
       503,
       "Location search unavailable",
@@ -543,8 +544,8 @@ async function reverseLocation(
     });
     context.waitUntil(caches.default.put(cacheRequest, response.clone()));
     return response;
-  } catch (error) {
-    console.error("location.reverse.failed", { error });
+  } catch {
+    logEvent("error", "location.reverse.failed");
     return problem(
       503,
       "Location lookup unavailable",
@@ -998,7 +999,7 @@ async function buildForecastResponse(
       () => fetchOpenMeteoForecast(latitude, longitude, env),
     );
   } catch (error) {
-    console.error("forecast.upstream.failed", { error, latitude, longitude });
+    logEvent("error", "forecast.upstream.failed");
     throw error;
   }
   const { payload, telemetry, backgroundDmi } = selected;
@@ -1006,11 +1007,7 @@ async function buildForecastResponse(
     throw new Error("Forecast contained no current or future points");
   const body = JSON.stringify(payload);
   telemetry.totalMs = elapsed(startedAt);
-  console.log("forecast.provider.selected", {
-    latitude,
-    longitude,
-    ...telemetry,
-  });
+  logEvent("info", "forecast.provider.selected", telemetry);
   const response = new Response(body, {
     headers: forecastHeaders("MISS", telemetry),
   });
@@ -1024,8 +1021,8 @@ async function buildForecastResponse(
     }),
   ]);
   context.waitUntil(
-    writeThrough.catch((error) =>
-      console.error("forecast.cache.persist-failed", { error }),
+    writeThrough.catch(() =>
+      logEvent("error", "forecast.cache.persist-failed"),
     ),
   );
   if (backgroundDmi) {
@@ -1055,19 +1052,9 @@ async function buildForecastResponse(
               },
             }),
           ]);
-          console.log("forecast.provider.refreshed", {
-            latitude,
-            longitude,
-            ...dmiTelemetry,
-          });
+          logEvent("info", "forecast.provider.refreshed", dmiTelemetry);
         })
-        .catch((error) =>
-          console.warn("forecast.background-dmi.failed", {
-            error,
-            latitude,
-            longitude,
-          }),
-        ),
+        .catch(() => logEvent("warn", "forecast.background-dmi.failed")),
     );
   }
   return response;
@@ -1139,8 +1126,8 @@ async function forecast(
           }),
         });
       }
-    } catch (error) {
-      console.error("forecast.cache.invalid", { error, persistentKey });
+    } catch {
+      logEvent("error", "forecast.cache.invalid");
     }
   }
 
@@ -1314,7 +1301,7 @@ export async function radarPointSamples(
       return bytes.length === pixelCount * metadata.frameCount ? bytes : null;
     }),
   ).catch(() => {
-    console.error("radar.point-grid.read-failed");
+    logEvent("error", "radar.point-grid.read-failed");
     return null;
   });
   if (!rowBytes || rowBytes.some((bytes) => bytes === null)) return null;
@@ -1686,11 +1673,7 @@ async function buildPrecipitationResponse(
   );
   const body = JSON.stringify(payload);
   telemetry.totalMs = elapsed(startedAt);
-  console.log("precipitation.provider.selected", {
-    latitude,
-    longitude,
-    ...telemetry,
-  });
+  logEvent("info", "precipitation.provider.selected", telemetry);
   const response = new Response(body, {
     headers: precipitationHeaders("MISS", telemetry),
   });
@@ -1704,8 +1687,8 @@ async function buildPrecipitationResponse(
     }),
   ]);
   context.waitUntil(
-    writeThrough.catch((error) =>
-      console.error("precipitation.cache.persist-failed", { error }),
+    writeThrough.catch(() =>
+      logEvent("error", "precipitation.cache.persist-failed"),
     ),
   );
   if (backgroundDmi) {
@@ -1733,19 +1716,9 @@ async function buildPrecipitationResponse(
               },
             }),
           ]);
-          console.log("precipitation.provider.refreshed", {
-            latitude,
-            longitude,
-            ...dmiTelemetry,
-          });
+          logEvent("info", "precipitation.provider.refreshed", dmiTelemetry);
         })
-        .catch((error) =>
-          console.warn("precipitation.background-dmi.failed", {
-            error,
-            latitude,
-            longitude,
-          }),
-        ),
+        .catch(() => logEvent("warn", "precipitation.background-dmi.failed")),
     );
   }
   return response;
@@ -1819,8 +1792,8 @@ async function modelPrecipitation(
           }),
         });
       }
-    } catch (error) {
-      console.error("precipitation.cache.invalid", { error, persistentKey });
+    } catch {
+      logEvent("error", "precipitation.cache.invalid");
     }
   }
 
@@ -1834,12 +1807,8 @@ async function modelPrecipitation(
       edgeCache,
       context,
     );
-  } catch (error) {
-    console.error("precipitation.upstream.failed", {
-      error,
-      latitude,
-      longitude,
-    });
+  } catch {
+    logEvent("error", "precipitation.upstream.failed");
     return problem(
       503,
       "Precipitation forecast unavailable",
@@ -1884,16 +1853,10 @@ async function precipitation(
     }
   }
   const radarStartedAt = performance.now();
-  const radarPromise = radarPointSamples(latitude, longitude, env).catch(
-    (error) => {
-      console.error("precipitation.radar.failed", {
-        error,
-        latitude,
-        longitude,
-      });
-      return null;
-    },
-  );
+  const radarPromise = radarPointSamples(latitude, longitude, env).catch(() => {
+    logEvent("error", "precipitation.radar.failed");
+    return null;
+  });
   const measuredRadarPromise = radarPromise.then((value) => ({
     value,
     durationMs: elapsed(radarStartedAt),
@@ -1929,12 +1892,8 @@ async function precipitation(
     if (radar)
       context.waitUntil(pointCache.put(pointCacheKey, response.clone()));
     return response;
-  } catch (error) {
-    console.error("precipitation.combine.failed", {
-      error,
-      latitude,
-      longitude,
-    });
+  } catch {
+    logEvent("error", "precipitation.combine.failed");
     return modelResponse;
   }
 }

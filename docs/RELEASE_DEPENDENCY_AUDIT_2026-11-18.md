@@ -90,3 +90,14 @@ GitHub Release publication** pending a reviewed safe runtime. No pause has been
 applied. App deploy, radar, CI, monitoring and push are separate and would remain
 in scope to run normally. This is a scoped containment decision, not evidence
 that compromise happened or permission to change settings without approval.
+
+## 18 November — approvals granted and containment applied
+
+The earlier approval requests are now granted. Workflow380825934 (Release) is
+verified disabled_manually; all seven other workflows remain active. Existing
+v1.22.4 Release post restored with --verify-tag /--latest=false, tag target fda019b
+unchanged, no assets; Latest still v1.22.12. No publisher replay. Future app-log
+minimisation implemented under ADR0017, not historical log deletion/retention.
+This contains publisher exposure but **does not remediate** dependency findings.
+Do not resume automatic publication until a safe runtime is verified/owner directs.
+App deploy, radar, CI, monitoring and push remain separate and active.

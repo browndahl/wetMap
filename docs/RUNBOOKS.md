@@ -162,3 +162,14 @@ That is an optional configuration reference, not evidence of an active hosted
 dashboard. No new Grafana/Sentry/service is authorised here; verify free/no-card
 terms and privacy/budget before any adoption. Existing Worker logs, analytics,
 public status and Actions summaries remain the current operational tools.
+
+## 18 November — current approved operating state
+
+Only Release workflow380825934 is disabled_manually pending safe dependency
+remediation. CI, Deploy, Radar ingestion, Security, Synthetic uptime, cleanup and
+Dependabot stay active. Historical v1.22.4 description restored; tag unchanged,
+assets empty, Latest stays v1.22.12. No whole-job replay. Future Edge diagnostics
+use ADR0017 projection; don't restore direct location/error/key logging. No old
+logs or retention changed. Platform access/runtime logging remains a separate
+surface. Keep publication paused across app deployments; enabling it is not an
+automatic consequence of green tests.

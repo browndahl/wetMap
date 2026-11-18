@@ -1,3 +1,5 @@
+import { logEvent } from "./logging";
+
 interface RadarSchedulerEnv {
   RADAR: R2Bucket;
   GITHUB_DISPATCH_TOKEN?: string;
@@ -54,11 +56,11 @@ export async function ensureFreshRadar(env: RadarSchedulerEnv): Promise<void> {
       )
         return;
     } catch {
-      console.error("radar.scheduler.invalid-manifest");
+      logEvent("error", "radar.scheduler.invalid-manifest");
     }
   }
   if (!env.GITHUB_DISPATCH_TOKEN) {
-    console.error("radar.scheduler.missing-token");
+    logEvent("error", "radar.scheduler.missing-token");
     return;
   }
 
@@ -141,12 +143,14 @@ export async function ensureFreshRadar(env: RadarSchedulerEnv): Promise<void> {
       if (!response.ok) throw new Error("GitHub workflow dispatch failed");
       next.decision = "dispatched";
       next.lastDispatchedAt = new Date().toISOString();
-      console.log("radar.scheduler.dispatched", { repository, workflow, ref });
+      logEvent("info", "radar.scheduler.dispatched", {
+        source: "github-actions",
+      });
     }
   } catch {
     next.decision = "dispatch-failed";
     next.dispatchError = "github-inspection-or-dispatch-failed";
-    console.error("radar.scheduler.dispatch-failed");
+    logEvent("error", "radar.scheduler.dispatch-failed");
   }
   await env.RADAR.put(radarDispatchStateKey, JSON.stringify(next), {
     onlyIf: { etagMatches: claimed.etag },

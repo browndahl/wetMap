@@ -349,3 +349,25 @@ physical-device or independent full acceptance testing.
 
 These commits are inputs to the baseline, not evidence that later build phases or the
 release acceptance suite are complete.
+
+### 18 November — three explicit approvals executed
+
+Owner approved future app-log minimisation, historical v1.22.4 metadata restoration
+and temporary Release-only pause. Workflow380825934 verified disabled_manually;
+all seven other workflows stay active, no active publisher cancelled. v1.22.4
+post restored with --verify-tag /--latest=false; tag stays fda019b, assets empty,
+Latest still v1.22.12 (449313487). No publisher rerun or weather/history change.
+
+Future Edge app logs use a closed event/source/code/timing projection: no selected
+coordinates/search strings, cache/subscription keys, endpoints or raw exceptions.
+Severity/provider/timing and validated HTTP codes remain. Getters/serialization
+not invoked; descriptor failures caught. All direct Edge console sites centralized,
+with source-inventory regression tests. Existing logs, retention, subscriptions
+and weather payloads untouched; platform/access logs separate. ADR0017 records it.
+
+Seven genuine initial privacy failures plus two precipitation cases reproduced
+against exact old log statements after a fixture correction; extra null-push
+exception fails before safe extraction. 148 edge /56 script /38 web /2 shared /
+112 worker = **356 local-suite tests**. No new cloud requests/service/dependency.
+Contains Release exposure, doesn't remediate packages, CPU compliance, C1 or full
+acceptance. Earlier pending-approval notes are historical; these three were granted.

@@ -227,3 +227,25 @@ enable/disable, failed checks, missing output and no raw credential/error loggin
 are covered. Normal rollout must still be observed. No runtime weather/gate cost
 or privacy change; rollback by reviewed revert. Old missing Release metadata and
 action installer advisory warnings remain separately documented follow-ups.
+
+## M13: raw locations, object identities and upstream exceptions in app logs
+
+Source confirms coordinate fields on provider events, location-bearing persistent
+keys on cache errors, raw exceptions on location/weather failures and a subscription
+object key on push failure. Logging entire context/error objects bypassed privacy
+minimisation; functional/provider tests didn't assert the log shape. Owner explicitly
+approved removing these fields from **future** app logs on 18 November.
+
+Reproduction: seven genuine initial privacy failures; two precipitation tests had
+the wrong fixture, corrected and separately reproduced with the exact old logging
+statements (two privacy failures). No real user data/log export. Another null push
+exception reproduces a failure during status extraction; optional safe extraction
+preserves normal 404/410 handling and otherwise logs only a static failure.
+
+Fix: closed event/source/code/timing projection, all Edge app log sites routed
+through it. No raw error/key/request/location passthrough; safe fields remain.
+Thirteen sanitizer cases plus API/push fault fixtures and source-boundary guard;
+148 edge /56 script tests pass. ADR0017 records explicit authority, scope and
+operational repair. Existing logs, subscriptions, retention and weather payloads
+are untouched. Provider/platform logs are separate and not declared scrubbed.
+Normal CI/security/deploy required before closure. No extra request/service.
