@@ -150,6 +150,127 @@ function setup() {
   return { cache, r2, waits, env, context };
 }
 
+describe("private application diagnostics", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T22:20:00Z"));
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const allowModelFallback = () =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: URL | string) => {
+        if (String(input).includes("open-meteo.test"))
+          return String(input).includes("minutely_15")
+            ? openMeteoPrecipitationResponse()
+            : openMeteoResponse();
+        throw new Error("private-location-query-and-error-sentinel");
+      }),
+    );
+
+  for (const [endpoint, eventPrefix, cachePrefix] of [
+    ["forecast", "forecast", "forecast/v3"],
+    ["precipitation", "precipitation", "precipitation/v2"],
+  ]) {
+    it(`${endpoint} retains provider timing without logging coordinates`, async () => {
+      const { env, context, waits } = setup();
+      allowModelFallback();
+      const response = await worker.fetch(
+        new Request(
+          `https://api.test/api/v1/weather/${endpoint}?lat=56.16&lon=10.20`,
+        ),
+        env,
+        context,
+      );
+      expect(response.status).toBe(200);
+      await Promise.all(waits);
+      const call = vi
+        .mocked(console.log)
+        .mock.calls.find(
+          (row) => row[0] === `${eventPrefix}.provider.selected`,
+        )!;
+      expect(call).toBeDefined();
+      expect(call[1]).not.toHaveProperty("latitude");
+      expect(call[1]).not.toHaveProperty("longitude");
+      expect(call[1]).toMatchObject({
+        provider: "open-meteo-dmi",
+        fallback: "open-meteo",
+        totalMs: expect.any(Number),
+      });
+    });
+
+    it(`${endpoint} never logs a coordinate-bearing persistent key or raw cache error`, async () => {
+      const { env, context, waits, r2 } = setup();
+      r2.values.set(`${cachePrefix}/56.16/10.20.json`, "invalid-json");
+      allowModelFallback();
+      const response = await worker.fetch(
+        new Request(
+          `https://api.test/api/v1/weather/${endpoint}?lat=56.16&lon=10.20`,
+        ),
+        env,
+        context,
+      );
+      expect(response.status).toBe(200);
+      await Promise.all(waits);
+      expect(vi.mocked(console.error).mock.calls).toContainEqual([
+        `${eventPrefix}.cache.invalid`,
+      ]);
+    });
+
+    it(`${endpoint} keeps a controlled upstream failure without logging its error payload`, async () => {
+      const { env, context } = setup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new Error("private-location-query-and-error-sentinel");
+        }),
+      );
+      const response = await worker.fetch(
+        new Request(
+          `https://api.test/api/v1/weather/${endpoint}?lat=56.16&lon=10.20`,
+        ),
+        env,
+        context,
+      );
+      expect(response.status).toBe(503);
+      expect(vi.mocked(console.error).mock.calls).toContainEqual([
+        `${eventPrefix}.upstream.failed`,
+      ]);
+    });
+  }
+
+  it.each([
+    ["search?q=private-street-sentinel", "location.search.failed"],
+    ["reverse?lat=56.16&lon=10.20", "location.reverse.failed"],
+  ])(
+    "location %s does not log a raw upstream exception",
+    async (path, event) => {
+      const { env, context } = setup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new Error("private-street-sentinel");
+        }),
+      );
+      const response = await worker.fetch(
+        new Request(`https://api.test/api/v1/locations/${path}`),
+        env,
+        context,
+      );
+      expect(response.status).toBe(503);
+      expect(vi.mocked(console.error).mock.calls).toContainEqual([event]);
+    },
+  );
+});
+
 describe("radar nowcast edge endpoint", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

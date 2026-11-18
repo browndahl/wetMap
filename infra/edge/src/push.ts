@@ -1,4 +1,5 @@
 import webpush from "web-push";
+import { logEvent } from "./logging";
 
 interface PushSubscriptionPayload {
   endpoint: string;
@@ -494,7 +495,7 @@ export async function sendRainAlerts(env: PushEnv): Promise<void> {
         stored.lastAlertedAt = new Date().toISOString();
         stored.updatedAt = stored.lastAlertedAt;
         await env.RADAR.put(key, JSON.stringify(stored));
-        console.log("push.send.succeeded", {
+        logEvent("info", "push.send.succeeded", {
           kind: hit.kind,
           leadMinutes: hit.leadMinutes,
           etaMinutes: Math.round(
@@ -505,12 +506,14 @@ export async function sendRainAlerts(env: PushEnv): Promise<void> {
           ),
         });
       } catch (error) {
-        const statusCode = (error as { statusCode?: number }).statusCode;
+        const statusCode = (
+          error as { statusCode?: unknown } | null | undefined
+        )?.statusCode;
         if (statusCode === 404 || statusCode === 410) {
           await env.RADAR.delete(key);
           return;
         }
-        console.error("push.send.failed", { statusCode, key });
+        logEvent("error", "push.send.failed", { statusCode });
       }
     }),
   );

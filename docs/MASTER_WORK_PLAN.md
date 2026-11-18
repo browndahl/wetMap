@@ -69,3 +69,12 @@ warnings aren't fixed by gating. A fresh same-version lock experiment fails the
 high-severity audit and isn't shipped. See the dedicated release audit. Temporary
 Release-only containment, old Release-post repair and future privacy-log changes
 have separate explicit approval questions; no setting/data change is assumed.
+
+## 18 November — approved scope executed
+
+Owner approved all three: Release workflow380825934 is disabled_manually (all
+other workflows active); missing v1.22.4 Release post restored without tag/assets/
+Latest change; future Edge log projection implemented with tests (ADR0017).
+This supersedes the earlier pending-approval checkpoint, not other boundaries.
+No previous log/retention/subscription/history change. Dependency remediation,
+CPU/plan compliance, C1 and independent acceptance remain unresolved.

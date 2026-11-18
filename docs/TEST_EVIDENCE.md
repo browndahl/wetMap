@@ -185,3 +185,38 @@ results are not silently combined to claim the new C1 full-metric acceptance.
 
 The local test total is not “all bugs fixed”. RISKS.md remains part of the
 handoff; no release acceptance threshold or metric was weakened.
+
+## 18 November — approved private logging and operational evidence
+
+Authority/scope: ADR0017. Initial suite had seven true privacy failures and two
+wrong-hourly-fixture cases (not product bugs). With proper minutely_15 fixture,
+the exact two old precipitation log statements were reproduced locally: both
+fail on coordinate/key leakage. New statements restored before full verification.
+An additional null push error fails status extraction before its safe guard.
+No real notification/registration/deletion, production fault or private log export.
+
+13 sanitizer tests, eight weather/location cases, three push cases, two Python
+source-boundary methods. **148 edge +38 web +2 shared +112 worker +56 scripts =
+356 local-suite tests**; prior330 checkpoint is historical. Unknown event/string
+values, raw fields, nonfinite times, HTTP bounds, getters/serialization and
+caught descriptor failures covered. Controlled503 behavior stays unchanged.
+
+Fresh local commands, no Turbo cache replay:
+
+```sh
+pnpm -r run lint
+pnpm -r run typecheck
+pnpm -r run test
+WRANGLER_LOG_PATH=/private/tmp/wetmap-private-logs-build pnpm -r run build
+.venv/bin/python -m pytest apps/worker/tests -q
+.venv/bin/ruff check apps/worker
+.venv/bin/ruff check .github/scripts/test_private_logging.py
+python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+```
+
+Operational read-back: Release380825934 disabled_manually, all seven other
+workflows active; no running Release to cancel. Restored v1.22.4 post with
+--verify-tag /--latest=false; target remains fda019bc05abc39cb2a554d8375e134bb1feefe4,
+no assets; Latest remains v1.22.12 /449313487. No whole-workflow replay. Existing
+logs, subscription data, retention and weather history unchanged. Provider-level
+access/runtime logs aren't declared scrubbed. Independent acceptance incomplete.
