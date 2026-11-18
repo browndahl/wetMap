@@ -1,6 +1,8 @@
 # Release dependency audit — 18 November 2026
 
-Verdict: **unresolved; no experimental runtime shipped**. This is separate from
+Original probe verdict: **unresolved; no experimental runtime shipped**. The
+later staged read-only replacement is recorded at the end of this document.
+This is separate from
 the exact-commit Release gate and from weather/model correctness. No compromise,
 secret leakage or causal connection to GitHub's remote notes-push 500 is proven.
 
@@ -101,3 +103,22 @@ minimisation implemented under ADR0017, not historical log deletion/retention.
 This contains publisher exposure but **does not remediate** dependency findings.
 Do not resume automatic publication until a safe runtime is verified/owner directs.
 App deploy, radar, CI, monitoring and push remain separate and active.
+
+## 18 November — staged read-only replacement, not publication resumption
+
+The disabled Release workflow no longer installs the old action/core graph. Its
+replacement only prints a release proposal, with contents/actions read permission,
+no persisted checkout credentials and no publisher. The manual workflow pause is
+not lifted. CI now verifies the locked planner on Node22/24; exact-SHA/security
+gating stays unchanged. No advisory suppressions, version-rule changes, tag/notes
+writes or Release posts are part of this replacement.
+
+The isolated ten-package planner lock uses the same Angular preset/parser/filter
+versions as the 25.0.9 reference and semver, without the wrapper/glob/npm/GitHub
+publishing dependency chain. Its npm audit passes all severities with zero known
+advisories; this isn't a patch to the original tree or proof of a secure complete
+publisher. The read-only stage passes 53 local tests including replay of all13
+actual v1.22.0–12 tags. See [ADR0018](adr/0018-read-only-release-planner.md) for
+exact scope, budgets, upstream references, test corrections and remaining gaps.
+Historical publisher advisories remain evidence; future actual publication is
+still paused pending a separately tested/reviewed implementation.

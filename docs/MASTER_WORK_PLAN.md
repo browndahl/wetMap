@@ -78,3 +78,13 @@ Latest change; future Edge log projection implemented with tests (ADR0017).
 This supersedes the earlier pending-approval checkpoint, not other boundaries.
 No previous log/retention/subscription/history change. Dependency remediation,
 CPU/plan compliance, C1 and independent acceptance remain unresolved.
+
+## 18 November — read-only release planning stage
+
+ADR0018 replaces the old action in the **still manually disabled** Release
+workflow with a proposal-only path and read-only permissions. No automatic
+resumption, live tags, Release posts or history rewrite. Ordinary CI verifies the
+small pinned/audited planner on Node22/24, including all13 real v1.22.0–12
+decisions; same-SHA/security gates unchanged. Actual publishing/recovery remains
+a separate unaccepted milestone. C1, free-plan CPU and independent acceptance
+are not made green by this tooling work.

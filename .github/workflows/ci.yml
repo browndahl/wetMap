@@ -46,3 +46,26 @@ jobs:
       - run: docker build -t wetmap-api apps/api
       - run: docker build -t wetmap-worker apps/worker
       - run: docker build -t wetmap-web -f apps/web/Dockerfile .
+  release-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: tools/release-plan/package-lock.json
+      - name: Install locked planner without lifecycle scripts
+        run: npm ci --prefix tools/release-plan --ignore-scripts --no-audit --no-fund --fetch-retries=1 --fetch-timeout=20000
+      - name: Reject every known dependency advisory
+        run: npm audit --prefix tools/release-plan --audit-level=low --fetch-retries=1 --fetch-timeout=20000
+      - name: Verify policy, read-only boundaries and actual release history
+        run: npm test --prefix tools/release-plan
