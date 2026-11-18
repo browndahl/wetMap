@@ -49,6 +49,49 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertNotIn("continue-on-error", workflow)
         self.assertNotIn("ref: main", workflow)
 
+    def test_paused_release_path_can_only_plan_with_read_permissions(self):
+        workflow = (
+            Path(__file__).resolve().parents[1] / "workflows/release.yml"
+        ).read_text()
+        for required in (
+            "contents: read",
+            "persist-credentials: false",
+            "npm ci --prefix tools/release-plan --ignore-scripts --no-audit --no-fund",
+            "npm audit --prefix tools/release-plan --audit-level=low",
+            'node tools/release-plan/plan.mjs --sha "$RELEASE_SHA"',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, workflow)
+        for forbidden in (
+            "contents: write",
+            "issues: write",
+            "pull-requests: write",
+            "semantic-release-action",
+            "GITHUB_TOKEN:",
+            "git push",
+            "gh release create",
+            "continue-on-error",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, workflow)
+
+    def test_ci_always_tests_release_plan_without_scripts_or_credentials(self):
+        workflow = (
+            Path(__file__).resolve().parents[1] / "workflows/ci.yml"
+        ).read_text().split("  release-plan:", 1)[-1]
+        for required in (
+            'node: ["22", "24"]',
+            "fetch-depth: 0",
+            "persist-credentials: false",
+            "npm ci --prefix tools/release-plan --ignore-scripts --no-audit --no-fund",
+            "npm audit --prefix tools/release-plan --audit-level=low",
+            "npm test --prefix tools/release-plan",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, workflow)
+        for forbidden in ("continue-on-error", "GH_TOKEN:", "GITHUB_TOKEN:"):
+            self.assertNotIn(forbidden, workflow)
+
     def invoke_optional_gate(self, output_path, documents, *, check_current=False):
         environment = {
             "GITHUB_REPOSITORY": REPO,

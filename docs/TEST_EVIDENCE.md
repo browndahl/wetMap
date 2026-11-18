@@ -220,3 +220,52 @@ workflows active; no running Release to cancel. Restored v1.22.4 post with
 no assets; Latest remains v1.22.12 /449313487. No whole-workflow replay. Existing
 logs, subscription data, retention and weather history unchanged. Provider-level
 access/runtime logs aren't declared scrubbed. Independent acceptance incomplete.
+
+## 18 November — read-only release proposal verification
+
+ADR0018: remove the old installer from the still-disabled Release workflow; no
+live publication/tag write/re-enable. Two workflow-policy methods first fail16
+assertions on the old files, then pass after replacement. Existing same-SHA gate
+methods remain. Planner tests use synthetic fixture repos and a disposable bare
+clone for real historical replay, never deleting source/GitHub refs.
+
+Initially incorrect abbreviated-revert and v1.22.0-patch assumptions were corrected
+against the actual upstream filter/historical tag, not counted as product bugs.
+The old incomplete history test was replaced by complete range replay of all13
+v1.22.0–12 candidates: actual proposed tags match, source refs unchanged. A new
+large synthetic input stalled before budget rejection; only its identified local
+test process was stopped. Whole-batch validation and 1,024-character line bounds
+now reject before parsing; maximum accepted line has a 2 s subprocess deadline.
+
+Local Node22.22.3: **53 planner +58 scripts +148 edge +38 web +2 shared +112 worker
+= 411 tests pass**. No Turbo cache replay for application commands. Lint,
+typecheck, all tests, web bundle budgets and Edge dry build pass. Existing map
+chunk-size warning remains, not hidden. npm10.9.8 audit of the new isolated lock:
+zero known advisories at every severity, exit0; no advisory exceptions. The ten
+dependency packages are not the whole application's dependency tree. No npm
+publish/GitHub plugin or lifecycle scripts; no change to app pnpm lock.
+
+```sh
+node --test --test-timeout=60000 --test-reporter=dot tools/release-plan/plan.test.mjs
+npm audit --prefix tools/release-plan --audit-level=low --json
+pnpm -r run lint
+pnpm -r run typecheck
+pnpm -r run test
+WRANGLER_LOG_PATH=/private/tmp/wetmap-release-plan-build pnpm -r run build
+.venv/bin/python -m pytest apps/worker/tests -q
+.venv/bin/ruff check apps/worker .github/scripts/test_release_gate.py
+python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+```
+
+Before PR creation, GitHub main is848d912, Release380825934 remains
+disabled_manually; the latest12 scheduled radar/uptime executions are completed
+successfully (last radar44328356445, uptime44327232795). This snapshot isn't
+continuous uptime evidence. CI Node24, Security and post-merge deployment results
+are pending separate live follow-through; local success doesn't imply them.
+
+Initial PR53 head5270400: CI44328989278's release-plan(22)/(24) jobs pass in11/19s,
+each including install-without-scripts, all-severity audit and all53 tests. Security
+44328989277's three CodeQL languages, secrets and Trivy/SBOM also pass. This is
+remote verification of the read-only tool, not a live publisher compatibility or
+app performance/acceptance claim. Final exact-commit checks/deploy follow below
+when available; no merge inferred merely from the initial jobs passing.

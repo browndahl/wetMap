@@ -50,3 +50,14 @@ Platform/provider access logs are separate and not declared scrubbed. Supply-cha
 advisories remain unresolved: pausing publication is containment, not a package
 fix; don't re-enable automatically. C1, CPU/free-plan and independent acceptance
 limitations above remain.
+
+## 18 November — read-only release replacement
+
+ADR0018 removes the vulnerable installer from the disabled Release workflow,
+without resuming it. The ten-package proposal-only lock has zero known npm
+advisories at this audit, exact versions, scripts-off install and mandatory
+Node22/24 CI tests/audit. Tests replay all13 v1.22.0–12 version decisions; no
+publication is possible in the replacement code. This is not a secure full
+publisher acceptance: notes/provider/idempotent partial-success recovery still
+need separate verification. Don't automatically re-enable or revert to running
+the old installer. Other risks and unchanged quality/cost gates remain open.

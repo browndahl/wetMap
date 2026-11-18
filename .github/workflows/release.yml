@@ -5,9 +5,7 @@ on:
     types: [completed]
 permissions:
   actions: read
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 concurrency:
   group: wetmap-release
   cancel-in-progress: false
@@ -26,21 +24,31 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
           ref: "${{ github.event.workflow_run.head_sha }}"
       - name: Require CI and Security on the exact release candidate
         id: checks
         run: python .github/scripts/release_gate.py --skip-superseded --sha "$RELEASE_SHA"
         env:
           GH_TOKEN: "${{ github.token }}"
-      - name: Reject superseded candidate immediately before publication
+      - name: Reject superseded candidate before read-only planning
         id: current
         if: steps.checks.outputs.eligible == 'true'
         run: python .github/scripts/release_gate.py --check-current --skip-superseded --sha "$RELEASE_SHA"
         env:
           GH_TOKEN: "${{ github.token }}"
-      - uses: cycjimmy/semantic-release-action@v7
+      # This workflow remains disabled_manually. Even if enabled accidentally,
+      # this staged replacement only verifies a plan; it has no publisher.
+      - uses: actions/setup-node@v6
         if: steps.current.outputs.eligible == 'true'
         with:
-          semantic_version: 25.0.9
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          node-version: 22
+      - name: Install locked planner without lifecycle scripts
+        if: steps.current.outputs.eligible == 'true'
+        run: npm ci --prefix tools/release-plan --ignore-scripts --no-audit --no-fund --fetch-retries=1 --fetch-timeout=20000
+      - name: Reject every known dependency advisory
+        if: steps.current.outputs.eligible == 'true'
+        run: npm audit --prefix tools/release-plan --audit-level=low --fetch-retries=1 --fetch-timeout=20000
+      - name: Print proposal only — no tags or publication
+        if: steps.current.outputs.eligible == 'true'
+        run: node tools/release-plan/plan.mjs --sha "$RELEASE_SHA"
