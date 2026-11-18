@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from wetmap_worker import storage
 
 
@@ -22,6 +24,78 @@ def test_metadata_transfer_avoids_small_multipart_and_unbounded_threads() -> Non
     assert config.multipart_threshold == 128 * 1024 * 1024
     assert config.max_concurrency == 2
     assert config.preferred_transfer_client == "classic"
+
+
+def test_streaming_download_attempts_do_not_stack_a_second_retry_loop() -> None:
+    # Botocore's API retry budget does not govern successful-HTTP body failures.
+    assert storage._transfer_config().num_download_attempts == 1
+
+
+@pytest.mark.parametrize("kind", ["manifest", "frame", "ledger", "cube"])
+def test_real_transfer_manager_stops_after_one_broken_stream_and_keeps_last_good(
+    tmp_path: Path, monkeypatch, kind: str
+) -> None:
+    import io
+
+    import boto3
+    from boto3.exceptions import RetriesExceededError
+    from botocore.exceptions import ReadTimeoutError
+    from botocore.response import StreamingBody
+    from botocore.stub import Stubber
+
+    reads = []
+
+    class BrokenBody(StreamingBody):
+        def read(self, amt=None):
+            reads.append(1)
+            raise ReadTimeoutError(endpoint_url="https://r2.test.invalid")
+
+    client = boto3.client(
+        "s3",
+        endpoint_url="https://r2.test.invalid",
+        aws_access_key_id="synthetic",
+        aws_secret_access_key="synthetic",
+        region_name="auto",
+    )
+    stubber = Stubber(client)
+    stubber.add_response("head_object", {"ContentLength": 10})
+    # Queue five responses to measure the SDK's old hidden retry loop exactly;
+    # new config must leave four unused. No sockets, sleeps or production reads.
+    for _ in range(5):
+        stubber.add_response(
+            "get_object",
+            {"Body": BrokenBody(io.BytesIO(b""), 10), "ContentLength": 10},
+        )
+    monkeypatch.setattr(storage, "_r2_client", lambda: client)
+    monkeypatch.setenv("R2_BUCKET", "synthetic-bucket")
+    targets = {
+        "manifest": "frames.json",
+        "frame": "new.webp",
+        "ledger": "verification-state.json",
+        "cube": "cube-00.npz",
+    }
+    target = tmp_path / targets[kind]
+    sentinel = tmp_path / "unchanged.webp"
+    sentinel.write_bytes(b"immutable-observation")
+    if kind != "frame":
+        target.write_bytes(b"last-good")
+    with stubber, pytest.raises(RetriesExceededError):
+        if kind == "manifest":
+            storage.download_manifest_r2(target)
+        elif kind == "frame":
+            storage.download_frames_r2(tmp_path, [target.name])
+        elif kind == "ledger":
+            storage.download_verification_r2(tmp_path)
+        else:
+            storage.download_verification_cube_r2(
+                tmp_path, "nowcast/verification-cubes/cube-00.npz"
+            )
+    assert len(reads) == 1
+    assert sentinel.read_bytes() == b"immutable-observation"
+    if kind == "frame":
+        assert not target.exists()
+    else:
+        assert target.read_bytes() == b"last-good"
 
 
 def test_upload_keeps_verification_bytes_and_keys_unchanged(tmp_path: Path, monkeypatch) -> None:

@@ -48,6 +48,10 @@ def _transfer_config():
         multipart_threshold=128 * 1024 * 1024,
         multipart_chunksize=16 * 1024 * 1024,
         max_concurrency=2,
+        # Successful-HTTP body/socket failures otherwise retry five times in a
+        # second loop outside botocore's API budget, blocking the live pipeline.
+        # Keep API throttling/5xx retries, but don't restart a broken stream here.
+        num_download_attempts=1,
         preferred_transfer_client="classic",
     )
 

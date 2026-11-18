@@ -388,3 +388,21 @@ and bundle budgets pass; map chunk warning remains. Both new GitHub Node22/24
 planner jobs and their audits pass on5270400; full rollout evidence belongs in
 TEST_EVIDENCE.md. Publishing/recovery, C1, actual free-plan CPU and independent app
 acceptance remain unresolved. No privacy/storage/model/service/cost change.
+
+### 18 November — radar timeout follow-up, separate proposed change
+
+Read-only run inventory found one morning radar timeout44263888361 after
+observation publication; its precise stalled stage is unknown. Actual local SDK
+fault test reproduces an extra five-attempt stream retry loop outside the API
+retry budget. ADR0019 explicitly caps that loop at one attempt and adds ten
+closed argument-free phase timings without changing pipeline failure policy,
+timeouts, upload ordering, history, gates or algorithms. Two before-change
+assertions fail5-vs1; four SDK download paths and eight timing/inventory cases
+pass after change, full worker125. No live raw-data read or production fault.
+This branch is not deployed; no historical-cause/permanent-fix claim. PR53 merge
+approval doesn't automatically authorise the next PR's deploy.
+
+PR53 closure: owner-approved merge975d7b4; same-main CI/Security and normal staging/
+production deploy44329986843 pass. Six read-only public checks pass15:02:52 UTC;
+two point samples MISS534ms/HIT70ms aren't p95. Release remains disabled_manually,
+Latest/tag history unchanged. The separate transfer proposal is still not deployed.

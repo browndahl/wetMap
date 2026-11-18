@@ -18,6 +18,7 @@ from .gauges import (
 from .model import Frame, manifest
 from .nowcast import generate_nowcast
 from .processor import inspect_odim, process_hdf5
+from .stages import run_stage
 from .storage import (
     download_frames_r2,
     download_manifest_r2,
@@ -126,7 +127,7 @@ def run(output: Path, limit: int, upload: bool) -> None:
         # Observations are the critical path. Publish immutable images followed by
         # their manifest before any derived computation or verification download.
         # A slow/failed nowcast must not hold already-processed radar hostage.
-        upload_r2(output, new_frame_paths)
+        run_stage("observation-publish", upload_r2, output, new_frame_paths)
         logging.info("radar.observations.published")
 
     nowcast_paths: list[Path] = []
@@ -137,7 +138,9 @@ def run(output: Path, limit: int, upload: bool) -> None:
         try:
             source_names = [Path(frame.url).name for frame in source_frames]
             if upload:
-                source_paths = download_frames_r2(output, source_names)
+                source_paths = run_stage(
+                    "nowcast-source-load", download_frames_r2, output, source_names
+                )
                 new_frame_set = {path.resolve() for path in new_frame_paths}
                 downloaded_source_paths = [
                     path for path in source_paths if path.resolve() not in new_frame_set
@@ -156,7 +159,11 @@ def run(output: Path, limit: int, upload: bool) -> None:
                     previous_directory = Path(previous)
                     if upload:
                         try:
-                            download_verification_r2(previous_directory)
+                            run_stage(
+                                "verification-state-load",
+                                download_verification_r2,
+                                previous_directory,
+                            )
                             state_path = previous_directory / "verification-state.json"
                             if state_path.exists():
                                 previous_state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -164,7 +171,12 @@ def run(output: Path, limit: int, upload: bool) -> None:
                             if not history_path.exists():
                                 history_path = previous_directory / "verification.json"
                             if history_path.exists():
-                                full_history = append_verification_history(history_path, [])
+                                full_history = run_stage(
+                                    "verification-history-load",
+                                    append_verification_history,
+                                    history_path,
+                                    [],
+                                )
 
                             def retained_observations(directory, names):
                                 # Reuse newly processed and already downloaded map
@@ -177,7 +189,9 @@ def run(output: Path, limit: int, upload: bool) -> None:
                                     for name in names
                                 ]
 
-                            verifications, verification_batch = run_verifications(
+                            verifications, verification_batch = run_stage(
+                                "verification-score",
+                                run_verifications,
                                 previous_state,
                                 frames,
                                 full_history,
@@ -186,8 +200,11 @@ def run(output: Path, limit: int, upload: bool) -> None:
                             )
                             if verifications:
                                 verification_results_added = True
-                                full_history = append_verification_history(
-                                    history_path, verifications
+                                full_history = run_stage(
+                                    "verification-history-append",
+                                    append_verification_history,
+                                    history_path,
+                                    verifications,
                                 )
                         except Exception:
                             # Verification is observability and must not block fresh radar.
@@ -206,12 +223,16 @@ def run(output: Path, limit: int, upload: bool) -> None:
                         )
                         if not gauge_already_verified:
                             try:
-                                gauge_result = compare_radar_to_gauges(
-                                    fetch_recent_gauge_observations(
+                                gauge_result = run_stage(
+                                    "gauge-score",
+                                    compare_radar_to_gauges,
+                                    run_stage(
+                                        "gauge-fetch",
+                                        fetch_recent_gauge_observations,
                                         os.getenv(
                                             "DMI_METOBS_URL",
                                             "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items",
-                                        )
+                                        ),
                                     ),
                                     source_paths[-1],
                                     source_frames[-1].observedAt,
@@ -235,7 +256,9 @@ def run(output: Path, limit: int, upload: bool) -> None:
                 rain_threshold_dbz, rain_radius_pixels = operational_radar_calibration(
                     gauge_history, full_history
                 )
-                nowcast, risk, nowcast_paths = generate_nowcast(
+                nowcast, risk, nowcast_paths = run_stage(
+                    "nowcast-generate",
+                    generate_nowcast,
                     source_paths,
                     source_frames,
                     nowcast_directory,
@@ -295,7 +318,9 @@ def run(output: Path, limit: int, upload: bool) -> None:
         downloaded_source.unlink(missing_ok=True)
     if upload:
         if nowcast_paths:
-            upload_nowcast_r2(
+            run_stage(
+                "nowcast-publish",
+                upload_nowcast_r2,
                 output / "nowcast",
                 nowcast_paths,
                 upload_verification_assets,
