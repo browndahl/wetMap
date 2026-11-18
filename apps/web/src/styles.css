@@ -487,6 +487,81 @@ a {
   opacity: 0.65;
   cursor: wait;
 }
+.dry-window {
+  margin-block: var(--space-2);
+}
+.dry-window-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-block-size: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-1);
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-align: start;
+  cursor: pointer;
+}
+.dry-window-toggle svg {
+  flex: none;
+}
+.dry-window-toggle span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.dry-window-content {
+  padding-block: var(--space-3) var(--space-2);
+  padding-inline: var(--space-3);
+  overflow-wrap: anywhere;
+}
+.dry-window-duration {
+  min-inline-size: 0;
+  color: var(--text-1);
+  font-size: 0.82rem;
+}
+.dry-window-duration legend {
+  max-inline-size: 100%;
+}
+.dry-window-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-1);
+}
+.dry-window-options label {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-block-size: 44px;
+  max-inline-size: 100%;
+  padding-inline: var(--space-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  cursor: pointer;
+}
+.dry-window-options input {
+  flex: none;
+  margin: 0;
+}
+.dry-window-result {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 0;
+  color: var(--text-2);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.dry-window-result strong {
+  color: var(--text-1);
+}
 .rain-eta {
   margin-top: 0.55rem;
   padding: 0.85rem;
@@ -1711,6 +1786,8 @@ a {
     );
     overflow-y: auto;
     overscroll-behavior: contain;
+    /* Keep keyboard focus clear of the sticky mobile navigation. */
+    scroll-padding-block-end: calc(44px + 1.25rem);
     border-radius: 1.25rem;
     background: var(--surface-0);
     box-shadow: var(--shadow-panel);

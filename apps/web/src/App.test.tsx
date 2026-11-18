@@ -302,6 +302,84 @@ it("distinguishes empty rain from dry and lets the user retry only the rain quer
   view.unmount();
 });
 
+it("plans a dry window without extra requests and clears it when the place changes", async () => {
+  const now = Date.parse("2026-11-18T15:50:00Z");
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+  const iso = (offset: number) => new Date(now + offset * 60_000).toISOString();
+  const request = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ...apiMocks.rain,
+      source: "dmi-radar-nowcast-harmonie",
+      basedOnObservedAt: iso(-15),
+      radarBasedUntil: iso(45),
+      points: [-5, 10, 25, 40].map((offset) => ({
+        startsAt: iso(offset),
+        endsAt: iso(offset + 15),
+        precipitationMm: offset === -5 || offset === 40 ? 0.1 : 0,
+        intensity: offset === -5 || offset === 40 ? "light" : "none",
+        source: "radar-nowcast",
+        confidence: 0.7,
+      })),
+    })
+    .mockResolvedValueOnce(apiMocks.rain);
+  apiMocks.rainOverride = request;
+  try {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <App />
+      </QueryClientProvider>,
+    );
+    const toggle = screen.getByRole("button", {
+      name: "Find et tørt tidspunkt",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("group", { name: "Hvor længe vil du være ude?" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(
+      screen.getByRole("group", {
+        name: "Hvor længe vil du være ude?",
+      }),
+    ).toBeVisible();
+    expect(screen.getByRole("radio", { name: /^30 min/ })).toBeChecked();
+    expect(
+      await screen.findByText(/tørt ud fra kl\. 17[.:]00 til 17[.:]30/),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: /^45 min/ }));
+    expect(
+      screen.getByText("Intet pålideligt tørvejrsvindue i prognosen."),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: /^15 min/ }));
+    expect(
+      screen.getByText(/tørt ud fra kl\. 17[.:]00 til 17[.:]30/),
+    ).toBeVisible();
+    expect(request).toHaveBeenCalledOnce();
+
+    act(() =>
+      useWeatherStore.getState().setSelectedLocation({
+        id: "odense",
+        name: "Odense",
+        context: "Fyn",
+        latitude: 55.4,
+        longitude: 10.39,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        "Der mangler en aktuel radarprognose for stedet. Kig igen om lidt.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/tørt ud fra kl\. 17[.:]00 til 17[.:]30/),
+    ).not.toBeInTheDocument();
+    expect(request).toHaveBeenCalledTimes(2);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
 it("retries the point forecast after a failed refresh without refetching rain", async () => {
   const forecastRequest = vi
     .fn()

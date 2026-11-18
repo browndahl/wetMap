@@ -496,6 +496,7 @@ export default function App() {
           <RainNextHour
             compact={compactLayout && !forecastExpanded}
             data={rain.data}
+            now={now}
             isLoading={rain.isLoading}
             isFetching={rain.isFetching}
             isError={rain.isError}
