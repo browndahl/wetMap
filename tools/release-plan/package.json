@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "conventional-changelog-angular": "8.3.1",
-    "conventional-commits-filter": "5.0.0",
+    "conventional-commits-filter": "6.0.1",
     "conventional-commits-parser": "6.4.0",
     "semver": "7.8.6"
   }
